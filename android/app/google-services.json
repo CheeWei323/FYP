@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "882145192712",
+    "project_id": "travelguard-my-fyp-2026",
+    "storage_bucket": "travelguard-my-fyp-2026.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:882145192712:android:e4033e9aa2b86fbd81dabd",
+        "android_client_info": {
+          "package_name": "com.fyp.fyp"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyC3YINOuK4thfO_5lo52oSN6PPLx_yAeo0"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
