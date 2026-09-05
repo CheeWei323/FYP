@@ -40,17 +40,16 @@ class _LoginScreenState extends State<LoginScreen> {
     });
 
     try {
-      final UserCredential userCredential =
       await _authService.loginWithEmail(
         email: _emailController.text,
         password: _passwordController.text,
       );
 
-      final User? user = userCredential.user;
+      final User? user = await _authService.reloadUser();
 
       if (!mounted) return;
 
-      if (user != null && user.emailVerified){
+      if (user != null && !user.emailVerified){
         Navigator.push(context, MaterialPageRoute(builder: (context) => const VerifyEmailScreen(),
         ),
         );

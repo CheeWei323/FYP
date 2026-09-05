@@ -47,8 +47,16 @@ class AuthService {
   }
 
   // Refresh current user's information
-  Future<void> reloadUser() async {
-    await _auth.currentUser?.reload();
+  Future<User?> reloadUser() async {
+    User? user = _auth.currentUser;
+
+    if (user == null) {
+      return null;
+    }
+
+    await user.reload();
+
+    return _auth.currentUser;
   }
 
   // Logout
