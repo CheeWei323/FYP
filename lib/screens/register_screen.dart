@@ -76,7 +76,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
       String message = 'Unable to register. Please try again.';
 
       if (e.code == 'email-already-in-use') {
-        message = 'An account already exists with this email.';
+        message = 'This email is already registered. Please sign in to continue email verification.';
       } else if (e.code == 'invalid-email') {
         message = 'Please enter a valid email address.';
       } else if (e.code == 'weak-password') {

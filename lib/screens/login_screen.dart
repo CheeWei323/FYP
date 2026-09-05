@@ -1,6 +1,7 @@
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'register_screen.dart';
+import 'verify_email_screen.dart';
 
 import '../services/auth_service.dart';
 
@@ -49,16 +50,11 @@ class _LoginScreenState extends State<LoginScreen> {
 
       if (!mounted) return;
 
-      if (user != null && !user.emailVerified) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text(
-              'Please verify your email before continuing.',
-            ),
-          ),
+      if (user != null && user.emailVerified){
+        Navigator.push(context, MaterialPageRoute(builder: (context) => const VerifyEmailScreen(),
+        ),
         );
 
-        await _authService.signOut();
         return;
       }
 
