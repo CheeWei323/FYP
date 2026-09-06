@@ -16,4 +16,28 @@ class UserService {
       'updatedAt': FieldValue.serverTimestamp(),
     });
   }
+
+  Future<void> createTravellerProfileIfNeeded({
+    required String uid,
+    required String fullName,
+    required String email,
+  }) async {
+    final DocumentReference<Map<String, dynamic>> userRef =
+    _firestore.collection('users').doc(uid);
+
+    final DocumentSnapshot<Map<String, dynamic>> snapshot =
+    await userRef.get();
+
+    if (snapshot.exists) {
+      return;
+    }
+
+    await userRef.set({
+      'fullName': fullName.trim(),
+      'email': email.trim().toLowerCase(),
+      'role': 'traveller',
+      'createdAt': FieldValue.serverTimestamp(),
+      'updatedAt': FieldValue.serverTimestamp(),
+    });
+  }
 }

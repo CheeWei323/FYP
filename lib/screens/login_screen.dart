@@ -1,9 +1,11 @@
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
+import 'package:google_sign_in/google_sign_in.dart';
 import 'register_screen.dart';
 import 'verify_email_screen.dart';
 
 import '../services/auth_service.dart';
+import '../services/user_service.dart';
 
 class LoginScreen extends StatefulWidget {
   const LoginScreen({super.key});
@@ -14,6 +16,7 @@ class LoginScreen extends StatefulWidget {
 
 class _LoginScreenState extends State<LoginScreen> {
   final AuthService _authService = AuthService();
+  final UserService _userService = UserService();
 
   final TextEditingController _emailController = TextEditingController();
   final TextEditingController _passwordController = TextEditingController();
@@ -93,6 +96,120 @@ class _LoginScreenState extends State<LoginScreen> {
         const SnackBar(
           content: Text(
             'Something went wrong. Please try again.',
+          ),
+        ),
+      );
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isLoading = false;
+        });
+      }
+    }
+  }
+
+  Future<void> _loginWithGoogle() async {
+    if (_isLoading) return;
+
+    setState(() {
+      _isLoading = true;
+    });
+
+    try {
+      debugPrint('GOOGLE LOGIN: Starting');
+
+      final UserCredential? userCredential =
+      await _authService.signInWithGoogle();
+
+      debugPrint('GOOGLE LOGIN: Authentication returned');
+
+      if (userCredential == null) {
+        debugPrint('GOOGLE LOGIN: Cancelled');
+        return;
+      }
+
+      final User? user = userCredential.user;
+
+      if (user == null) {
+        throw Exception('Google Sign-In did not return a user.');
+      }
+
+      await user.getIdToken(true);
+
+      debugPrint('GOOGLE UID: ${user.uid}');
+      debugPrint(
+        'CURRENT AUTH UID: ${FirebaseAuth.instance.currentUser?.uid}',
+      );
+
+      await _userService.createTravellerProfileIfNeeded(
+        uid: user.uid,
+        fullName: user.displayName ?? 'Traveller',
+        email: user.email ?? '',
+      );
+
+      debugPrint('GOOGLE LOGIN: Firestore profile ready');
+
+      if (!mounted) return;
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Google Sign-In successful.'),
+        ),
+      );
+
+      // Role-based navigation will be added later.
+    } on GoogleSignInException catch (e) {
+      debugPrint(
+        'GOOGLE SIGN-IN ERROR: code=${e.code}, error=$e',
+      );
+
+      if (!mounted) return;
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text(
+            'Unable to sign in with Google. Please try again.',
+          ),
+        ),
+      );
+    } on FirebaseAuthException catch (e) {
+      debugPrint(
+        'FIREBASE AUTH ERROR: code=${e.code}, message=${e.message}',
+      );
+
+      if (!mounted) return;
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            e.message ?? 'Unable to sign in with Google.',
+          ),
+        ),
+      );
+    } on FirebaseException catch (e) {
+      debugPrint(
+        'FIREBASE ERROR: code=${e.code}, message=${e.message}',
+      );
+
+      if (!mounted) return;
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text(
+            'Unable to create the user profile.',
+          ),
+        ),
+      );
+    } catch (e, stackTrace) {
+      debugPrint('GOOGLE LOGIN ERROR: $e');
+      debugPrint('STACK TRACE: $stackTrace');
+
+      if (!mounted) return;
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text(
+            'Something went wrong with Google Sign-In.',
           ),
         ),
       );
@@ -301,9 +418,7 @@ class _LoginScreenState extends State<LoginScreen> {
                 SizedBox(
                   height: 52,
                   child: OutlinedButton.icon(
-                    onPressed: () {
-                      // Google OAuth will be added later.
-                    },
+                    onPressed: _isLoading ? null : _loginWithGoogle,
                     icon: const Icon(
                       Icons.account_circle_outlined,
                     ),
