@@ -3,6 +3,10 @@ import 'package:flutter/material.dart';
 import 'package:google_sign_in/google_sign_in.dart';
 import 'register_screen.dart';
 import 'verify_email_screen.dart';
+import 'dashboards/traveller_dashboard.dart';
+import 'dashboards/content_manager_dashboard.dart';
+import 'dashboards/admin_dashboard.dart';
+import 'dashboards/analysts_dashboard.dart';
 
 import '../services/auth_service.dart';
 import '../services/user_service.dart';
@@ -52,19 +56,22 @@ class _LoginScreenState extends State<LoginScreen> {
 
       if (!mounted) return;
 
-      if (user != null && !user.emailVerified){
-        Navigator.push(context, MaterialPageRoute(builder: (context) => const VerifyEmailScreen(),
-        ),
+      if (user != null && !user.emailVerified) {
+        Navigator.push(
+          context,
+          MaterialPageRoute(
+            builder: (context) => const VerifyEmailScreen(),
+          ),
         );
 
         return;
       }
 
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Login successful.'),
-        ),
-      );
+      if (user == null) {
+        throw Exception('Unable to retrieve authenticated user.');
+      }
+
+      await _navigateByRole(user);
 
       // Role checking and dashboard navigation
     } on FirebaseAuthException catch (e) {
@@ -116,15 +123,10 @@ class _LoginScreenState extends State<LoginScreen> {
     });
 
     try {
-      debugPrint('GOOGLE LOGIN: Starting');
-
       final UserCredential? userCredential =
       await _authService.signInWithGoogle();
 
-      debugPrint('GOOGLE LOGIN: Authentication returned');
-
       if (userCredential == null) {
-        debugPrint('GOOGLE LOGIN: Cancelled');
         return;
       }
 
@@ -136,32 +138,17 @@ class _LoginScreenState extends State<LoginScreen> {
 
       await user.getIdToken(true);
 
-      debugPrint('GOOGLE UID: ${user.uid}');
-      debugPrint(
-        'CURRENT AUTH UID: ${FirebaseAuth.instance.currentUser?.uid}',
-      );
-
       await _userService.createTravellerProfileIfNeeded(
         uid: user.uid,
         fullName: user.displayName ?? 'Traveller',
         email: user.email ?? '',
       );
 
-      debugPrint('GOOGLE LOGIN: Firestore profile ready');
-
       if (!mounted) return;
 
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Google Sign-In successful.'),
-        ),
-      );
-
-      // Role-based navigation will be added later.
+      await _navigateByRole(user);
     } on GoogleSignInException catch (e) {
-      debugPrint(
-        'GOOGLE SIGN-IN ERROR: code=${e.code}, error=$e',
-      );
+      debugPrint('Google Sign-In error: ${e.code}');
 
       if (!mounted) return;
 
@@ -173,9 +160,7 @@ class _LoginScreenState extends State<LoginScreen> {
         ),
       );
     } on FirebaseAuthException catch (e) {
-      debugPrint(
-        'FIREBASE AUTH ERROR: code=${e.code}, message=${e.message}',
-      );
+      debugPrint('Firebase Auth error: ${e.code}');
 
       if (!mounted) return;
 
@@ -187,9 +172,7 @@ class _LoginScreenState extends State<LoginScreen> {
         ),
       );
     } on FirebaseException catch (e) {
-      debugPrint(
-        'FIREBASE ERROR: code=${e.code}, message=${e.message}',
-      );
+      debugPrint('Firebase error: ${e.code}');
 
       if (!mounted) return;
 
@@ -200,9 +183,8 @@ class _LoginScreenState extends State<LoginScreen> {
           ),
         ),
       );
-    } catch (e, stackTrace) {
-      debugPrint('GOOGLE LOGIN ERROR: $e');
-      debugPrint('STACK TRACE: $stackTrace');
+    } catch (e) {
+      debugPrint('Google login error: $e');
 
       if (!mounted) return;
 
@@ -220,6 +202,49 @@ class _LoginScreenState extends State<LoginScreen> {
         });
       }
     }
+  }
+
+  Future<void> _navigateByRole(User user) async {
+    final String? role = await _userService.getUserRole(user.uid);
+
+    if (!mounted) return;
+
+    Widget destination;
+
+    switch (role) {
+      case 'traveller':
+        destination = const TravellerDashboard();
+        break;
+
+      case 'contentManager':
+        destination = const ContentManagerDashboard();
+        break;
+
+      case 'admin':
+        destination = const AdminDashboard();
+        break;
+
+      case 'analyst':
+        destination = const AnalystDashboard();
+        break;
+
+      default:
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text(
+              'Unable to determine account role.',
+            ),
+          ),
+        );
+        return;
+    }
+
+    Navigator.pushReplacement(
+      context,
+      MaterialPageRoute(
+        builder: (context) => destination,
+      ),
+    );
   }
 
   @override

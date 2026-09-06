@@ -40,4 +40,14 @@ class UserService {
       'updatedAt': FieldValue.serverTimestamp(),
     });
   }
+
+  Future<String?> getUserRole(String uid) async {
+    final DocumentSnapshot<Map<String, dynamic>> snapshot =
+        await _firestore.collection('users').doc(uid).get();
+
+    if (!snapshot.exists){
+      return null;
+    }
+    return snapshot.data()?['role'] as String?;
+  }
 }
