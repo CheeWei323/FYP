@@ -123,6 +123,7 @@ class _LoginScreenState extends State<LoginScreen> {
     });
 
     try {
+      // Authenticate the user through Google and Firebase.
       final UserCredential? userCredential =
       await _authService.signInWithGoogle();
 
@@ -138,6 +139,7 @@ class _LoginScreenState extends State<LoginScreen> {
 
       await user.getIdToken(true);
 
+      // Create a traveller profile only for first-time Google users.
       await _userService.createTravellerProfileIfNeeded(
         uid: user.uid,
         fullName: user.displayName ?? 'Traveller',
@@ -146,6 +148,7 @@ class _LoginScreenState extends State<LoginScreen> {
 
       if (!mounted) return;
 
+      // Read the role from Firestore and open the correct dashboard.
       await _navigateByRole(user);
     } on GoogleSignInException catch (e) {
       debugPrint('Google Sign-In error: ${e.code}');
@@ -205,12 +208,14 @@ class _LoginScreenState extends State<LoginScreen> {
   }
 
   Future<void> _navigateByRole(User user) async {
+    // Retrieve the assigned role from the user's Firestore profile.
     final String? role = await _userService.getUserRole(user.uid);
 
     if (!mounted) return;
 
     Widget destination;
 
+    // Route the authenticated user to the correct role-based interface.
     switch (role) {
       case 'traveller':
         destination = const TravellerDashboard();
