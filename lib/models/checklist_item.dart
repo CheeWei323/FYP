@@ -30,7 +30,7 @@ class ChecklistItem {
   });
 
   //Convert a Firestore checklist document into a ChecklistItem object
-  factory ChecklistItem.formFirestore(
+  factory ChecklistItem.fromFirestore(
       DocumentSnapshot<Map<String, dynamic>> document,
       ){
     final Map<String, dynamic> data = document.data() ?? {};
