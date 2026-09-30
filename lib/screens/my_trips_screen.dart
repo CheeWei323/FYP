@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import '../models/trip.dart';
 import '../services/trip_service.dart';
 import 'checklist_screen.dart';
+import 'packing_screen.dart';
 
 class MyTripsScreen extends StatefulWidget {
   const MyTripsScreen({super.key});
@@ -193,10 +194,11 @@ class _MyTripsScreenState extends State<MyTripsScreen> {
                         ),
                         const SizedBox(height: 16),
 
-                        // Displays the saved checklist completion progress.
+                        // Displays regulatory checklist completion progress.
                         _buildProgressSection(trip.id),
 
                         const SizedBox(height: 16),
+
                         SizedBox(
                           width: double.infinity,
                           child: FilledButton.icon(
@@ -210,13 +212,33 @@ class _MyTripsScreenState extends State<MyTripsScreen> {
                                 ),
                               );
 
-                              // Refresh progress after returning from the checklist.
                               if (mounted) {
                                 setState(() {});
                               }
                             },
                             icon: const Icon(Icons.checklist),
                             label: const Text('View Checklist'),
+                          ),
+                        ),
+
+                        const SizedBox(height: 10),
+
+                        // Opens the editable contextual packing list.
+                        SizedBox(
+                          width: double.infinity,
+                          child: OutlinedButton.icon(
+                            onPressed: () {
+                              Navigator.push(
+                                context,
+                                MaterialPageRoute(
+                                  builder: (context) => PackingScreen(
+                                    trip: trip,
+                                  ),
+                                ),
+                              );
+                            },
+                            icon: const Icon(Icons.luggage_outlined),
+                            label: const Text('Packing List'),
                           ),
                         ),
                       ],

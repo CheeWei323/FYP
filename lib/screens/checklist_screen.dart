@@ -1,9 +1,10 @@
 import 'package:flutter/material.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 import '../models/checklist_item.dart';
 import '../services/trip_service.dart';
 
-class ChecklistScreen extends StatefulWidget{
+class ChecklistScreen extends StatefulWidget {
   final String tripId;
 
   const ChecklistScreen({
@@ -30,10 +31,11 @@ class _ChecklistScreenState extends State<ChecklistScreen> {
     _loadChecklistItems();
   }
 
-  //Loads the personalised checklist generated for this trip.
+  // Loads the personalised checklist generated for this trip.
   Future<void> _loadChecklistItems() async {
     try {
-      final List<ChecklistItem> items = await _tripService.getChecklistItems(widget.tripId);
+      final List<ChecklistItem> items =
+      await _tripService.getChecklistItems(widget.tripId);
 
       if (!mounted) return;
 
@@ -54,7 +56,7 @@ class _ChecklistScreenState extends State<ChecklistScreen> {
     }
   }
 
-  //Updates only the completion status of the selected checklist item.
+  // Updates only the completion status of the selected checklist item.
   Future<void> _updateCompletion(
       ChecklistItem item,
       bool completed,
@@ -67,21 +69,21 @@ class _ChecklistScreenState extends State<ChecklistScreen> {
 
     try {
       await _tripService.updateChecklistItemCompletion(
-          tripId: widget.tripId,
-          itemId: item.id,
-          completed: completed
+        tripId: widget.tripId,
+        itemId: item.id,
+        completed: completed,
       );
 
       await _loadChecklistItems();
     } catch (e) {
-      debugPrint('CHECKLIST UPDATE ERROR $e');
+      debugPrint('CHECKLIST UPDATE ERROR: $e');
 
       if (!mounted) return;
 
       ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Unable to update the checklist item.'),
-          ),
+        const SnackBar(
+          content: Text('Unable to update the checklist item.'),
+        ),
       );
     } finally {
       if (mounted) {
@@ -92,17 +94,54 @@ class _ChecklistScreenState extends State<ChecklistScreen> {
     }
   }
 
+  // Opens the official regulatory source in the device browser.
+  Future<void> _openOfficialSource(String url) async {
+    final Uri? uri = Uri.tryParse(url);
+
+    if (uri == null ||
+        (uri.scheme != 'https' && uri.scheme != 'http')) {
+      _showSourceError();
+      return;
+    }
+
+    try {
+      final bool opened = await launchUrl(
+        uri,
+        mode: LaunchMode.externalApplication,
+      );
+
+      if (!opened && mounted) {
+        _showSourceError();
+      }
+    } catch (e) {
+      debugPrint('OFFICIAL SOURCE ERROR: $e');
+
+      if (mounted) {
+        _showSourceError();
+      }
+    }
+  }
+
+  void _showSourceError() {
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(
+        content: Text('Unable to open the official source.'),
+      ),
+    );
+  }
+
   int get _completedCount {
     return _checklistItems.where((item) => item.completed).length;
   }
 
   double get _completionProgress {
-    if (_checklistItems.isEmpty){
+    if (_checklistItems.isEmpty) {
       return 0;
     }
 
     return _completedCount / _checklistItems.length;
   }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -175,8 +214,7 @@ class _ChecklistScreenState extends State<ChecklistScreen> {
             ),
             itemCount: _checklistItems.length,
             itemBuilder: (context, index) {
-              final ChecklistItem item =
-              _checklistItems[index];
+              final ChecklistItem item = _checklistItems[index];
 
               final bool isUpdating =
               _updatingItems.contains(item.id);
@@ -227,6 +265,26 @@ class _ChecklistScreenState extends State<ChecklistScreen> {
                             Text(
                               'Source: ${item.sourceName}',
                             ),
+
+                          // Opens the authoritative source for verification.
+                          if (item.officialUrl.isNotEmpty) ...[
+                            const SizedBox(height: 6),
+                            TextButton.icon(
+                              onPressed: () {
+                                _openOfficialSource(
+                                  item.officialUrl,
+                                );
+                              },
+                              icon: const Icon(
+                                Icons.open_in_new,
+                                size: 18,
+                              ),
+                              label: const Text(
+                                'Open Official Source',
+                              ),
+                            ),
+                          ],
+
                           if (isUpdating) ...[
                             const SizedBox(height: 8),
                             const LinearProgressIndicator(),
