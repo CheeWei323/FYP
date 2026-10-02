@@ -68,6 +68,7 @@ class _PackingScreenState extends State<PackingScreen> {
         _packingItems = items;
         _isLoading = false;
         _errorMessage = null;
+        _sortPackingItems();
       });
     } catch (e) {
       debugPrint('PACKING LOAD ERROR: $e');
@@ -98,6 +99,85 @@ class _PackingScreenState extends State<PackingScreen> {
       default:
         return 'Other';
     }
+  }
+
+  String _normalizeItemName(String name) {
+    return name
+        .trim()
+        .toLowerCase()
+        .replaceAll(RegExp(r'\s+'), ' ');
+  }
+
+  PackingItem? _findDuplicatePackingItem(
+      String name, {
+        String? excludeItemId,
+      }) {
+    final String normalizedName =
+    _normalizeItemName(name);
+
+    for (final PackingItem item in _packingItems) {
+      if (excludeItemId != null &&
+          item.id == excludeItemId) {
+        continue;
+      }
+
+      if (_normalizeItemName(item.name) ==
+          normalizedName) {
+        return item;
+      }
+    }
+
+    return null;
+  }
+
+  Future<bool> _showDuplicatePackingItemDialog(
+      PackingItem existingItem,
+      ) async {
+    final bool? editExisting =
+    await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) {
+        return AlertDialog(
+          title: const Text(
+            'Item Already Exists',
+          ),
+          content: Text(
+            '"${existingItem.name}" is already in your '
+                'packing list.\n\n'
+                'You can edit the existing item if you '
+                'want to change its quantity or category.',
+          ),
+          actions: [
+            TextButton(
+              onPressed: () {
+                Navigator.pop(
+                  dialogContext,
+                  false,
+                );
+              },
+              child: const Text('Cancel'),
+            ),
+            FilledButton.icon(
+              onPressed: () {
+                Navigator.pop(
+                  dialogContext,
+                  true,
+                );
+              },
+              icon: const Icon(
+                Icons.edit_outlined,
+                size: 18,
+              ),
+              label: const Text(
+                'Edit Existing',
+              ),
+            ),
+          ],
+        );
+      },
+    );
+
+    return editExisting ?? false;
   }
 
   void _sortPackingItems() {
@@ -160,13 +240,14 @@ class _PackingScreenState extends State<PackingScreen> {
         departureDate: widget.trip.departureDate,
       );
 
-      // Stop here if the traveller left the screen while Gemini was working.
       if (!mounted) return;
 
       // Prevent Gemini items from duplicating existing manual items.
-      final Set<String> existingNames = _packingItems
+      final Set<String> existingNames =
+      _packingItems
           .map(
-            (item) => item.name.trim().toLowerCase(),
+            (item) =>
+            _normalizeItemName(item.name),
       )
           .toSet();
 
@@ -180,7 +261,7 @@ class _PackingScreenState extends State<PackingScreen> {
         item['name'].toString().trim();
 
         final String normalizedName =
-        name.toLowerCase();
+        _normalizeItemName(name);
 
         if (name.isEmpty) {
           continue;
@@ -223,9 +304,6 @@ class _PackingScreenState extends State<PackingScreen> {
 
         return;
       }
-
-      // Do not start a Firestore save if the screen has already closed.
-      if (!mounted) return;
 
       await _packingService.addGeneratedPackingItems(
         tripId: widget.trip.id,
@@ -349,6 +427,7 @@ class _PackingScreenState extends State<PackingScreen> {
 
     bool isSaving = false;
     String? dialogError;
+    PackingItem? duplicateItemToEdit;
 
     final PackingItem? addedItem =
     await showDialog<PackingItem>(
@@ -454,6 +533,33 @@ class _PackingScreenState extends State<PackingScreen> {
                       return;
                     }
 
+                    final PackingItem? existingItem =
+                    _findDuplicatePackingItem(
+                      name,
+                    );
+
+                    if (existingItem != null) {
+                      final bool editExisting =
+                      await _showDuplicatePackingItemDialog(
+                        existingItem,
+                      );
+
+                      if (!dialogContext.mounted) {
+                        return;
+                      }
+
+                      if (editExisting) {
+                        duplicateItemToEdit =
+                            existingItem;
+
+                        Navigator.pop(
+                          dialogContext,
+                        );
+                      }
+
+                      return;
+                    }
+
                     setDialogState(() {
                       isSaving = true;
                       dialogError = null;
@@ -517,7 +623,16 @@ class _PackingScreenState extends State<PackingScreen> {
       },
     );
 
-    if (addedItem == null || !mounted) return;
+    if (!mounted) return;
+
+    if (duplicateItemToEdit != null) {
+      await _showEditItemDialog(
+        duplicateItemToEdit!,
+      );
+      return;
+    }
+
+    if (addedItem == null) return;
 
     setState(() {
       _packingItems.add(addedItem);
@@ -639,6 +754,22 @@ class _PackingScreenState extends State<PackingScreen> {
                       return;
                     }
 
+                    final PackingItem? duplicateItem =
+                    _findDuplicatePackingItem(
+                      name,
+                      excludeItemId: item.id,
+                    );
+
+                    if (duplicateItem != null) {
+                      setDialogState(() {
+                        dialogError =
+                        '"${duplicateItem.name}" is already '
+                            'in the packing list.';
+                      });
+
+                      return;
+                    }
+
                     setDialogState(() {
                       isSaving = true;
                       dialogError = null;
@@ -752,7 +883,6 @@ class _PackingScreenState extends State<PackingScreen> {
 
     if (confirmed != true || !mounted) return;
 
-    // Remove immediately so the interface feels responsive.
     setState(() {
       _packingItems.removeWhere(
             (value) => value.id == item.id,
@@ -769,7 +899,6 @@ class _PackingScreenState extends State<PackingScreen> {
 
       if (!mounted) return;
 
-      // Restore the item if Firestore deletion fails.
       setState(() {
         _packingItems.add(item);
         _sortPackingItems();
@@ -943,7 +1072,6 @@ class _PackingScreenState extends State<PackingScreen> {
             ),
             const SizedBox(height: 24),
           ],
-
           const Text(
             'Packing Progress',
             style: TextStyle(
@@ -951,22 +1079,16 @@ class _PackingScreenState extends State<PackingScreen> {
               fontWeight: FontWeight.bold,
             ),
           ),
-
           const SizedBox(height: 10),
-
           LinearProgressIndicator(
             value: _packingProgress,
           ),
-
           const SizedBox(height: 8),
-
           Text(
             '$_packedCount of '
                 '${_packingItems.length} packed',
           ),
-
           const SizedBox(height: 24),
-
           for (final String category
           in visibleCategories) ...[
             Text(
@@ -976,9 +1098,7 @@ class _PackingScreenState extends State<PackingScreen> {
                 fontWeight: FontWeight.bold,
               ),
             ),
-
             const SizedBox(height: 8),
-
             ..._packingItems
                 .where(
                   (item) =>
@@ -988,7 +1108,6 @@ class _PackingScreenState extends State<PackingScreen> {
                   (item) =>
                   _buildPackingItemCard(item),
             ),
-
             const SizedBox(height: 16),
           ],
         ],
@@ -1019,7 +1138,6 @@ class _PackingScreenState extends State<PackingScreen> {
               );
             },
           ),
-
           Expanded(
             child: Padding(
               padding: const EdgeInsets.symmetric(
@@ -1046,7 +1164,6 @@ class _PackingScreenState extends State<PackingScreen> {
               ),
             ),
           ),
-
           if (isUpdating)
             const Padding(
               padding: EdgeInsets.all(16),

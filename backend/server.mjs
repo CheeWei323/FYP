@@ -48,6 +48,105 @@ const packingGenerationLimiter = rateLimit({
   },
 });
 
+// Builds standard practical packing essentials.
+// Everyday clothing is capped at a one-week packing cycle for longer trips.
+function buildBaselinePackingItems(durationDays) {
+  const clothingDays = Math.min(durationDays, 7);
+
+  const bottomsQuantity = Math.min(
+    4,
+    Math.max(1, Math.ceil(clothingDays / 2)),
+  );
+
+  const sleepwearQuantity =
+      durationDays > 7 ? 2 : 1;
+
+  return [
+    {
+      name: 'Everyday tops',
+      category: 'clothing',
+      quantity: clothingDays,
+    },
+    {
+      name: 'Everyday bottoms',
+      category: 'clothing',
+      quantity: bottomsQuantity,
+    },
+    {
+      name: 'Underwear',
+      category: 'clothing',
+      quantity: clothingDays,
+    },
+    {
+      name: 'Socks',
+      category: 'clothing',
+      quantity: clothingDays,
+    },
+    {
+      name: 'Sleepwear',
+      category: 'clothing',
+      quantity: sleepwearQuantity,
+    },
+    {
+      name: 'Toothbrush',
+      category: 'toiletries',
+      quantity: 1,
+    },
+    {
+      name: 'Toothpaste',
+      category: 'toiletries',
+      quantity: 1,
+    },
+    {
+      name: 'Deodorant',
+      category: 'toiletries',
+      quantity: 1,
+    },
+    {
+      name: 'Phone charger',
+      category: 'electronics',
+      quantity: 1,
+    },
+    {
+  name: 'Universal travel adapter',
+  category: 'electronics',
+  quantity: 1,
+    },
+  ];
+}
+
+// Normalises names for duplicate checking.
+function normalizeItemName(name) {
+  return name
+    .trim()
+    .toLowerCase()
+    .replace(/\s+/g, ' ');
+}
+
+function addDependentPackingItems(items) {
+  const normalizedNames = new Set(
+    items.map((item) =>
+      normalizeItemName(item.name),
+    ),
+  );
+
+  const finalItems = [...items];
+
+  const hasLaptop = normalizedNames.has('laptop');
+  const hasLaptopCharger =
+      normalizedNames.has('laptop charger');
+
+  if (hasLaptop && !hasLaptopCharger) {
+    finalItems.push({
+      name: 'Laptop charger',
+      category: 'electronics',
+      quantity: 1,
+    });
+  }
+
+  return finalItems;
+}
+
 // Waits before retrying a temporary Gemini failure.
 function delay(milliseconds) {
   return new Promise((resolve) => {
@@ -91,8 +190,8 @@ async function generateWithRetry(prompt) {
             properties: {
               items: {
                 type: 'array',
-                minItems: 15,
-                maxItems: 25,
+                minItems: 8,
+                maxItems: 15,
                 items: {
                   type: 'object',
                   properties: {
@@ -230,7 +329,8 @@ app.post(
           departureDate.trim();
 
       const prompt = `
-Generate a practical and personalised packing list for a Malaysian traveller.
+Generate practical and personalised contextual packing recommendations
+for a Malaysian traveller.
 
 Trip information:
 Destination: ${cleanedDestination}
@@ -238,17 +338,39 @@ Travel purpose: ${cleanedPurpose}
 Duration: ${durationDays} days
 Departure date: ${cleanedDepartureDate}
 
-The packing list is supplementary to TravelGuard MY's separate
-rule-based regulatory travel checklist.
+The packing recommendations are supplementary to TravelGuard MY's
+separate rule-based regulatory travel checklist.
+
+TravelGuard MY already adds these standard packing essentials:
+- Everyday tops
+- Everyday bottoms
+- Underwear
+- Socks
+- Sleepwear
+- Toothbrush
+- Toothpaste
+- Deodorant
+- Phone charger
+
+Do not repeat those standard items. You may still recommend a distinct
+specialised item when the trip context justifies it, such as thermal
+base layers, a winter coat, swimwear, formal business attire, hiking
+footwear or other purpose-specific clothing.
 
 General requirements:
-- Generate between 15 and 25 useful packing items.
+- Generate between 8 and 15 additional contextual packing items.
 - Personalise the recommendations using the destination,
   travel purpose, duration and departure date.
-- Adjust reasonable quantities according to the duration of the trip.
+- Use sensible quantities for the specific item and trip context.
+- For trips longer than one week, assume routine clothing can be
+  washed or reused rather than recommending one item for every day.
+- For long stays, assume that consumable toiletries and other replaceable
+  everyday supplies can be replenished at the destination rather than
+  recommending quantities for the entire trip duration.
 - Keep item names concise and understandable.
-- Avoid unnecessary duplicate items.
+- Avoid unnecessary duplicate or near-duplicate items.
 - Quantity must always be at least 1.
+- When recommending a laptop, also recommend a laptop charger.
 
 Season and climate:
 - Use the destination and departure date to infer the likely season
@@ -316,8 +438,8 @@ Return only the structured packing items requested by the schema.
         );
       }
 
-      // Validates Gemini output before returning it to Flutter.
-      const items = result.items
+      // Validates Gemini output before it is merged with standard items.
+      const contextualItems = result.items
         .filter((item) => {
           return (
             typeof item.name === 'string' &&
@@ -335,14 +457,47 @@ Return only the structured packing items requested by the schema.
           quantity: item.quantity,
         }));
 
-      if (items.length === 0) {
+      if (contextualItems.length === 0) {
         throw new Error(
           'Gemini did not return any valid packing items.',
         );
       }
 
+      const baselineItems =
+          buildBaselinePackingItems(durationDays);
+
+      // Removes exact-name duplicates from Gemini output and also
+      // prevents duplicate contextual items from being returned.
+      const seenNames = new Set(
+        baselineItems.map((item) =>
+          normalizeItemName(item.name),
+        ),
+      );
+
+      const uniqueContextualItems = [];
+
+      for (const item of contextualItems) {
+        const normalizedName =
+            normalizeItemName(item.name);
+
+        if (seenNames.has(normalizedName)) {
+          continue;
+        }
+
+        seenNames.add(normalizedName);
+        uniqueContextualItems.push(item);
+      }
+
+      const mergedItems = [
+        ...baselineItems,
+        ...uniqueContextualItems,
+      ];
+
+      const finalItems =
+          addDependentPackingItems(mergedItems);
+
       return res.status(200).json({
-        items,
+        items: finalItems,
       });
     } catch (error) {
       console.error(
