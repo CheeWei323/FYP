@@ -1,7 +1,8 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 
 class UserService {
-  final FirebaseFirestore _firestore = FirebaseFirestore.instance;
+  final FirebaseFirestore _firestore =
+      FirebaseFirestore.instance;
 
   Future<void> createTravellerProfile({
     required String uid,
@@ -22,11 +23,12 @@ class UserService {
     required String fullName,
     required String email,
   }) async {
-    final DocumentReference<Map<String, dynamic>> userRef =
+    final DocumentReference<Map<String, dynamic>>
+    userRef =
     _firestore.collection('users').doc(uid);
 
-    final DocumentSnapshot<Map<String, dynamic>> snapshot =
-    await userRef.get();
+    final DocumentSnapshot<Map<String, dynamic>>
+    snapshot = await userRef.get();
 
     if (snapshot.exists) {
       return;
@@ -42,12 +44,29 @@ class UserService {
   }
 
   Future<String?> getUserRole(String uid) async {
-    final DocumentSnapshot<Map<String, dynamic>> snapshot =
-        await _firestore.collection('users').doc(uid).get();
+    final DocumentSnapshot<Map<String, dynamic>>
+    snapshot =
+    await _firestore.collection('users').doc(uid).get();
 
-    if (!snapshot.exists){
+    if (!snapshot.exists) {
       return null;
     }
+
     return snapshot.data()?['role'] as String?;
+  }
+
+  // Retrieves account information for dashboard and settings.
+  Future<Map<String, dynamic>?> getUserProfile(
+      String uid,
+      ) async {
+    final DocumentSnapshot<Map<String, dynamic>>
+    snapshot =
+    await _firestore.collection('users').doc(uid).get();
+
+    if (!snapshot.exists) {
+      return null;
+    }
+
+    return snapshot.data();
   }
 }

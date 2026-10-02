@@ -4,16 +4,19 @@ import 'package:google_sign_in/google_sign_in.dart';
 class AuthService {
   final FirebaseAuth _auth = FirebaseAuth.instance;
 
-  final GoogleSignIn _googleSignIn = GoogleSignIn.instance;
+  final GoogleSignIn _googleSignIn =
+      GoogleSignIn.instance;
+
   bool _googleSignInInitialized = false;
 
-  // Current logged-in user
+  // Current logged-in user.
   User? get currentUser => _auth.currentUser;
 
-  // Listen for login/logout changes
-  Stream<User?> get authStateChanges => _auth.authStateChanges();
+  // Listen for login/logout changes.
+  Stream<User?> get authStateChanges =>
+      _auth.authStateChanges();
 
-  // Register traveller using email and password
+  // Register traveller using email and password.
   Future<UserCredential> registerWithEmail({
     required String email,
     required String password,
@@ -24,13 +27,13 @@ class AuthService {
       password: password,
     );
 
-    // Send verification email after registration
+    // Send verification email after registration.
     await userCredential.user?.sendEmailVerification();
 
     return userCredential;
   }
 
-  // Login using email and password
+  // Login using email and password.
   Future<UserCredential> loginWithEmail({
     required String email,
     required String password,
@@ -41,7 +44,7 @@ class AuthService {
     );
   }
 
-  // Send verification email again
+  // Send verification email again.
   Future<void> resendVerificationEmail() async {
     final User? user = _auth.currentUser;
 
@@ -50,7 +53,7 @@ class AuthService {
     }
   }
 
-  // Refresh current user's information
+  // Refresh current user's information.
   Future<User?> reloadUser() async {
     User? user = _auth.currentUser;
 
@@ -63,42 +66,59 @@ class AuthService {
     return _auth.currentUser;
   }
 
-  // Logout
-  Future<void> signOut() async {
-    await _auth.signOut();
-
-    if(_googleSignInInitialized){
-      await _googleSignIn.signOut();
-    }
-  }
-
-  Future<void> _initializingGoogleSignIn() async {
-    if (_googleSignInInitialized){
+  // Initialises Google Sign-In when required.
+  Future<void> _initializeGoogleSignIn() async {
+    if (_googleSignInInitialized) {
       return;
     }
 
     await _googleSignIn.initialize(
-      serverClientId: "882145192712-b2gguv4oacptf283eoc0vr0anvd2sccf.apps.googleusercontent.com"
+      serverClientId:
+      '882145192712-b2gguv4oacptf283eoc0vr0anvd2sccf.apps.googleusercontent.com',
     );
+
     _googleSignInInitialized = true;
   }
 
+  // Login using Google.
   Future<UserCredential?> signInWithGoogle() async {
-    await _initializingGoogleSignIn();
+    await _initializeGoogleSignIn();
 
     try {
-      final GoogleSignInAccount googleUser = await _googleSignIn.authenticate();
+      final GoogleSignInAccount googleUser =
+      await _googleSignIn.authenticate();
 
-      final GoogleSignInAuthentication googleAuth = googleUser.authentication;
+      final GoogleSignInAuthentication googleAuth =
+          googleUser.authentication;
 
-      final OAuthCredential credential = GoogleAuthProvider.credential(idToken: googleAuth.idToken);
+      final OAuthCredential credential =
+      GoogleAuthProvider.credential(
+        idToken: googleAuth.idToken,
+      );
 
-      return await _auth.signInWithCredential(credential);
-    } on GoogleSignInException catch (e){
-      if (e.code == GoogleSignInExceptionCode.canceled){
+      return await _auth.signInWithCredential(
+        credential,
+      );
+    } on GoogleSignInException catch (e) {
+      if (e.code ==
+          GoogleSignInExceptionCode.canceled) {
         return null;
       }
+
       rethrow;
+    }
+  }
+
+  // Logout from Firebase and Google Sign-In.
+  Future<void> signOut() async {
+    await _auth.signOut();
+
+    try {
+      await _initializeGoogleSignIn();
+      await _googleSignIn.signOut();
+    } catch (_) {
+      // Firebase logout has already succeeded.
+      // A missing Google session should not block logout.
     }
   }
 }

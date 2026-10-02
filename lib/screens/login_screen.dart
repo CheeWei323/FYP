@@ -209,7 +209,8 @@ class _LoginScreenState extends State<LoginScreen> {
 
   Future<void> _navigateByRole(User user) async {
     // Retrieve the assigned role from the user's Firestore profile.
-    final String? role = await _userService.getUserRole(user.uid);
+    final String? role =
+    await _userService.getUserRole(user.uid);
 
     if (!mounted) return;
 
@@ -244,11 +245,13 @@ class _LoginScreenState extends State<LoginScreen> {
         return;
     }
 
-    Navigator.pushReplacement(
-      context,
+    // Clears previous authentication screens so authenticated
+    // users cannot navigate back to Login using the Back button.
+    Navigator.of(context).pushAndRemoveUntil(
       MaterialPageRoute(
         builder: (context) => destination,
       ),
+          (route) => false,
     );
   }
 
