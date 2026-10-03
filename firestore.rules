@@ -1,0 +1,273 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    function isTraveller() {
+      return request.auth != null
+             && get(
+               /databases/$(database)/documents/users/$(request.auth.uid)
+             ).data.role == 'traveller';
+    }
+
+    function ownsTrip(tripId) {
+      return request.auth != null
+             && get(
+               /databases/$(database)/documents/trips/$(tripId)
+             ).data.userId == request.auth.uid;
+    }
+
+    function validTripData(data) {
+      return data.keys().hasAll([
+               'userId',
+               'destinationCountryId',
+               'purpose',
+               'durationDays',
+               'departureDate',
+               'createdAt',
+               'updatedAt'
+             ])
+             && data.keys().hasOnly([
+               'userId',
+               'destinationCountryId',
+               'purpose',
+               'durationDays',
+               'departureDate',
+               'createdAt',
+               'updatedAt'
+             ])
+             && data.userId is string
+             && data.destinationCountryId is string
+             && data.destinationCountryId.size() > 0
+             && data.purpose in [
+               'tourism',
+               'business',
+               'study'
+             ]
+             && data.durationDays is int
+             && data.durationDays >= 1
+             && data.durationDays <= 3650
+             && data.departureDate is timestamp
+             && data.createdAt is timestamp
+             && data.updatedAt is timestamp;
+    }
+
+    function validChecklistItem(data, itemId) {
+      return data.keys().hasAll([
+               'sourceRuleId',
+               'category',
+               'title',
+               'checklistLabel',
+               'description',
+               'mandatory',
+               'officialUrl',
+               'sourceName',
+               'priority',
+               'completed',
+               'completedAt'
+             ])
+             && data.keys().hasOnly([
+               'sourceRuleId',
+               'category',
+               'title',
+               'checklistLabel',
+               'description',
+               'mandatory',
+               'officialUrl',
+               'sourceName',
+               'priority',
+               'completed',
+               'completedAt'
+             ])
+             && data.sourceRuleId == itemId
+             && data.sourceRuleId is string
+             && data.category is string
+             && data.title is string
+             && data.checklistLabel is string
+             && data.description is string
+             && data.mandatory is bool
+             && data.officialUrl is string
+             && data.sourceName is string
+             && data.priority is int
+             && data.completed == false
+             && data.completedAt == null;
+    }
+
+    match /users/{userId} {
+      allow create: if request.auth != null
+                    && request.auth.uid == userId
+                    && request.resource.data.role == 'traveller';
+
+      allow read: if request.auth != null
+                  && request.auth.uid == userId;
+
+      allow update: if request.auth != null
+                    && request.auth.uid == userId
+                    && request.resource.data.role == resource.data.role;
+
+      allow delete: if false;
+    }
+
+    match /countries/{countryId} {
+      allow read: if request.auth != null;
+      allow write: if false;
+    }
+
+    match /travelRules/{ruleId} {
+      allow read: if request.auth != null;
+      allow write: if false;
+    }
+
+    match /trips/{tripId} {
+
+      // Traveller may create only their own valid trip.
+      allow create: if isTraveller()
+                    && request.resource.data.userId == request.auth.uid
+                    && validTripData(request.resource.data);
+
+      // Traveller may read only their own trip.
+      allow read: if request.auth != null
+                  && resource.data.userId == request.auth.uid;
+
+      // Traveller may edit only trip-planning fields.
+      // Ownership and original creation information cannot change.
+      allow update: if isTraveller()
+                    && resource.data.userId == request.auth.uid
+                    && request.resource.data.userId == resource.data.userId
+                    && request.resource.data.createdAt == resource.data.createdAt
+                    && request.resource.data
+                        .diff(resource.data)
+                        .affectedKeys()
+                        .hasOnly([
+                          'destinationCountryId',
+                          'purpose',
+                          'durationDays',
+                          'departureDate',
+                          'updatedAt'
+                        ])
+                    && validTripData(request.resource.data);
+
+      // Traveller may delete only their own trip.
+      allow delete: if isTraveller()
+                    && resource.data.userId == request.auth.uid;
+
+      match /checklistItems/{itemId} {
+
+        // Checklist creation is allowed during:
+        // 1. initial trip creation, or
+        // 2. checklist regeneration for an existing owned trip.
+        allow create: if isTraveller()
+                      && validChecklistItem(
+                        request.resource.data,
+                        itemId
+                      )
+                      && (
+                        (
+                          !exists(
+                            /databases/$(database)/documents/trips/$(tripId)
+                          )
+                          && getAfter(
+                            /databases/$(database)/documents/trips/$(tripId)
+                          ).data.userId == request.auth.uid
+                        )
+                        ||
+                        (
+                          exists(
+                            /databases/$(database)/documents/trips/$(tripId)
+                          )
+                          && get(
+                            /databases/$(database)/documents/trips/$(tripId)
+                          ).data.userId == request.auth.uid
+                        )
+                      );
+
+        allow read: if ownsTrip(tripId);
+
+        // Travellers may only change checklist completion information.
+        allow update: if ownsTrip(tripId)
+                      && request.resource.data
+                          .diff(resource.data)
+                          .affectedKeys()
+                          .hasOnly([
+                            'completed',
+                            'completedAt'
+                          ])
+                      && request.resource.data.completed is bool;
+
+        // Required for checklist regeneration and whole-trip deletion.
+        allow delete: if ownsTrip(tripId);
+      }
+
+      match /packingItems/{itemId} {
+
+        allow create: if ownsTrip(tripId)
+                      && request.resource.data.keys().hasAll([
+                        'name',
+                        'category',
+                        'quantity',
+                        'packed',
+                        'source',
+                        'createdAt',
+                        'updatedAt'
+                      ])
+                      && request.resource.data.keys().hasOnly([
+                        'name',
+                        'category',
+                        'quantity',
+                        'packed',
+                        'source',
+                        'createdAt',
+                        'updatedAt'
+                      ])
+                      && request.resource.data.name is string
+                      && request.resource.data.name.size() > 0
+                      && request.resource.data.category in [
+                        'clothing',
+                        'toiletries',
+                        'electronics',
+                        'healthComfort',
+                        'activityEssentials',
+                        'generalEssentials',
+                        'other'
+                      ]
+                      && request.resource.data.quantity is int
+                      && request.resource.data.quantity >= 1
+                      && request.resource.data.packed is bool
+                      && request.resource.data.source in [
+                        'ai',
+                        'user'
+                      ];
+
+        allow read: if ownsTrip(tripId);
+
+        allow update: if ownsTrip(tripId)
+                      && request.resource.data
+                          .diff(resource.data)
+                          .affectedKeys()
+                          .hasOnly([
+                            'name',
+                            'category',
+                            'quantity',
+                            'packed',
+                            'updatedAt'
+                          ])
+                      && request.resource.data.name is string
+                      && request.resource.data.name.size() > 0
+                      && request.resource.data.category in [
+                        'clothing',
+                        'toiletries',
+                        'electronics',
+                        'healthComfort',
+                        'activityEssentials',
+                        'generalEssentials',
+                        'other'
+                      ]
+                      && request.resource.data.quantity is int
+                      && request.resource.data.quantity >= 1
+                      && request.resource.data.packed is bool;
+
+        allow delete: if ownsTrip(tripId);
+      }
+    }
+  }
+}

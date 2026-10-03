@@ -6,10 +6,16 @@ import '../models/trip.dart';
 import 'rule_service.dart';
 
 class TripService {
-  final FirebaseFirestore _firestore = FirebaseFirestore.instance;
-  final RuleService _ruleService = RuleService();
+  final FirebaseFirestore _firestore =
+      FirebaseFirestore.instance;
 
-  // Creates a trip, applies the rule engine and stores the generated checklist.
+  final RuleService _ruleService =
+  RuleService();
+
+  // ---------------------------------------------------------------------------
+  // CREATE TRIP
+  // ---------------------------------------------------------------------------
+
   Future<String> createTripWithChecklist({
     required String userId,
     required String countryId,
@@ -18,10 +24,11 @@ class TripService {
     required DateTime departureDate,
   }) async {
     if (durationDays <= 0) {
-      throw ArgumentError('Trip duration cannot be zero.');
+      throw ArgumentError(
+        'Trip duration cannot be zero.',
+      );
     }
 
-    // Generate only the regulatory requirements applicable to this trip.
     final List<TravelRule> applicableRules =
     await _ruleService.getApplicableRules(
       countryId: countryId,
@@ -35,8 +42,11 @@ class TripService {
       );
     }
 
-    final DocumentReference<Map<String, dynamic>> tripReference =
-    _firestore.collection('trips').doc();
+    final DocumentReference<
+        Map<String, dynamic>> tripReference =
+    _firestore
+        .collection('trips')
+        .doc();
 
     final Trip trip = Trip(
       id: tripReference.id,
@@ -47,31 +57,27 @@ class TripService {
       departureDate: departureDate,
     );
 
-    final WriteBatch batch = _firestore.batch();
+    final WriteBatch batch =
+    _firestore.batch();
 
     batch.set(
       tripReference,
       trip.toMap(),
     );
 
-    // Convert every matched regulatory rule into a trip-specific checklist item.
-    for (final TravelRule rule in applicableRules) {
-      final DocumentReference<Map<String, dynamic>> checklistReference =
-      tripReference.collection('checklistItems').doc(rule.id);
+    for (final TravelRule rule
+    in applicableRules) {
+      final DocumentReference<
+          Map<String, dynamic>>
+      checklistReference =
+      tripReference
+          .collection(
+        'checklistItems',
+      )
+          .doc(rule.id);
 
-      final ChecklistItem checklistItem = ChecklistItem(
-        id: rule.id,
-        sourceRuleId: rule.id,
-        category: rule.category,
-        title: rule.title,
-        checklistLabel: rule.checklistLabel,
-        description: rule.description,
-        mandatory: rule.mandatory,
-        officialUrl: rule.officialUrl,
-        sourceName: rule.sourceName,
-        priority: rule.priority,
-        completed: false,
-      );
+      final ChecklistItem checklistItem =
+      _checklistItemFromRule(rule);
 
       batch.set(
         checklistReference,
@@ -79,69 +85,361 @@ class TripService {
       );
     }
 
-    // Save the trip and generated checklist items as one atomic operation.
     await batch.commit();
 
     return tripReference.id;
   }
 
-  // Retrieves all trips belonging to the logged-in traveller.
-  Future<List<Trip>> getUserTrips(String userId) async {
-    final QuerySnapshot<Map<String, dynamic>> snapshot =
-    await _firestore
+  // ---------------------------------------------------------------------------
+  // EDIT TRIP
+  // ---------------------------------------------------------------------------
+
+  Future<void> updateTripWithChecklist({
+    required Trip existingTrip,
+    required String countryId,
+    required String purpose,
+    required int durationDays,
+    required DateTime departureDate,
+  }) async {
+    if (durationDays <= 0) {
+      throw ArgumentError(
+        'Trip duration cannot be zero.',
+      );
+    }
+
+    final bool requirementsChanged =
+        existingTrip.destinationCountryId !=
+            countryId ||
+            existingTrip.purpose != purpose ||
+            existingTrip.durationDays !=
+                durationDays;
+
+    final bool departureChanged =
+    !_isSameDate(
+      existingTrip.departureDate,
+      departureDate,
+    );
+
+    final bool packingContextChanged =
+        requirementsChanged ||
+            departureChanged;
+
+    if (!requirementsChanged &&
+        !departureChanged) {
+      return;
+    }
+
+    final DocumentReference<
+        Map<String, dynamic>> tripReference =
+    _firestore
         .collection('trips')
-        .where('userId', isEqualTo: userId)
+        .doc(existingTrip.id);
+
+    List<TravelRule> applicableRules = [];
+
+    QuerySnapshot<Map<String, dynamic>>?
+    existingChecklistSnapshot;
+
+    QuerySnapshot<Map<String, dynamic>>?
+    generatedPackingSnapshot;
+
+    // Destination, purpose and duration affect
+    // the deterministic travel requirements.
+    if (requirementsChanged) {
+      applicableRules =
+      await _ruleService
+          .getApplicableRules(
+        countryId: countryId,
+        purpose: purpose,
+        durationDays: durationDays,
+      );
+
+      if (applicableRules.isEmpty) {
+        throw Exception(
+          'No applicable travel requirements were found for this trip.',
+        );
+      }
+
+      existingChecklistSnapshot =
+      await tripReference
+          .collection(
+        'checklistItems',
+      )
+          .get();
+    }
+
+    // All four trip inputs are used by contextual
+    // packing recommendations, including departure date.
+    if (packingContextChanged) {
+      generatedPackingSnapshot =
+      await tripReference
+          .collection(
+        'packingItems',
+      )
+          .where(
+        'source',
+        isEqualTo: 'ai',
+      )
+          .get();
+    }
+
+    final WriteBatch batch =
+    _firestore.batch();
+
+    batch.update(
+      tripReference,
+      {
+        'destinationCountryId':
+        countryId,
+        'purpose': purpose,
+        'durationDays': durationDays,
+        'departureDate':
+        Timestamp.fromDate(
+          departureDate,
+        ),
+        'updatedAt':
+        FieldValue.serverTimestamp(),
+      },
+    );
+
+    // Regenerate the regulatory checklist only
+    // when rule-matching inputs changed.
+    if (requirementsChanged) {
+      final Set<String> newRuleIds =
+      applicableRules
+          .map(
+            (rule) => rule.id,
+      )
+          .toSet();
+
+      // Remove requirements that no longer apply.
+      for (final QueryDocumentSnapshot<
+          Map<String, dynamic>>
+      document
+      in existingChecklistSnapshot!
+          .docs) {
+        if (!newRuleIds.contains(
+          document.id,
+        )) {
+          batch.delete(
+            document.reference,
+          );
+        }
+      }
+
+      // Create or overwrite applicable requirements.
+      // Existing completion states are intentionally
+      // reset because the trip conditions changed.
+      for (final TravelRule rule
+      in applicableRules) {
+        final DocumentReference<
+            Map<String, dynamic>>
+        checklistReference =
+        tripReference
+            .collection(
+          'checklistItems',
+        )
+            .doc(rule.id);
+
+        final ChecklistItem
+        checklistItem =
+        _checklistItemFromRule(
+          rule,
+        );
+
+        batch.set(
+          checklistReference,
+          checklistItem.toMap(),
+        );
+      }
+    }
+
+    // Remove only generated packing items.
+    // Traveller-created manual items are preserved.
+    if (packingContextChanged) {
+      for (final QueryDocumentSnapshot<
+          Map<String, dynamic>>
+      document
+      in generatedPackingSnapshot!
+          .docs) {
+        batch.delete(
+          document.reference,
+        );
+      }
+    }
+
+    await batch.commit();
+  }
+
+  // ---------------------------------------------------------------------------
+  // DELETE TRIP
+  // ---------------------------------------------------------------------------
+
+  Future<void> deleteTrip(
+      String tripId,
+      ) async {
+    final DocumentReference<
+        Map<String, dynamic>> tripReference =
+    _firestore
+        .collection('trips')
+        .doc(tripId);
+
+    final QuerySnapshot<
+        Map<String, dynamic>>
+    checklistSnapshot =
+    await tripReference
+        .collection(
+      'checklistItems',
+    )
         .get();
 
-    final List<Trip> trips = snapshot.docs
-        .map((document) => Trip.fromFirestore(document))
+    final QuerySnapshot<
+        Map<String, dynamic>>
+    packingSnapshot =
+    await tripReference
+        .collection(
+      'packingItems',
+    )
+        .get();
+
+    final WriteBatch batch =
+    _firestore.batch();
+
+    // Delete generated regulatory checklist.
+    for (final QueryDocumentSnapshot<
+        Map<String, dynamic>>
+    document
+    in checklistSnapshot.docs) {
+      batch.delete(
+        document.reference,
+      );
+    }
+
+    // Delete both manual and generated packing items.
+    for (final QueryDocumentSnapshot<
+        Map<String, dynamic>>
+    document
+    in packingSnapshot.docs) {
+      batch.delete(
+        document.reference,
+      );
+    }
+
+    // Delete the parent trip after its child data
+    // has been included in the same batch.
+    batch.delete(
+      tripReference,
+    );
+
+    await batch.commit();
+  }
+
+  // ---------------------------------------------------------------------------
+  // RETRIEVE TRIPS
+  // ---------------------------------------------------------------------------
+
+  Future<List<Trip>> getUserTrips(
+      String userId,
+      ) async {
+    final QuerySnapshot<
+        Map<String, dynamic>>
+    snapshot =
+    await _firestore
+        .collection('trips')
+        .where(
+      'userId',
+      isEqualTo: userId,
+    )
+        .get();
+
+    final List<Trip> trips =
+    snapshot.docs
+        .map(
+          (document) =>
+          Trip.fromFirestore(
+            document,
+          ),
+    )
         .toList();
 
-    // Display the nearest departure date first.
     trips.sort(
-          (a, b) => a.departureDate.compareTo(b.departureDate),
+          (a, b) =>
+          a.departureDate.compareTo(
+            b.departureDate,
+          ),
     );
 
     return trips;
   }
 
-  // Retrieves the generated checklist belonging to a specific trip.
-  Future<List<ChecklistItem>> getChecklistItems(
+  // ---------------------------------------------------------------------------
+  // CHECKLIST
+  // ---------------------------------------------------------------------------
+
+  Future<List<ChecklistItem>>
+  getChecklistItems(
       String tripId,
       ) async {
-    final QuerySnapshot<Map<String, dynamic>> snapshot =
+    final QuerySnapshot<
+        Map<String, dynamic>>
+    snapshot =
     await _firestore
         .collection('trips')
         .doc(tripId)
-        .collection('checklistItems')
+        .collection(
+      'checklistItems',
+    )
         .get();
 
-    final List<ChecklistItem> checklistItems = snapshot.docs
-        .map((document) => ChecklistItem.fromFirestore(document))
+    final List<ChecklistItem>
+    checklistItems =
+    snapshot.docs
+        .map(
+          (document) =>
+          ChecklistItem
+              .fromFirestore(
+            document,
+          ),
+    )
         .toList();
 
-    // Display checklist requirements according to their configured priority.
     checklistItems.sort(
-          (a, b) => a.priority.compareTo(b.priority),
+          (a, b) =>
+          a.priority.compareTo(
+            b.priority,
+          ),
     );
 
     return checklistItems;
   }
 
-  // Calculates the checklist completion progress for a specific trip.
-  Future<Map<String, int>> getChecklistProgress(String tripId) async {
-    final QuerySnapshot<Map<String, dynamic>> snapshot =
+  Future<Map<String, int>>
+  getChecklistProgress(
+      String tripId,
+      ) async {
+    final QuerySnapshot<
+        Map<String, dynamic>>
+    snapshot =
     await _firestore
         .collection('trips')
         .doc(tripId)
-        .collection('checklistItems')
+        .collection(
+      'checklistItems',
+    )
         .get();
 
-    final int totalItems = snapshot.docs.length;
+    final int totalItems =
+        snapshot.docs.length;
 
-    final int completedItems = snapshot.docs.where((document) {
-      return document.data()['completed'] == true;
-    }).length;
+    final int completedItems =
+        snapshot.docs
+            .where(
+              (document) =>
+          document.data()[
+          'completed'] ==
+              true,
+        )
+            .length;
 
     return {
       'completed': completedItems,
@@ -149,8 +447,8 @@ class TripService {
     };
   }
 
-  // Updates only the completion state of a traveller's checklist item.
-  Future<void> updateChecklistItemCompletion({
+  Future<void>
+  updateChecklistItemCompletion({
     required String tripId,
     required String itemId,
     required bool completed,
@@ -158,11 +456,50 @@ class TripService {
     await _firestore
         .collection('trips')
         .doc(tripId)
-        .collection('checklistItems')
+        .collection(
+      'checklistItems',
+    )
         .doc(itemId)
         .update({
       'completed': completed,
-      'completedAt': completed ? FieldValue.serverTimestamp() : null,
+      'completedAt': completed
+          ? FieldValue.serverTimestamp()
+          : null,
     });
+  }
+
+  // ---------------------------------------------------------------------------
+  // HELPERS
+  // ---------------------------------------------------------------------------
+
+  ChecklistItem _checklistItemFromRule(
+      TravelRule rule,
+      ) {
+    return ChecklistItem(
+      id: rule.id,
+      sourceRuleId: rule.id,
+      category: rule.category,
+      title: rule.title,
+      checklistLabel:
+      rule.checklistLabel,
+      description:
+      rule.description,
+      mandatory: rule.mandatory,
+      officialUrl:
+      rule.officialUrl,
+      sourceName:
+      rule.sourceName,
+      priority: rule.priority,
+      completed: false,
+    );
+  }
+
+  bool _isSameDate(
+      DateTime first,
+      DateTime second,
+      ) {
+    return first.year == second.year &&
+        first.month == second.month &&
+        first.day == second.day;
   }
 }

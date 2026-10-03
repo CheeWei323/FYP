@@ -73,6 +73,131 @@ class _AddTripScreenState
   ];
 
   // ---------------------------------------------------------------------------
+  // JAPAN LONG-STAY TOURISM / BUSINESS SAFEGUARD
+  // ---------------------------------------------------------------------------
+
+  bool _requiresJapanLongStayGuidance(
+      int durationDays,
+      ) {
+    return _selectedCountry?.id == 'japan' &&
+        (_selectedPurpose == 'tourism' ||
+            _selectedPurpose == 'business') &&
+        durationDays > 90;
+  }
+
+  Future<void> _openJapanVisaGuidance() async {
+    final Uri uri = Uri.parse(
+      'https://www.my.emb-japan.go.jp/itpr_en/visit.html',
+    );
+
+    try {
+      final bool opened = await launchUrl(
+        uri,
+        mode: LaunchMode.externalApplication,
+      );
+
+      if (!opened && mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text(
+              'Unable to open the Japan visa guidance.',
+            ),
+          ),
+        );
+      }
+    } catch (e) {
+      debugPrint(
+        'JAPAN VISA GUIDANCE ERROR: $e',
+      );
+
+      if (!mounted) return;
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text(
+            'Unable to open the Japan visa guidance.',
+          ),
+        ),
+      );
+    }
+  }
+
+  Future<void> _showJapanLongStayGuidance() async {
+    String message;
+
+    if (_selectedPurpose == 'business') {
+      message =
+      'Malaysian travellers may visit Japan for '
+          'short-term business purposes for up to 90 days '
+          'without a visa when no paid activities are '
+          'undertaken.\n\n'
+          'A business stay longer than 90 days requires '
+          'additional information about the intended '
+          'activities. TravelGuard MY cannot determine the '
+          'appropriate long-term status or visa from purpose '
+          'and duration alone.\n\n'
+          'Please refer to the official Embassy of Japan '
+          'in Malaysia visa guidance.';
+    } else {
+      message =
+      'Malaysian travellers may visit Japan for tourism '
+          'for up to 90 days under the short-term visa '
+          'exemption.\n\n'
+          'A tourism stay longer than 90 days may require '
+          'a different long-stay arrangement with additional '
+          'eligibility requirements. TravelGuard MY cannot '
+          'determine eligibility from purpose and duration '
+          'alone.\n\n'
+          'Please refer to the official Embassy of Japan '
+          'in Malaysia visa guidance.';
+    }
+
+    await showDialog<void>(
+      context: context,
+      builder: (BuildContext dialogContext) {
+        return AlertDialog(
+          icon: const Icon(
+            Icons.info_outline_rounded,
+            color: _primaryColor,
+            size: 32,
+          ),
+          title: const Text(
+            'Additional Visa Information Required',
+            textAlign: TextAlign.center,
+          ),
+          content: Text(message),
+          actions: [
+            TextButton(
+              onPressed: () {
+                Navigator.of(
+                  dialogContext,
+                ).pop();
+              },
+              child: const Text('Close'),
+            ),
+            FilledButton.icon(
+              onPressed: () async {
+                Navigator.of(
+                  dialogContext,
+                ).pop();
+
+                await _openJapanVisaGuidance();
+              },
+              icon: const Icon(
+                Icons.open_in_new_rounded,
+                size: 18,
+              ),
+              label: const Text(
+                'Open Visa Guidance',
+              ),
+            ),
+          ],
+        );
+      },
+    );
+  }
+
+  // ---------------------------------------------------------------------------
   // AUSTRALIA LONG BUSINESS-STAY SAFEGUARD
   // ---------------------------------------------------------------------------
 
@@ -641,6 +766,16 @@ class _AddTripScreenState
     final int duration = int.parse(
       _durationController.text.trim(),
     );
+
+    // Japan tourism and business stays longer than 90 days
+    // require additional immigration information that cannot
+    // be determined reliably from purpose and duration alone.
+    if (_requiresJapanLongStayGuidance(
+      duration,
+    )) {
+      await _showJapanLongStayGuidance();
+      return;
+    }
 
     // Australia business visits longer than 90 days cannot be
     // reliably matched using purpose and duration alone.
