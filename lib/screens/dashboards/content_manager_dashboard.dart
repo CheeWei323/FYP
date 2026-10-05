@@ -173,28 +173,49 @@ class _ContentManagerDashboardState
               height: 12,
             ),
 
-            _buildComingSoonCard(
-              icon:
-              Icons.verified_outlined,
-              title:
-              'Validate & Publish',
-              description:
-              'Review and validate regulatory information '
-                  'before it becomes active for travellers.',
+            const SizedBox(
+              height: 28,
+            ),
+
+            const Text(
+              'Management Controls',
+              style: TextStyle(
+                fontSize: 18,
+                fontWeight:
+                FontWeight.w800,
+                color:
+                _darkTextColor,
+              ),
             ),
 
             const SizedBox(
               height: 12,
             ),
 
-            _buildComingSoonCard(
+            _buildInformationCard(
+              icon:
+              Icons.verified_outlined,
+              title:
+              'Regulation Publishing',
+              description:
+              'New regulations are created as inactive. '
+                  'After reviewing the information and official source, '
+                  'the rule can be enabled for future traveller checklists.',
+            ),
+
+            const SizedBox(
+              height: 12,
+            ),
+
+            _buildInformationCard(
               icon:
               Icons.link_outlined,
               title:
-              'Official References',
+              'Official Source Management',
               description:
-              'Maintain government and authority source '
-                  'information used by travel regulations.',
+              'Each regulation stores an official authority, '
+                  'reference URL and validation date to support '
+                  'regulatory traceability.',
             ),
           ],
         ),
@@ -588,7 +609,7 @@ class _ContentManagerDashboardState
     );
   }
 
-  Widget _buildComingSoonCard({
+  Widget _buildInformationCard({
     required IconData icon,
     required String title,
     required String description,
@@ -597,10 +618,7 @@ class _ContentManagerDashboardState
       padding:
       const EdgeInsets.all(18),
       decoration: BoxDecoration(
-        color:
-        const Color(
-          0xFFFAFBFC,
-        ),
+        color: Colors.white,
         borderRadius:
         BorderRadius.circular(18),
         border: Border.all(
@@ -608,6 +626,8 @@ class _ContentManagerDashboardState
         ),
       ),
       child: Row(
+        crossAxisAlignment:
+        CrossAxisAlignment.start,
         children: [
           Container(
             width: 48,
@@ -616,20 +636,18 @@ class _ContentManagerDashboardState
             BoxDecoration(
               color:
               const Color(
-                0xFFF0F4F6,
+                0xFFE8F6F7,
               ),
               borderRadius:
-              BorderRadius
-                  .circular(
+              BorderRadius.circular(
                 14,
               ),
             ),
             child: Icon(
               icon,
               color:
-              const Color(
-                0xFF829AB1,
-              ),
+              _primaryColor,
+              size: 24,
             ),
           ),
 
@@ -640,66 +658,22 @@ class _ContentManagerDashboardState
           Expanded(
             child: Column(
               crossAxisAlignment:
-              CrossAxisAlignment
-                  .start,
+              CrossAxisAlignment.start,
               children: [
-                Row(
-                  children: [
-                    Expanded(
-                      child: Text(
-                        title,
-                        style:
-                        const TextStyle(
-                          fontSize: 15,
-                          fontWeight:
-                          FontWeight
-                              .w700,
-                          color:
-                          _darkTextColor,
-                        ),
-                      ),
-                    ),
-
-                    Container(
-                      padding:
-                      const EdgeInsets
-                          .symmetric(
-                        horizontal: 8,
-                        vertical: 4,
-                      ),
-                      decoration:
-                      BoxDecoration(
-                        color:
-                        const Color(
-                          0xFFF0F4F6,
-                        ),
-                        borderRadius:
-                        BorderRadius
-                            .circular(
-                          20,
-                        ),
-                      ),
-                      child:
-                      const Text(
-                        'COMING SOON',
-                        style:
-                        TextStyle(
-                          fontSize: 9,
-                          fontWeight:
-                          FontWeight
-                              .w700,
-                          color:
-                          Color(
-                            0xFF627D98,
-                          ),
-                        ),
-                      ),
-                    ),
-                  ],
+                Text(
+                  title,
+                  style:
+                  const TextStyle(
+                    fontSize: 15,
+                    fontWeight:
+                    FontWeight.w700,
+                    color:
+                    _darkTextColor,
+                  ),
                 ),
 
                 const SizedBox(
-                  height: 5,
+                  height: 6,
                 ),
 
                 Text(
@@ -707,12 +681,28 @@ class _ContentManagerDashboardState
                   style:
                   const TextStyle(
                     fontSize: 12.5,
-                    height: 1.4,
+                    height: 1.45,
                     color:
                     Colors.black54,
                   ),
                 ),
               ],
+            ),
+          ),
+
+          const Padding(
+            padding:
+            EdgeInsets.only(
+              top: 3,
+            ),
+            child: Icon(
+              Icons
+                  .check_circle_outline_rounded,
+              color:
+              Color(
+                0xFF177245,
+              ),
+              size: 20,
             ),
           ),
         ],

@@ -4,6 +4,7 @@ import 'package:url_launcher/url_launcher.dart';
 import '../../models/country.dart';
 import '../../models/travel_rule.dart';
 import '../../services/content_manager_service.dart';
+import 'travel_rule_form_screen.dart';
 
 class ManageTravelRulesScreen
     extends StatefulWidget {
@@ -42,6 +43,9 @@ class _ManageTravelRulesScreenState
 
   bool _isLoadingCountries = true;
   bool _isLoadingRules = false;
+
+  // Tracks which rule is currently being enabled or disabled.
+  String? _updatingRuleId;
 
   String? _countryError;
   String? _ruleError;
@@ -353,6 +357,175 @@ class _ManageTravelRulesScreenState
       );
     }
   }
+  // ---------------------------------------------------------------------------
+  // RULE FORM NAVIGATION
+  // ---------------------------------------------------------------------------
+
+  // Opens the Add/Edit Travel Rule screen.
+  // When a rule is successfully created or updated,
+  // the rules for the selected country are reloaded.
+  Future<void> _openRuleForm({
+    TravelRule? rule,
+  }) async {
+    final Country? country =
+        _selectedCountry;
+
+    if (country == null) {
+      return;
+    }
+
+    final bool? changed =
+    await Navigator.push<bool>(
+      context,
+      MaterialPageRoute(
+        builder: (context) =>
+            TravelRuleFormScreen(
+              country: country,
+              existingRule: rule,
+            ),
+      ),
+    );
+
+    if (changed != true ||
+        !mounted) {
+      return;
+    }
+
+    await _loadRules(
+      country.id,
+    );
+  }
+
+
+  // ---------------------------------------------------------------------------
+  // RULE STATUS MANAGEMENT
+  // ---------------------------------------------------------------------------
+
+  // Enables or disables an existing travel rule.
+  // Disabled rules remain stored in Firestore but are excluded
+  // from new traveller checklist generation.
+  Future<void> _changeRuleStatus(
+      TravelRule rule,
+      ) async {
+    if (_updatingRuleId != null) {
+      return;
+    }
+
+    final bool enable =
+    !rule.active;
+
+    final bool? confirmed =
+    await showDialog<bool>(
+      context: context,
+      builder: (
+          BuildContext dialogContext,
+          ) {
+        return AlertDialog(
+          icon: Icon(
+            enable
+                ? Icons
+                .check_circle_outline_rounded
+                : Icons
+                .pause_circle_outline_rounded,
+            color:
+            _primaryColor,
+            size: 32,
+          ),
+          title: Text(
+            enable
+                ? 'Enable Travel Rule?'
+                : 'Disable Travel Rule?',
+            textAlign:
+            TextAlign.center,
+          ),
+          content: Text(
+            enable
+                ? 'Enabling this rule will make it available to '
+                'the rule-based DSS when generating new traveller '
+                'requirements.\n\n'
+                'Make sure the information and official source '
+                'have been reviewed.'
+                : 'Disabling this rule will prevent it from being '
+                'used when generating new traveller requirements.\n\n'
+                'The rule will remain stored and can be enabled again later.',
+          ),
+          actions: [
+            TextButton(
+              onPressed: () {
+                Navigator.pop(
+                  dialogContext,
+                  false,
+                );
+              },
+              child:
+              const Text('Cancel'),
+            ),
+            FilledButton(
+              onPressed: () {
+                Navigator.pop(
+                  dialogContext,
+                  true,
+                );
+              },
+              child: Text(
+                enable
+                    ? 'Enable Rule'
+                    : 'Disable Rule',
+              ),
+            ),
+          ],
+        );
+      },
+    );
+
+    if (confirmed != true ||
+        !mounted) {
+      return;
+    }
+
+    setState(() {
+      _updatingRuleId =
+          rule.id;
+    });
+
+    try {
+      await _contentManagerService
+          .setTravelRuleActive(
+        ruleId: rule.id,
+        active: enable,
+      );
+
+      if (!mounted) return;
+
+      await _loadRules(
+        _selectedCountry!.id,
+      );
+    } catch (e) {
+      debugPrint(
+        'UPDATE RULE STATUS ERROR: $e',
+      );
+
+      if (!mounted) return;
+
+      ScaffoldMessenger.of(context)
+          .showSnackBar(
+        SnackBar(
+          content: Text(
+            enable
+                ? 'Unable to enable the travel rule.'
+                : 'Unable to disable the travel rule.',
+          ),
+        ),
+      );
+    } finally {
+      if (mounted) {
+        setState(() {
+          _updatingRuleId =
+          null;
+        });
+      }
+    }
+  }
 
   // ---------------------------------------------------------------------------
   // UI
@@ -365,6 +538,25 @@ class _ManageTravelRulesScreenState
     return Scaffold(
       backgroundColor:
       _backgroundColor,
+
+      floatingActionButton:
+      _selectedCountry == null
+          ? null
+          : FloatingActionButton.extended(
+        onPressed: () =>
+            _openRuleForm(),
+        backgroundColor:
+        _primaryColor,
+        foregroundColor:
+        Colors.white,
+        icon: const Icon(
+          Icons.add_rounded,
+        ),
+        label: const Text(
+          'Add Rule',
+        ),
+      ),
+
       appBar: AppBar(
         backgroundColor:
         Colors.white,
@@ -381,6 +573,7 @@ class _ManageTravelRulesScreenState
           ),
         ),
       ),
+
       body: SafeArea(
         child: _buildBody(),
       ),
@@ -1319,6 +1512,106 @@ class _ManageTravelRulesScreenState
                 ),
               ],
             ),
+          ),
+          const SizedBox(
+            height: 14,
+          ),
+
+// Allows the Content Manager to edit the rule
+// or change whether it is active for travellers.
+          Row(
+            children: [
+              Expanded(
+                child: OutlinedButton.icon(
+                  onPressed:
+                  _updatingRuleId != null
+                      ? null
+                      : () =>
+                      _openRuleForm(
+                        rule: rule,
+                      ),
+                  icon: const Icon(
+                    Icons.edit_outlined,
+                    size: 18,
+                  ),
+                  label: const Text(
+                    'Edit',
+                  ),
+                ),
+              ),
+
+              const SizedBox(
+                width: 10,
+              ),
+
+              Expanded(
+                child: rule.active
+                    ? OutlinedButton.icon(
+                  onPressed:
+                  _updatingRuleId != null
+                      ? null
+                      : () =>
+                      _changeRuleStatus(
+                        rule,
+                      ),
+                  icon:
+                  _updatingRuleId ==
+                      rule.id
+                      ? const SizedBox(
+                    width: 17,
+                    height: 17,
+                    child:
+                    CircularProgressIndicator(
+                      strokeWidth: 2,
+                    ),
+                  )
+                      : const Icon(
+                    Icons
+                        .pause_circle_outline_rounded,
+                    size: 18,
+                  ),
+                  label: const Text(
+                    'Disable',
+                  ),
+                )
+                    : FilledButton.icon(
+                  onPressed:
+                  _updatingRuleId != null
+                      ? null
+                      : () =>
+                      _changeRuleStatus(
+                        rule,
+                      ),
+                  style:
+                  FilledButton.styleFrom(
+                    backgroundColor:
+                    _primaryColor,
+                    foregroundColor:
+                    Colors.white,
+                  ),
+                  icon:
+                  _updatingRuleId ==
+                      rule.id
+                      ? const SizedBox(
+                    width: 17,
+                    height: 17,
+                    child:
+                    CircularProgressIndicator(
+                      strokeWidth: 2,
+                      color: Colors.white,
+                    ),
+                  )
+                      : const Icon(
+                    Icons
+                        .check_circle_outline_rounded,
+                    size: 18,
+                  ),
+                  label: const Text(
+                    'Enable',
+                  ),
+                ),
+              ),
+            ],
           ),
         ],
       ),

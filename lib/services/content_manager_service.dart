@@ -137,4 +137,113 @@ class ContentManagerService {
       inactiveRules,
     };
   }
+
+  // Generates a readable and unique Firestore document ID
+  // for a Content Manager-created travel rule.
+  String _generateRuleId(
+      TravelRule rule,
+      ) {
+    String titleSlug = rule.title
+        .trim()
+        .toLowerCase()
+        .replaceAll(
+      RegExp(r'[^a-z0-9]+'),
+      '_',
+    )
+        .replaceAll(
+      RegExp(r'^_+|_+$'),
+      '',
+    );
+
+    if (titleSlug.isEmpty) {
+      titleSlug = 'rule';
+    }
+
+    if (titleSlug.length > 35) {
+      titleSlug =
+          titleSlug.substring(
+            0,
+            35,
+          );
+    }
+
+    final int timestamp =
+        DateTime.now()
+            .millisecondsSinceEpoch;
+
+    return '${rule.countryId}_'
+        '${rule.category}_'
+        '${titleSlug}_'
+        '$timestamp';
+  }
+
+  // Creates a new regulatory rule.
+  // New rules are stored as inactive until reviewed and enabled.
+  Future<void> createTravelRule(
+      TravelRule rule,
+      ) async {
+    final String ruleId =
+        _generateRuleId(
+      rule,
+    );
+
+    final DocumentReference<
+        Map<String, dynamic>> document =
+    _firestore
+        .collection(
+      'travelRules',
+    )
+        .doc(ruleId);
+
+    final Map<String, dynamic> data =
+    rule.toMap();
+
+    data['active'] = false;
+
+    data['lastValidatedAt'] =
+        FieldValue.serverTimestamp();
+
+    await document.set(
+      data,
+    );
+  }
+
+// Updates the editable information of an existing regulatory rule.
+// The existing active/inactive status is preserved.
+  Future<void> updateTravelRule(
+      TravelRule rule,
+      ) async {
+    final Map<String, dynamic> data =
+    rule.toMap();
+
+    data['lastValidatedAt'] =
+        FieldValue.serverTimestamp();
+
+    await _firestore
+        .collection('travelRules')
+        .doc(rule.id)
+        .update(data);
+  }
+
+// Enables or disables a regulatory rule.
+// Disabled rules remain stored for traceability but are not used
+// by the traveller rule-based DSS.
+  Future<void> setTravelRuleActive({
+    required String ruleId,
+    required bool active,
+  }) async {
+    final Map<String, dynamic> updates = {
+      'active': active,
+    };
+
+    if (active) {
+      updates['lastValidatedAt'] =
+          FieldValue.serverTimestamp();
+    }
+
+    await _firestore
+        .collection('travelRules')
+        .doc(ruleId)
+        .update(updates);
+  }
 }

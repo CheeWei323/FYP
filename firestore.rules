@@ -3,6 +3,11 @@ rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
 
+    // -----------------------------------------------------------------------
+    // ROLE / OWNERSHIP HELPERS
+    // -----------------------------------------------------------------------
+
+    // Checks whether the authenticated account has the traveller role.
     function isTraveller() {
       return request.auth != null
              && get(
@@ -10,6 +15,15 @@ service cloud.firestore {
              ).data.role == 'traveller';
     }
 
+    // Checks whether the authenticated account has the Content Manager role.
+    function isContentManager() {
+      return request.auth != null
+             && get(
+               /databases/$(database)/documents/users/$(request.auth.uid)
+             ).data.role == 'contentManager';
+    }
+
+    // Checks whether the authenticated user owns the selected trip.
     function ownsTrip(tripId) {
       return request.auth != null
              && get(
@@ -17,6 +31,12 @@ service cloud.firestore {
              ).data.userId == request.auth.uid;
     }
 
+
+    // -----------------------------------------------------------------------
+    // DATA VALIDATION HELPERS
+    // -----------------------------------------------------------------------
+
+    // Validates the structure of a traveller trip.
     function validTripData(data) {
       return data.keys().hasAll([
                'userId',
@@ -52,6 +72,7 @@ service cloud.firestore {
              && data.updatedAt is timestamp;
     }
 
+    // Validates generated regulatory checklist data.
     function validChecklistItem(data, itemId) {
       return data.keys().hasAll([
                'sourceRuleId',
@@ -93,37 +114,206 @@ service cloud.firestore {
              && data.completedAt == null;
     }
 
+    // Validates regulatory data maintained by the Content Manager.
+    function validTravelRule(data) {
+      return data.keys().hasAll([
+               'countryId',
+               'category',
+               'title',
+               'checklistLabel',
+               'description',
+               'purposes',
+               'minDurationDays',
+               'maxDurationDays',
+               'mandatory',
+               'officialUrl',
+               'sourceName',
+               'active',
+               'priority',
+               'lastValidatedAt'
+             ])
+             && data.keys().hasOnly([
+               'countryId',
+               'category',
+               'title',
+               'checklistLabel',
+               'description',
+               'purposes',
+               'minDurationDays',
+               'maxDurationDays',
+               'mandatory',
+               'officialUrl',
+               'sourceName',
+               'active',
+               'priority',
+               'lastValidatedAt'
+             ])
+
+             // Destination
+             && data.countryId is string
+             && data.countryId.size() > 0
+             && exists(
+               /databases/$(database)/documents/countries/$(data.countryId)
+             )
+
+             // Rule category
+             && data.category in [
+               'passport',
+               'visa',
+               'entry',
+               'document',
+               'health'
+             ]
+
+             // Traveller-facing regulatory information
+             && data.title is string
+             && data.title.size() > 0
+
+             && data.checklistLabel is string
+             && data.checklistLabel.size() > 0
+
+             && data.description is string
+             && data.description.size() > 0
+
+             // Travel purposes
+             && data.purposes is list
+             && data.purposes.size() > 0
+             && data.purposes.size() <= 3
+             && data.purposes.hasOnly([
+               'all',
+               'tourism',
+               'business',
+               'study'
+             ])
+
+             // "all" cannot be combined with individual purposes.
+             && (
+               data.purposes == ['all']
+               || !data.purposes.hasAny([
+                 'all'
+               ])
+             )
+
+             // Duration
+             && data.minDurationDays is int
+             && data.minDurationDays >= 1
+             && data.minDurationDays <= 3650
+
+             && (
+               data.maxDurationDays == null
+               || (
+                 data.maxDurationDays is int
+                 && data.maxDurationDays >= data.minDurationDays
+                 && data.maxDurationDays <= 3650
+               )
+             )
+
+             // Requirement type
+             && data.mandatory is bool
+
+             // Official reference
+             && data.officialUrl is string
+             && data.officialUrl.size() > 0
+
+             && data.sourceName is string
+             && data.sourceName.size() > 0
+
+             // Publication status
+             && data.active is bool
+
+             // Display priority
+             && data.priority is int
+             && data.priority >= 0
+
+             // Validation timestamp
+             && data.lastValidatedAt is timestamp;
+    }
+
+
+    // -----------------------------------------------------------------------
+    // USERS
+    // -----------------------------------------------------------------------
+
     match /users/{userId} {
+
+      // Public registration creates Traveller accounts only.
       allow create: if request.auth != null
                     && request.auth.uid == userId
                     && request.resource.data.role == 'traveller';
 
+      // Users may read only their own profile.
       allow read: if request.auth != null
                   && request.auth.uid == userId;
 
+      // Users may update their own profile but cannot change their role.
       allow update: if request.auth != null
                     && request.auth.uid == userId
                     && request.resource.data.role == resource.data.role;
 
+      // User accounts are not deleted directly from the client.
       allow delete: if false;
     }
 
+
+    // -----------------------------------------------------------------------
+    // COUNTRIES
+    // -----------------------------------------------------------------------
+
     match /countries/{countryId} {
+
+      // Authenticated users may read supported destination information.
       allow read: if request.auth != null;
+
+      // Country management is not yet enabled.
       allow write: if false;
     }
 
+
+    // -----------------------------------------------------------------------
+    // TRAVEL REGULATIONS
+    // -----------------------------------------------------------------------
+
     match /travelRules/{ruleId} {
+
+      // Authenticated users may read regulatory information.
       allow read: if request.auth != null;
-      allow write: if false;
+
+      // Content Managers may create structurally valid rules.
+      // New rules must initially be inactive so they can be reviewed
+      // before becoming available to the Traveller DSS.
+      allow create: if isContentManager()
+                    && request.resource.data.active == false
+                    && validTravelRule(
+                      request.resource.data
+                    );
+
+      // Content Managers may edit existing regulations.
+      // A rule cannot be moved to another destination after creation.
+      allow update: if isContentManager()
+                    && request.resource.data.countryId
+                       == resource.data.countryId
+                    && validTravelRule(
+                      request.resource.data
+                    );
+
+      // Regulations are retained for traceability.
+      // Enable / Disable is used instead of permanent deletion.
+      allow delete: if false;
     }
+
+
+    // -----------------------------------------------------------------------
+    // TRIPS
+    // -----------------------------------------------------------------------
 
     match /trips/{tripId} {
 
       // Traveller may create only their own valid trip.
       allow create: if isTraveller()
                     && request.resource.data.userId == request.auth.uid
-                    && validTripData(request.resource.data);
+                    && validTripData(
+                      request.resource.data
+                    );
 
       // Traveller may read only their own trip.
       allow read: if request.auth != null
@@ -133,8 +323,10 @@ service cloud.firestore {
       // Ownership and original creation information cannot change.
       allow update: if isTraveller()
                     && resource.data.userId == request.auth.uid
-                    && request.resource.data.userId == resource.data.userId
-                    && request.resource.data.createdAt == resource.data.createdAt
+                    && request.resource.data.userId
+                       == resource.data.userId
+                    && request.resource.data.createdAt
+                       == resource.data.createdAt
                     && request.resource.data
                         .diff(resource.data)
                         .affectedKeys()
@@ -145,11 +337,18 @@ service cloud.firestore {
                           'departureDate',
                           'updatedAt'
                         ])
-                    && validTripData(request.resource.data);
+                    && validTripData(
+                      request.resource.data
+                    );
 
       // Traveller may delete only their own trip.
       allow delete: if isTraveller()
                     && resource.data.userId == request.auth.uid;
+
+
+      // ---------------------------------------------------------------------
+      // CHECKLIST ITEMS
+      // ---------------------------------------------------------------------
 
       match /checklistItems/{itemId} {
 
@@ -181,9 +380,10 @@ service cloud.firestore {
                         )
                       );
 
+        // Checklist items are visible only to the trip owner.
         allow read: if ownsTrip(tripId);
 
-        // Travellers may only change checklist completion information.
+        // Travellers may change only completion information.
         allow update: if ownsTrip(tripId)
                       && request.resource.data
                           .diff(resource.data)
@@ -194,12 +394,19 @@ service cloud.firestore {
                           ])
                       && request.resource.data.completed is bool;
 
-        // Required for checklist regeneration and whole-trip deletion.
+        // Required for checklist regeneration
+        // and whole-trip deletion.
         allow delete: if ownsTrip(tripId);
       }
 
+
+      // ---------------------------------------------------------------------
+      // PACKING ITEMS
+      // ---------------------------------------------------------------------
+
       match /packingItems/{itemId} {
 
+        // Travellers may add packing items only to their own trip.
         allow create: if ownsTrip(tripId)
                       && request.resource.data.keys().hasAll([
                         'name',
@@ -238,8 +445,11 @@ service cloud.firestore {
                         'user'
                       ];
 
+        // Packing items are visible only to the trip owner.
         allow read: if ownsTrip(tripId);
 
+        // Travellers may edit packing details and packing status.
+        // Original source and creation timestamp cannot be changed.
         allow update: if ownsTrip(tripId)
                       && request.resource.data
                           .diff(resource.data)
@@ -266,6 +476,7 @@ service cloud.firestore {
                       && request.resource.data.quantity >= 1
                       && request.resource.data.packed is bool;
 
+        // Packing items are personal and may be removed by the trip owner.
         allow delete: if ownsTrip(tripId);
       }
     }
