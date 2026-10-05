@@ -371,6 +371,8 @@ General requirements:
 - Avoid unnecessary duplicate or near-duplicate items.
 - Quantity must always be at least 1.
 - When recommending a laptop, also recommend a laptop charger.
+- Include Local Sim Card or Roaming also, both must write in the name of that item
+- Type of destination country adapter, universal adapter and universal travel adapter recommend only one
 
 Season and climate:
 - Use the destination and departure date to infer the likely season
