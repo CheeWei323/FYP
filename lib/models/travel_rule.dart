@@ -14,6 +14,7 @@ class TravelRule {
   final String officialUrl;
   final String sourceName;
   final bool active;
+  final String reviewStatus;
   final int priority;
   final DateTime? lastValidatedAt;
 
@@ -31,15 +32,21 @@ class TravelRule {
     required this.officialUrl,
     required this.sourceName,
     required this.active,
+    this.reviewStatus = 'approved',
     required this.priority,
     this.lastValidatedAt,
   });
 
   // Converts a Firestore rule document into a TravelRule object.
   factory TravelRule.fromFirestore(
-      DocumentSnapshot<Map<String, dynamic>> document,
-      ) {
+    DocumentSnapshot<Map<String, dynamic>> document,
+  ) {
     final Map<String, dynamic> data = document.data() ?? {};
+
+    final bool active = data['active'] as bool? ?? true;
+
+    final String reviewStatus =
+        data['reviewStatus'] as String? ?? (active ? 'approved' : 'disabled');
 
     return TravelRule(
       id: document.id,
@@ -48,25 +55,21 @@ class TravelRule {
       title: data['title'] as String? ?? '',
       checklistLabel: data['checklistLabel'] as String? ?? '',
       description: data['description'] as String? ?? '',
-      purposes: List<String>.from(
-        data['purposes'] as List<dynamic>? ?? [],
-      ),
-      minDurationDays:
-      (data['minDurationDays'] as num?)?.toInt() ?? 1,
-      maxDurationDays:
-      (data['maxDurationDays'] as num?)?.toInt(),
+      purposes: List<String>.from(data['purposes'] as List<dynamic>? ?? []),
+      minDurationDays: (data['minDurationDays'] as num?)?.toInt() ?? 1,
+      maxDurationDays: (data['maxDurationDays'] as num?)?.toInt(),
       mandatory: data['mandatory'] as bool? ?? true,
       officialUrl: data['officialUrl'] as String? ?? '',
       sourceName: data['sourceName'] as String? ?? '',
-      active: data['active'] as bool? ?? true,
+      active: active,
+      reviewStatus: reviewStatus,
       priority: (data['priority'] as num?)?.toInt() ?? 0,
-      lastValidatedAt:
-      (data['lastValidatedAt'] as Timestamp?)?.toDate(),
+      lastValidatedAt: (data['lastValidatedAt'] as Timestamp?)?.toDate(),
     );
   }
 
   //Convert the rule into Firestore compatible data
-  Map<String, dynamic> toMap(){
+  Map<String, dynamic> toMap() {
     return {
       'countryId': countryId,
       'category': category,
@@ -80,8 +83,11 @@ class TravelRule {
       'officialUrl': officialUrl,
       'sourceName': sourceName,
       'active': active,
+      'reviewStatus': reviewStatus,
       'priority': priority,
-      'lastValidatedAt': lastValidatedAt != null ? Timestamp.fromDate(lastValidatedAt!) : FieldValue.serverTimestamp(),
+      'lastValidatedAt': lastValidatedAt != null
+          ? Timestamp.fromDate(lastValidatedAt!)
+          : FieldValue.serverTimestamp(),
     };
   }
 }
