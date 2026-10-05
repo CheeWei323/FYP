@@ -114,120 +114,146 @@ service cloud.firestore {
              && data.completedAt == null;
     }
 
-    // Validates regulatory data maintained by the Content Manager.
-    function validTravelRule(data) {
-      return data.keys().hasAll([
-               'countryId',
-               'category',
-               'title',
-               'checklistLabel',
-               'description',
-               'purposes',
-               'minDurationDays',
-               'maxDurationDays',
-               'mandatory',
-               'officialUrl',
-               'sourceName',
-               'active',
-               'priority',
-               'lastValidatedAt'
-             ])
-             && data.keys().hasOnly([
-               'countryId',
-               'category',
-               'title',
-               'checklistLabel',
-               'description',
-               'purposes',
-               'minDurationDays',
-               'maxDurationDays',
-               'mandatory',
-               'officialUrl',
-               'sourceName',
-               'active',
-               'priority',
-               'lastValidatedAt'
-             ])
+  // Validates regulatory data maintained by the Content Manager.
+  function validTravelRule(data) {
+  return data.keys().hasAll([
+           'countryId',
+           'category',
+           'title',
+           'checklistLabel',
+           'description',
+           'purposes',
+           'minDurationDays',
+           'maxDurationDays',
+           'mandatory',
+           'officialUrl',
+           'sourceName',
+           'active',
+           'reviewStatus',
+           'priority',
+           'lastValidatedAt'
+         ])
+         && data.keys().hasOnly([
+           'countryId',
+           'category',
+           'title',
+           'checklistLabel',
+           'description',
+           'purposes',
+           'minDurationDays',
+           'maxDurationDays',
+           'mandatory',
+           'officialUrl',
+           'sourceName',
+           'active',
+           'reviewStatus',
+           'priority',
+           'lastValidatedAt'
+         ])
 
-             // Destination
-             && data.countryId is string
-             && data.countryId.size() > 0
-             && exists(
-               /databases/$(database)/documents/countries/$(data.countryId)
-             )
+         // Destination
+         && data.countryId is string
+         && data.countryId.size() > 0
+         && exists(
+           /databases/$(database)/documents/countries/$(data.countryId)
+         )
 
-             // Rule category
-             && data.category in [
-               'passport',
-               'visa',
-               'entry',
-               'document',
-               'health'
+         // Rule category
+         && data.category in [
+           'passport',
+           'visa',
+           'entry',
+           'document',
+           'health'
+         ]
+
+         // Traveller-facing regulatory information
+         && data.title is string
+         && data.title.size() > 0
+
+         && data.checklistLabel is string
+         && data.checklistLabel.size() > 0
+
+         && data.description is string
+         && data.description.size() > 0
+
+         // Travel purposes
+         && data.purposes is list
+         && data.purposes.size() > 0
+         && data.purposes.size() <= 3
+         && data.purposes.hasOnly([
+           'all',
+           'tourism',
+           'business',
+           'study'
+         ])
+
+         // "all" cannot be combined with individual purposes.
+         && (
+           data.purposes == ['all']
+           || !data.purposes.hasAny([
+             'all'
+           ])
+         )
+
+         // Duration
+         && data.minDurationDays is int
+         && data.minDurationDays >= 1
+         && data.minDurationDays <= 3650
+
+         && (
+           data.maxDurationDays == null
+           || (
+             data.maxDurationDays is int
+             && data.maxDurationDays >= data.minDurationDays
+             && data.maxDurationDays <= 3650
+           )
+         )
+
+         // Requirement type
+         && data.mandatory is bool
+
+         // Official reference
+         && data.officialUrl is string
+         && data.officialUrl.size() > 0
+
+         && data.sourceName is string
+         && data.sourceName.size() > 0
+
+         // Publication status
+         && data.active is bool
+
+         // Review workflow
+         && data.reviewStatus in [
+           'pendingReview',
+           'approved',
+           'disabled'
+         ]
+
+         // Active rules must be approved.
+         // Pending or disabled rules must remain inactive.
+         && (
+           (
+             data.active == true
+             && data.reviewStatus == 'approved'
+           )
+           ||
+           (
+             data.active == false
+             && data.reviewStatus in [
+               'pendingReview',
+               'disabled'
              ]
+           )
+         )
 
-             // Traveller-facing regulatory information
-             && data.title is string
-             && data.title.size() > 0
+         // Display priority
+         && data.priority is int
+         && data.priority >= 0
 
-             && data.checklistLabel is string
-             && data.checklistLabel.size() > 0
-
-             && data.description is string
-             && data.description.size() > 0
-
-             // Travel purposes
-             && data.purposes is list
-             && data.purposes.size() > 0
-             && data.purposes.size() <= 3
-             && data.purposes.hasOnly([
-               'all',
-               'tourism',
-               'business',
-               'study'
-             ])
-
-             // "all" cannot be combined with individual purposes.
-             && (
-               data.purposes == ['all']
-               || !data.purposes.hasAny([
-                 'all'
-               ])
-             )
-
-             // Duration
-             && data.minDurationDays is int
-             && data.minDurationDays >= 1
-             && data.minDurationDays <= 3650
-
-             && (
-               data.maxDurationDays == null
-               || (
-                 data.maxDurationDays is int
-                 && data.maxDurationDays >= data.minDurationDays
-                 && data.maxDurationDays <= 3650
-               )
-             )
-
-             // Requirement type
-             && data.mandatory is bool
-
-             // Official reference
-             && data.officialUrl is string
-             && data.officialUrl.size() > 0
-
-             && data.sourceName is string
-             && data.sourceName.size() > 0
-
-             // Publication status
-             && data.active is bool
-
-             // Display priority
-             && data.priority is int
-             && data.priority >= 0
-
-             // Validation timestamp
-             && data.lastValidatedAt is timestamp;
-    }
+         // Validation timestamp
+         && data.lastValidatedAt is timestamp;
+}
 
 
     // -----------------------------------------------------------------------
@@ -278,17 +304,17 @@ service cloud.firestore {
       // Authenticated users may read regulatory information.
       allow read: if request.auth != null;
 
-      // Content Managers may create structurally valid rules.
-      // New rules must initially be inactive so they can be reviewed
-      // before becoming available to the Traveller DSS.
+      // New Content Manager rules must start inactive
+      // and remain pending review until explicitly enabled.
       allow create: if isContentManager()
                     && request.resource.data.active == false
+                    && request.resource.data.reviewStatus == 'pendingReview'
                     && validTravelRule(
                       request.resource.data
                     );
 
-      // Content Managers may edit existing regulations.
-      // A rule cannot be moved to another destination after creation.
+      // Content Managers may edit or change the publication status
+      // of an existing rule. The destination cannot be changed
       allow update: if isContentManager()
                     && request.resource.data.countryId
                        == resource.data.countryId
@@ -301,6 +327,67 @@ service cloud.firestore {
       allow delete: if false;
     }
 
+    // -----------------------------------------------------------------------
+   // RULE ACTIVITY LOGS
+  // -----------------------------------------------------------------------
+
+  match /ruleActivityLogs/{logId} {
+
+  // Content Managers may read the regulatory activity history.
+  allow read: if isContentManager();
+
+  // Content Managers may create activity logs only for themselves.
+  allow create: if isContentManager()
+                && request.resource.data.keys().hasAll([
+                  'action',
+                  'ruleId',
+                  'ruleTitle',
+                  'countryId',
+                  'performedByUid',
+                  'performedByName',
+                  'performedByEmail',
+                  'timestamp'
+                ])
+                && request.resource.data.keys().hasOnly([
+                  'action',
+                  'ruleId',
+                  'ruleTitle',
+                  'countryId',
+                  'performedByUid',
+                  'performedByName',
+                  'performedByEmail',
+                  'timestamp'
+                ])
+
+                && request.resource.data.action in [
+                  'created',
+                  'updated',
+                  'enabled',
+                  'disabled'
+                ]
+
+                && request.resource.data.ruleId is string
+                && request.resource.data.ruleId.size() > 0
+
+                && request.resource.data.ruleTitle is string
+                && request.resource.data.ruleTitle.size() > 0
+
+                && request.resource.data.countryId is string
+                && request.resource.data.countryId.size() > 0
+
+                && request.resource.data.performedByUid
+                   == request.auth.uid
+
+                && request.resource.data.performedByName is string
+                && request.resource.data.performedByName.size() > 0
+
+                && request.resource.data.performedByEmail is string
+
+                && request.resource.data.timestamp is timestamp;
+
+  // Activity history is immutable.
+  allow update, delete: if false;
+}
 
     // -----------------------------------------------------------------------
     // TRIPS
