@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../../services/admin_service.dart';
 import '../admin/manage_users_screen.dart';
+import '../admin/manage_destinations_screen.dart';
 
 class AdminDashboard extends StatefulWidget {
   const AdminDashboard({super.key});
@@ -52,6 +53,19 @@ class _AdminDashboardState extends State<AdminDashboard> {
     await Navigator.push(
       context,
       MaterialPageRoute(builder: (context) => const ManageUsersScreen()),
+    );
+
+    if (!mounted) {
+      return;
+    }
+
+    await _refresh();
+  }
+
+  Future<void> _openDestinations() async {
+    await Navigator.push(
+      context,
+      MaterialPageRoute(builder: (context) => const ManageDestinationsScreen()),
     );
 
     if (!mounted) {
@@ -122,8 +136,20 @@ class _AdminDashboardState extends State<AdminDashboard> {
                 description:
                     'Review registered accounts and manage '
                     'their authorised system roles.',
-                actionText: 'View User Accounts',
+                actionText: 'Manage User Accounts',
                 onTap: _openUsers,
+              ),
+
+              const SizedBox(height: 12),
+
+              _buildManagementCard(
+                icon: Icons.public_outlined,
+                title: 'Destination Management',
+                description:
+                    'Control which supported destinations are '
+                    'available when travellers create new trips.',
+                actionText: 'Manage Destinations',
+                onTap: _openDestinations,
               ),
 
               const SizedBox(height: 28),

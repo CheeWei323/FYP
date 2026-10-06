@@ -2,6 +2,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 
 import '../models/system_user.dart';
+import '../models/country.dart';
 
 class AdminService {
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
@@ -113,6 +114,64 @@ class AdminService {
     await _firestore.collection('users').doc(user.id).update({
       'role': newRole,
       'updatedAt': FieldValue.serverTimestamp(),
+    });
+  }
+
+  // ---------------------------------------------------------------------------
+  // DESTINATION MANAGEMENT
+  // ---------------------------------------------------------------------------
+
+  // Retrieves all supported destinations, including disabled destinations.
+  Future<List<Country>> getAllCountries() async {
+    final QuerySnapshot<Map<String, dynamic>> snapshot = await _firestore
+        .collection('countries')
+        .get();
+
+    final List<Country> countries = snapshot.docs
+        .map((document) => Country.fromFirestore(document))
+        .toList();
+
+    countries.sort((a, b) => a.name.compareTo(b.name));
+
+    return countries;
+  }
+
+  // Enables or disables a supported destination.
+  // At least one destination must remain enabled so that
+  // travellers can continue creating trips.
+  Future<void> setCountryEnabled({
+    required Country country,
+    required bool enabled,
+  }) async {
+    final User? currentUser = _auth.currentUser;
+
+    if (currentUser == null) {
+      throw Exception('No authenticated administrator.');
+    }
+
+    if (country.enabled == enabled) {
+      return;
+    }
+
+    if (!enabled) {
+      final QuerySnapshot<Map<String, dynamic>> enabledSnapshot =
+          await _firestore
+              .collection('countries')
+              .where('enabled', isEqualTo: true)
+              .get();
+
+      final bool targetIsEnabled = enabledSnapshot.docs.any(
+        (document) => document.id == country.id,
+      );
+
+      if (targetIsEnabled && enabledSnapshot.docs.length <= 1) {
+        throw StateError('At least one destination must remain enabled.');
+      }
+    }
+
+    await _firestore.collection('countries').doc(country.id).update({
+      'enabled': enabled,
+      'lastUpdated': FieldValue.serverTimestamp(),
     });
   }
 }
