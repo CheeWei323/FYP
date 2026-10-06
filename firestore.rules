@@ -23,6 +23,14 @@ service cloud.firestore {
              ).data.role == 'contentManager';
     }
 
+    // Checks whether the authenticated account has the Administrator role.
+    function isAdmin() {
+      return request.auth != null
+             && get(
+               /databases/$(database)/documents/users/$(request.auth.uid)
+            ).data.role == 'admin';
+}
+
     // Checks whether the authenticated user owns the selected trip.
     function ownsTrip(tripId) {
       return request.auth != null
@@ -267,9 +275,10 @@ service cloud.firestore {
                     && request.auth.uid == userId
                     && request.resource.data.role == 'traveller';
 
-      // Users may read only their own profile.
+      // Users may read their own profile.
+     // Administrators may read user profiles for account management.
       allow read: if request.auth != null
-                  && request.auth.uid == userId;
+                    && (request.auth.uid == userId || isAdmin());
 
       // Users may update their own profile but cannot change their role.
       allow update: if request.auth != null
