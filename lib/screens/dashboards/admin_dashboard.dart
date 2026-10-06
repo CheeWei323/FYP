@@ -120,7 +120,7 @@ class _AdminDashboardState extends State<AdminDashboard> {
                 icon: Icons.manage_accounts_outlined,
                 title: 'User & Role Management',
                 description:
-                    'Review registered accounts and '
+                    'Review registered accounts and manage '
                     'their authorised system roles.',
                 actionText: 'View User Accounts',
                 onTap: _openUsers,
@@ -456,10 +456,10 @@ class _AdminDashboardState extends State<AdminDashboard> {
 
           Expanded(
             child: Text(
-              'Administrator access is used to review '
-              'system accounts and control system-level '
-              'configuration. User accounts are read-only '
-              'during this stage.',
+              'Administrator access is used to manage authorised '
+              'system roles and system-level configuration '
+              'Administrator accounts remain protected from '
+              'client-side role modification.',
               style: TextStyle(
                 fontSize: 12.5,
                 height: 1.5,

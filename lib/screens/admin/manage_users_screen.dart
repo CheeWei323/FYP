@@ -29,6 +29,8 @@ class _ManageUsersScreenState extends State<ManageUsersScreen> {
 
   String _searchText = '';
 
+  String? _updatingUserId;
+
   @override
   void initState() {
     super.initState();
@@ -128,6 +130,270 @@ class _ManageUsersScreenState extends State<ManageUsersScreen> {
     return '${localDate.day} '
         '${months[localDate.month - 1]} '
         '${localDate.year}';
+  }
+
+  String _roleDescription(String role) {
+    switch (role) {
+      case 'traveller':
+        return 'Access travel planning, requirements and packing features.';
+
+      case 'contentManager':
+        return 'Maintain and review regulatory travel information.';
+
+      case 'analyst':
+        return 'Access tourism data analytics and reporting features.';
+
+      default:
+        return '';
+    }
+  }
+
+  IconData _roleIcon(String role) {
+    switch (role) {
+      case 'traveller':
+        return Icons.luggage_outlined;
+
+      case 'contentManager':
+        return Icons.policy_outlined;
+
+      case 'analyst':
+        return Icons.analytics_outlined;
+
+      default:
+        return Icons.person_outline_rounded;
+    }
+  }
+
+  Future<void> _changeUserRole(SystemUser user) async {
+    if (_updatingUserId != null || user.role == 'admin') {
+      return;
+    }
+
+    String selectedRole = user.role;
+
+    final String? newRole = await showDialog<String>(
+      context: context,
+      builder: (BuildContext dialogContext) {
+        return StatefulBuilder(
+          builder: (context, setDialogState) {
+            return AlertDialog(
+              title: const Text('Change User Role'),
+              content: SingleChildScrollView(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      user.fullName.isEmpty ? user.email : user.fullName,
+                      style: const TextStyle(
+                        fontWeight: FontWeight.w700,
+                        color: _darkTextColor,
+                      ),
+                    ),
+
+                    const SizedBox(height: 4),
+
+                    Text(
+                      user.email,
+                      style: const TextStyle(
+                        fontSize: 12,
+                        color: Colors.black54,
+                      ),
+                    ),
+
+                    const SizedBox(height: 18),
+
+                    const Text(
+                      'Select the authorised role for this account.',
+                      style: TextStyle(fontSize: 13, color: Color(0xFF486581)),
+                    ),
+
+                    const SizedBox(height: 10),
+
+                    RadioGroup<String>(
+                      groupValue: selectedRole,
+                      onChanged: (String? value) {
+                        if (value == null) {
+                          return;
+                        }
+
+                        setDialogState(() {
+                          selectedRole = value;
+                        });
+                      },
+                      child: Column(
+                        children: [
+                          _buildRoleOption(
+                            role: 'traveller',
+                            selectedRole: selectedRole,
+                          ),
+
+                          _buildRoleOption(
+                            role: 'contentManager',
+                            selectedRole: selectedRole,
+                          ),
+
+                          _buildRoleOption(
+                            role: 'analyst',
+                            selectedRole: selectedRole,
+                          ),
+                        ],
+                      ),
+                    ),
+
+                    const SizedBox(height: 10),
+
+                    Container(
+                      padding: const EdgeInsets.all(12),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFFF1F6FA),
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      child: const Row(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Icon(
+                            Icons.info_outline_rounded,
+                            size: 18,
+                            color: _primaryColor,
+                          ),
+
+                          SizedBox(width: 9),
+
+                          Expanded(
+                            child: Text(
+                              'Changing a role changes the system '
+                              'features and permissions available to '
+                              'this account.',
+                              style: TextStyle(
+                                fontSize: 11.5,
+                                height: 1.4,
+                                color: Color(0xFF486581),
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () {
+                    Navigator.pop(dialogContext);
+                  },
+                  child: const Text('Cancel'),
+                ),
+                FilledButton(
+                  onPressed: selectedRole == user.role
+                      ? null
+                      : () {
+                          Navigator.pop(dialogContext, selectedRole);
+                        },
+                  child: const Text('Update Role'),
+                ),
+              ],
+            );
+          },
+        );
+      },
+    );
+
+    if (newRole == null || newRole == user.role || !mounted) {
+      return;
+    }
+
+    final bool? confirmed = await showDialog<bool>(
+      context: context,
+      builder: (BuildContext dialogContext) {
+        return AlertDialog(
+          icon: const Icon(
+            Icons.manage_accounts_outlined,
+            color: _primaryColor,
+            size: 32,
+          ),
+          title: const Text('Confirm Role Change', textAlign: TextAlign.center),
+          content: Text(
+            'Change ${user.fullName.isEmpty ? 'this account' : user.fullName} '
+            'from ${_formatRole(user.role)} to '
+            '${_formatRole(newRole)}?',
+            textAlign: TextAlign.center,
+          ),
+          actions: [
+            TextButton(
+              onPressed: () {
+                Navigator.pop(dialogContext, false);
+              },
+              child: const Text('Cancel'),
+            ),
+            FilledButton(
+              onPressed: () {
+                Navigator.pop(dialogContext, true);
+              },
+              child: const Text('Confirm'),
+            ),
+          ],
+        );
+      },
+    );
+
+    if (confirmed != true || !mounted) {
+      return;
+    }
+
+    setState(() {
+      _updatingUserId = user.id;
+    });
+
+    try {
+      await _adminService.updateUserRole(user: user, newRole: newRole);
+
+      if (!mounted) {
+        return;
+      }
+
+      final Future<List<SystemUser>> future = _loadUsers();
+
+      setState(() {
+        _usersFuture = future;
+      });
+
+      await future;
+
+      if (!mounted) {
+        return;
+      }
+
+      ScaffoldMessenger.of(context)
+        ..hideCurrentSnackBar()
+        ..showSnackBar(
+          SnackBar(
+            content: Text(
+              'Role updated to '
+              '${_formatRole(newRole)}.',
+            ),
+          ),
+        );
+    } catch (error) {
+      debugPrint('ADMIN ROLE UPDATE ERROR: $error');
+
+      if (!mounted) {
+        return;
+      }
+
+      ScaffoldMessenger.of(context)
+        ..hideCurrentSnackBar()
+        ..showSnackBar(
+          const SnackBar(content: Text('Unable to update the user role.')),
+        );
+    } finally {
+      if (mounted) {
+        setState(() {
+          _updatingUserId = null;
+        });
+      }
+    }
   }
 
   // ---------------------------------------------------------------------------
@@ -263,7 +529,7 @@ class _ManageUsersScreenState extends State<ManageUsersScreen> {
 
                 Text(
                   'Review registered system accounts and '
-                  'their authorised roles.',
+                  'manage their authorised roles.',
                   style: TextStyle(
                     fontSize: 13,
                     height: 1.45,
@@ -378,6 +644,49 @@ class _ManageUsersScreenState extends State<ManageUsersScreen> {
                     _buildInfoChip('Joined ${_formatDate(user.createdAt)}'),
                   ],
                 ),
+                if (user.role != 'admin') ...[
+                  const SizedBox(height: 12),
+
+                  SizedBox(
+                    width: double.infinity,
+                    height: 40,
+                    child: OutlinedButton.icon(
+                      onPressed: _updatingUserId != null
+                          ? null
+                          : () => _changeUserRole(user),
+                      icon: _updatingUserId == user.id
+                          ? const SizedBox(
+                              width: 16,
+                              height: 16,
+                              child: CircularProgressIndicator(strokeWidth: 2),
+                            )
+                          : const Icon(
+                              Icons.manage_accounts_outlined,
+                              size: 18,
+                            ),
+                      label: const Text('Manage Role'),
+                    ),
+                  ),
+                ] else ...[
+                  const SizedBox(height: 10),
+
+                  const Row(
+                    children: [
+                      Icon(
+                        Icons.lock_outline_rounded,
+                        size: 15,
+                        color: Colors.black38,
+                      ),
+
+                      SizedBox(width: 5),
+
+                      Text(
+                        'Administrator role is protected',
+                        style: TextStyle(fontSize: 10.5, color: Colors.black45),
+                      ),
+                    ],
+                  ),
+                ],
               ],
             ),
           ),
@@ -488,6 +797,59 @@ class _ManageUsersScreenState extends State<ManageUsersScreen> {
 
           OutlinedButton(onPressed: _refresh, child: const Text('Try Again')),
         ],
+      ),
+    );
+  }
+
+  Widget _buildRoleOption({
+    required String role,
+    required String selectedRole,
+  }) {
+    final bool selected = selectedRole == role;
+
+    return Container(
+      margin: const EdgeInsets.only(bottom: 8),
+      decoration: BoxDecoration(
+        color: selected ? const Color(0xFFE8F6F7) : Colors.white,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: selected ? _primaryColor : _borderColor),
+      ),
+      child: RadioListTile<String>(
+        value: role,
+        activeColor: _primaryColor,
+        title: Row(
+          children: [
+            Icon(
+              _roleIcon(role),
+              size: 19,
+              color: selected ? _primaryColor : const Color(0xFF486581),
+            ),
+
+            const SizedBox(width: 8),
+
+            Expanded(
+              child: Text(
+                _formatRole(role),
+                style: TextStyle(
+                  fontSize: 13.5,
+                  fontWeight: FontWeight.w700,
+                  color: selected ? _primaryColor : _darkTextColor,
+                ),
+              ),
+            ),
+          ],
+        ),
+        subtitle: Padding(
+          padding: const EdgeInsets.only(top: 3),
+          child: Text(
+            _roleDescription(role),
+            style: const TextStyle(
+              fontSize: 10.5,
+              height: 1.3,
+              color: Colors.black54,
+            ),
+          ),
+        ),
       ),
     );
   }

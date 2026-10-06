@@ -1,9 +1,12 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 
 import '../models/system_user.dart';
 
 class AdminService {
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
+
+  final FirebaseAuth _auth = FirebaseAuth.instance;
 
   // ---------------------------------------------------------------------------
   // SYSTEM OVERVIEW
@@ -71,5 +74,45 @@ class AdminService {
     });
 
     return users;
+  }
+
+  // ---------------------------------------------------------------------------
+  // USER ROLE MANAGEMENT
+  // ---------------------------------------------------------------------------
+
+  // Changes the role of a non-administrator account.
+  // Administrator roles cannot be assigned through the client application.
+  Future<void> updateUserRole({
+    required SystemUser user,
+    required String newRole,
+  }) async {
+    const Set<String> allowedRoles = {'traveller', 'contentManager', 'analyst'};
+
+    if (!allowedRoles.contains(newRole)) {
+      throw Exception('Invalid user role.');
+    }
+
+    final User? currentUser = _auth.currentUser;
+
+    if (currentUser == null) {
+      throw Exception('No authenticated administrator.');
+    }
+
+    if (currentUser.uid == user.id) {
+      throw Exception('Administrators cannot change their own role.');
+    }
+
+    if (user.role == 'admin') {
+      throw Exception('Administrator accounts cannot be modified.');
+    }
+
+    if (user.role == newRole) {
+      return;
+    }
+
+    await _firestore.collection('users').doc(user.id).update({
+      'role': newRole,
+      'updatedAt': FieldValue.serverTimestamp(),
+    });
   }
 }
