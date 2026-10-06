@@ -332,14 +332,26 @@ service cloud.firestore {
     // COUNTRIES
     // -----------------------------------------------------------------------
 
-    match /countries/{countryId} {
+  match /countries/{countryId} {
+    // Authenticated users may read destination configuration.
+    allow read: if request.auth != null;
 
-      // Authenticated users may read supported destination information.
-      allow read: if request.auth != null;
+   // Administrators may only change destination availability.
+   // Country identity fields remain protected.
+    allow update: if isAdmin()
+                  && request.resource.data
+                       .diff(resource.data)
+                       .affectedKeys()
+                       .hasOnly([
+                         'enabled',
+                         'lastUpdated'
+                       ])
+                  && request.resource.data.enabled is bool
+                  && request.resource.data.lastUpdated
+                      == request.time;
 
-      // Country management is not yet enabled.
-      allow write: if false;
-    }
+  allow create, delete: if false;
+}
 
 
     // -----------------------------------------------------------------------
