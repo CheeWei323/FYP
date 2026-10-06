@@ -39,6 +39,17 @@ service cloud.firestore {
              ).data.userId == request.auth.uid;
     }
 
+    // Roles that may be assigned through Administrator user management.
+   // Administrator access is provisioned separately and cannot be granted
+  // through the client application.
+   function isAssignableRole(role) {
+     return role in [
+       'traveller',
+       'contentManager',
+       'analyst'
+  ];
+}
+
 
     // -----------------------------------------------------------------------
     // DATA VALIDATION HELPERS
@@ -281,9 +292,36 @@ service cloud.firestore {
                     && (request.auth.uid == userId || isAdmin());
 
       // Users may update their own profile but cannot change their role.
+     // Administrators may change the role of non-administrator accounts.
+    // Administrative role changes may modify only the role and updatedAt.
+   // Administrator accounts cannot be promoted, demoted or modified
+  // through client-side role management.
       allow update: if request.auth != null
-                    && request.auth.uid == userId
-                    && request.resource.data.role == resource.data.role;
+                     && (
+                       (
+                        request.auth.uid == userId
+                     && request.resource.data.role
+                        == resource.data.role
+                )
+                ||
+                (
+                  isAdmin()
+                     && request.auth.uid != userId
+                     && resource.data.role != 'admin'
+                     && isAssignableRole(
+                           request.resource.data.role
+                     )
+                     && request.resource.data
+                          .diff(resource.data)
+                          .affectedKeys()
+                          .hasOnly([
+                            'role',
+                            'updatedAt'
+                       ])
+                     && request.resource.data.updatedAt
+                         == request.time
+                )
+              );
 
       // User accounts are not deleted directly from the client.
       allow delete: if false;
