@@ -3,6 +3,8 @@ import 'package:flutter/material.dart';
 import '../../services/admin_service.dart';
 import '../admin/manage_users_screen.dart';
 import '../admin/manage_destinations_screen.dart';
+import '../../models/admin_activity_log.dart';
+import '../admin/admin_activity_history_screen.dart';
 
 class AdminDashboard extends StatefulWidget {
   const AdminDashboard({super.key});
@@ -24,11 +26,15 @@ class _AdminDashboardState extends State<AdminDashboard> {
 
   late Future<Map<String, int>> _overviewFuture;
 
+  late Future<List<AdminActivityLog>> _recentActivityFuture;
+
   @override
   void initState() {
     super.initState();
 
     _overviewFuture = _adminService.getOverview();
+
+    _recentActivityFuture = _adminService.getRecentActivity(limit: 4);
   }
 
   // ---------------------------------------------------------------------------
@@ -36,13 +42,19 @@ class _AdminDashboardState extends State<AdminDashboard> {
   // ---------------------------------------------------------------------------
 
   Future<void> _refresh() async {
-    final Future<Map<String, int>> future = _adminService.getOverview();
+    final Future<Map<String, int>> overviewFuture = _adminService.getOverview();
+
+    final Future<List<AdminActivityLog>> activityFuture = _adminService
+        .getRecentActivity(limit: 4);
 
     setState(() {
-      _overviewFuture = future;
+      _overviewFuture = overviewFuture;
+
+      _recentActivityFuture = activityFuture;
     });
 
-    await future;
+    await overviewFuture;
+    await activityFuture;
   }
 
   // ---------------------------------------------------------------------------
@@ -66,6 +78,21 @@ class _AdminDashboardState extends State<AdminDashboard> {
     await Navigator.push(
       context,
       MaterialPageRoute(builder: (context) => const ManageDestinationsScreen()),
+    );
+
+    if (!mounted) {
+      return;
+    }
+
+    await _refresh();
+  }
+
+  Future<void> _openActivityHistory() async {
+    await Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (context) => const AdminActivityHistoryScreen(),
+      ),
     );
 
     if (!mounted) {
@@ -151,6 +178,33 @@ class _AdminDashboardState extends State<AdminDashboard> {
                 actionText: 'Manage Destinations',
                 onTap: _openDestinations,
               ),
+
+              const SizedBox(height: 28),
+
+              Row(
+                children: [
+                  const Expanded(
+                    child: Text(
+                      'Recent Administrative Activity',
+                      style: TextStyle(
+                        fontSize: 18,
+                        fontWeight: FontWeight.w800,
+                        color: _darkTextColor,
+                      ),
+                    ),
+                  ),
+                  TextButton(
+                    onPressed: _openActivityHistory,
+                    child: const Text('View All'),
+                  ),
+                ],
+              ),
+
+              const SizedBox(height: 10),
+
+              _buildRecentActivity(),
+
+              const SizedBox(height: 28),
 
               const SizedBox(height: 28),
 
@@ -459,6 +513,204 @@ class _AdminDashboardState extends State<AdminDashboard> {
         ),
       ),
     );
+  }
+
+  Widget _buildRecentActivity() {
+    return FutureBuilder<List<AdminActivityLog>>(
+      future: _recentActivityFuture,
+      builder: (context, snapshot) {
+        if (snapshot.connectionState == ConnectionState.waiting) {
+          return Container(
+            height: 100,
+            decoration: BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(16),
+              border: Border.all(color: _borderColor),
+            ),
+            child: const Center(child: CircularProgressIndicator()),
+          );
+        }
+
+        if (snapshot.hasError) {
+          return Container(
+            width: double.infinity,
+            padding: const EdgeInsets.all(18),
+            decoration: BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(16),
+              border: Border.all(color: _borderColor),
+            ),
+            child: const Text(
+              'Unable to load recent activity.',
+              textAlign: TextAlign.center,
+            ),
+          );
+        }
+
+        final List<AdminActivityLog> logs = snapshot.data ?? [];
+
+        if (logs.isEmpty) {
+          return Container(
+            width: double.infinity,
+            padding: const EdgeInsets.all(22),
+            decoration: BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(16),
+              border: Border.all(color: _borderColor),
+            ),
+            child: const Column(
+              children: [
+                Icon(Icons.history_rounded, color: Colors.black38),
+                SizedBox(height: 7),
+                Text(
+                  'No administrative activity yet.',
+                  style: TextStyle(fontSize: 12.5, color: Colors.black54),
+                ),
+              ],
+            ),
+          );
+        }
+
+        return Column(
+          children: [for (final log in logs) _buildRecentActivityCard(log)],
+        );
+      },
+    );
+  }
+
+  Widget _buildRecentActivityCard(AdminActivityLog log) {
+    return Container(
+      width: double.infinity,
+      margin: const EdgeInsets.only(bottom: 9),
+      padding: const EdgeInsets.all(15),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(15),
+        border: Border.all(color: _borderColor),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Container(
+            width: 39,
+            height: 39,
+            decoration: BoxDecoration(
+              color: const Color(0xFFE8F6F7),
+              borderRadius: BorderRadius.circular(11),
+            ),
+            child: Icon(
+              _adminActivityIcon(log.action),
+              color: _primaryColor,
+              size: 20,
+            ),
+          ),
+
+          const SizedBox(width: 12),
+
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  _adminActivityLabel(log.action),
+                  style: const TextStyle(
+                    fontSize: 11,
+                    fontWeight: FontWeight.w700,
+                    color: _primaryColor,
+                  ),
+                ),
+
+                const SizedBox(height: 3),
+
+                Text(
+                  log.targetName,
+                  style: const TextStyle(
+                    fontSize: 14,
+                    fontWeight: FontWeight.w700,
+                    color: _darkTextColor,
+                  ),
+                ),
+
+                const SizedBox(height: 3),
+
+                Text(
+                  log.details,
+                  style: const TextStyle(fontSize: 11.5, color: Colors.black54),
+                ),
+
+                const SizedBox(height: 6),
+
+                Text(
+                  '${log.performedByName.isEmpty ? log.performedByEmail : log.performedByName}'
+                  ' • '
+                  '${_formatAdminActivityTime(log.timestamp)}',
+                  style: const TextStyle(fontSize: 9.5, color: Colors.black45),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  String _adminActivityLabel(String action) {
+    switch (action) {
+      case 'roleChanged':
+        return 'ROLE CHANGED';
+
+      case 'destinationEnabled':
+        return 'DESTINATION ENABLED';
+
+      case 'destinationDisabled':
+        return 'DESTINATION DISABLED';
+
+      default:
+        return 'ADMINISTRATIVE ACTION';
+    }
+  }
+
+  IconData _adminActivityIcon(String action) {
+    switch (action) {
+      case 'roleChanged':
+        return Icons.manage_accounts_outlined;
+
+      case 'destinationEnabled':
+        return Icons.check_circle_outline_rounded;
+
+      case 'destinationDisabled':
+        return Icons.block_outlined;
+
+      default:
+        return Icons.history_rounded;
+    }
+  }
+
+  String _formatAdminActivityTime(DateTime? timestamp) {
+    if (timestamp == null) {
+      return 'Time pending';
+    }
+
+    final DateTime local = timestamp.toLocal();
+
+    const List<String> months = [
+      'Jan',
+      'Feb',
+      'Mar',
+      'Apr',
+      'May',
+      'Jun',
+      'Jul',
+      'Aug',
+      'Sep',
+      'Oct',
+      'Nov',
+      'Dec',
+    ];
+
+    return '${local.day} '
+        '${months[local.month - 1]} '
+        '${local.year}';
   }
 
   // ---------------------------------------------------------------------------
