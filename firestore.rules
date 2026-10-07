@@ -448,6 +448,66 @@ service cloud.firestore {
   allow update, delete: if false;
 }
 
+   // -----------------------------------------------------------------------
+  // ADMINISTRATIVE ACTIVITY LOGS
+ // -----------------------------------------------------------------------
+
+ match /adminActivityLogs/{logId} {
+
+    // Administrative activity is visible only to administrators.
+    allow read: if isAdmin();
+
+    // Logs may only be created by the authenticated administrator
+    // who performed the administrative action.
+    allow create: if isAdmin()
+                && request.resource.data.keys().hasAll([
+                  'action',
+                  'targetId',
+                  'targetName',
+                  'details',
+                  'performedByUid',
+                  'performedByName',
+                  'performedByEmail',
+                  'timestamp'
+                ])
+                && request.resource.data.keys().hasOnly([
+                  'action',
+                  'targetId',
+                  'targetName',
+                  'details',
+                  'performedByUid',
+                  'performedByName',
+                  'performedByEmail',
+                  'timestamp'
+                ])
+                && request.resource.data.action in [
+                  'roleChanged',
+                  'destinationEnabled',
+                  'destinationDisabled'
+                ]
+                && request.resource.data.targetId is string
+                && request.resource.data.targetId.size() > 0
+                && request.resource.data.targetName is string
+                && request.resource.data.targetName.size() > 0
+                && request.resource.data.details is string
+                && request.resource.data.details.size() > 0
+                && request.resource.data.performedByUid
+                   == request.auth.uid
+                && request.resource.data.performedByName
+                   == get(
+                     /databases/$(database)/documents/users/$(request.auth.uid)
+                   ).data.fullName
+                && request.resource.data.performedByEmail
+                   == get(
+                     /databases/$(database)/documents/users/$(request.auth.uid)
+                   ).data.email
+                && request.resource.data.timestamp
+                   == request.time;
+
+  // Administrative history is append-only.
+  allow update, delete: if false;
+}
+
     // -----------------------------------------------------------------------
     // TRIPS
     // -----------------------------------------------------------------------
