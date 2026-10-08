@@ -1,10 +1,11 @@
 import 'package:flutter/material.dart';
 
-import '../../services/admin_service.dart';
-import '../admin/manage_users_screen.dart';
-import '../admin/manage_destinations_screen.dart';
 import '../../models/admin_activity_log.dart';
+import '../../services/admin_service.dart';
 import '../admin/admin_activity_history_screen.dart';
+import '../admin/admin_profile_screen.dart';
+import '../admin/manage_destinations_screen.dart';
+import '../admin/manage_users_screen.dart';
 
 class AdminDashboard extends StatefulWidget {
   const AdminDashboard({super.key});
@@ -27,6 +28,12 @@ class _AdminDashboardState extends State<AdminDashboard> {
   late Future<Map<String, int>> _overviewFuture;
 
   late Future<List<AdminActivityLog>> _recentActivityFuture;
+
+  int _selectedIndex = 0;
+
+  // ---------------------------------------------------------------------------
+  // LIFECYCLE
+  // ---------------------------------------------------------------------------
 
   @override
   void initState() {
@@ -115,103 +122,135 @@ class _AdminDashboardState extends State<AdminDashboard> {
         backgroundColor: Colors.white,
         surfaceTintColor: Colors.white,
         elevation: 0,
-        title: const Text(
-          'System Administrator',
-          style: TextStyle(color: _darkTextColor, fontWeight: FontWeight.w700),
+        title: Text(
+          _selectedIndex == 0 ? 'System Administrator' : 'Profile',
+          style: const TextStyle(
+            color: _darkTextColor,
+            fontWeight: FontWeight.w700,
+          ),
         ),
       ),
       body: SafeArea(
-        child: RefreshIndicator(
-          onRefresh: _refresh,
-          child: ListView(
-            physics: const AlwaysScrollableScrollPhysics(),
-            padding: const EdgeInsets.fromLTRB(18, 18, 18, 36),
+        child: IndexedStack(
+          index: _selectedIndex,
+          children: [_buildDashboardContent(), const AdminProfileScreen()],
+        ),
+      ),
+      bottomNavigationBar: NavigationBar(
+        selectedIndex: _selectedIndex,
+        onDestinationSelected: (int index) {
+          setState(() {
+            _selectedIndex = index;
+          });
+        },
+        destinations: const [
+          NavigationDestination(
+            icon: Icon(Icons.dashboard_outlined),
+            selectedIcon: Icon(Icons.dashboard_rounded),
+            label: 'Dashboard',
+          ),
+          NavigationDestination(
+            icon: Icon(Icons.person_outline_rounded),
+            selectedIcon: Icon(Icons.person_rounded),
+            label: 'Profile',
+          ),
+        ],
+      ),
+    );
+  }
+
+  // ---------------------------------------------------------------------------
+  // DASHBOARD CONTENT
+  // ---------------------------------------------------------------------------
+
+  Widget _buildDashboardContent() {
+    return RefreshIndicator(
+      onRefresh: _refresh,
+      child: ListView(
+        physics: const AlwaysScrollableScrollPhysics(),
+        padding: const EdgeInsets.fromLTRB(18, 18, 18, 36),
+        children: [
+          _buildWelcomeCard(),
+
+          const SizedBox(height: 26),
+
+          const Text(
+            'System Overview',
+            style: TextStyle(
+              fontSize: 18,
+              fontWeight: FontWeight.w800,
+              color: _darkTextColor,
+            ),
+          ),
+
+          const SizedBox(height: 12),
+
+          _buildOverview(),
+
+          const SizedBox(height: 28),
+
+          const Text(
+            'System Management',
+            style: TextStyle(
+              fontSize: 18,
+              fontWeight: FontWeight.w800,
+              color: _darkTextColor,
+            ),
+          ),
+
+          const SizedBox(height: 12),
+
+          _buildManagementCard(
+            icon: Icons.manage_accounts_outlined,
+            title: 'User & Role Management',
+            description:
+                'Review registered accounts and manage '
+                'their authorised system roles.',
+            actionText: 'Manage User Accounts',
+            onTap: _openUsers,
+          ),
+
+          const SizedBox(height: 12),
+
+          _buildManagementCard(
+            icon: Icons.public_outlined,
+            title: 'Destination Management',
+            description:
+                'Control which supported destinations are '
+                'available when travellers create new trips.',
+            actionText: 'Manage Destinations',
+            onTap: _openDestinations,
+          ),
+
+          const SizedBox(height: 28),
+
+          Row(
             children: [
-              _buildWelcomeCard(),
-
-              const SizedBox(height: 26),
-
-              const Text(
-                'System Overview',
-                style: TextStyle(
-                  fontSize: 18,
-                  fontWeight: FontWeight.w800,
-                  color: _darkTextColor,
+              const Expanded(
+                child: Text(
+                  'Recent Administrative Activity',
+                  style: TextStyle(
+                    fontSize: 18,
+                    fontWeight: FontWeight.w800,
+                    color: _darkTextColor,
+                  ),
                 ),
               ),
-
-              const SizedBox(height: 12),
-
-              _buildOverview(),
-
-              const SizedBox(height: 28),
-
-              const Text(
-                'System Management',
-                style: TextStyle(
-                  fontSize: 18,
-                  fontWeight: FontWeight.w800,
-                  color: _darkTextColor,
-                ),
+              TextButton(
+                onPressed: _openActivityHistory,
+                child: const Text('View All'),
               ),
-
-              const SizedBox(height: 12),
-
-              _buildManagementCard(
-                icon: Icons.manage_accounts_outlined,
-                title: 'User & Role Management',
-                description:
-                    'Review registered accounts and manage '
-                    'their authorised system roles.',
-                actionText: 'Manage User Accounts',
-                onTap: _openUsers,
-              ),
-
-              const SizedBox(height: 12),
-
-              _buildManagementCard(
-                icon: Icons.public_outlined,
-                title: 'Destination Management',
-                description:
-                    'Control which supported destinations are '
-                    'available when travellers create new trips.',
-                actionText: 'Manage Destinations',
-                onTap: _openDestinations,
-              ),
-
-              const SizedBox(height: 28),
-
-              Row(
-                children: [
-                  const Expanded(
-                    child: Text(
-                      'Recent Administrative Activity',
-                      style: TextStyle(
-                        fontSize: 18,
-                        fontWeight: FontWeight.w800,
-                        color: _darkTextColor,
-                      ),
-                    ),
-                  ),
-                  TextButton(
-                    onPressed: _openActivityHistory,
-                    child: const Text('View All'),
-                  ),
-                ],
-              ),
-
-              const SizedBox(height: 10),
-
-              _buildRecentActivity(),
-
-              const SizedBox(height: 28),
-
-              const SizedBox(height: 28),
-
-              _buildInformationCard(),
             ],
           ),
-        ),
+
+          const SizedBox(height: 10),
+
+          _buildRecentActivity(),
+
+          const SizedBox(height: 28),
+
+          _buildInformationCard(),
+        ],
       ),
     );
   }
@@ -515,6 +554,10 @@ class _AdminDashboardState extends State<AdminDashboard> {
     );
   }
 
+  // ---------------------------------------------------------------------------
+  // RECENT ADMINISTRATIVE ACTIVITY
+  // ---------------------------------------------------------------------------
+
   Widget _buildRecentActivity() {
     return FutureBuilder<List<AdminActivityLog>>(
       future: _recentActivityFuture,
@@ -735,9 +778,9 @@ class _AdminDashboardState extends State<AdminDashboard> {
           Expanded(
             child: Text(
               'Administrator access is used to manage authorised '
-              'system roles and system-level configuration '
-              'Administrator accounts remain protected from '
-              'client-side role modification.',
+              'system roles, destination availability and review '
+              'administrative activity. Administrator accounts '
+              'remain protected from client-side role modification.',
               style: TextStyle(
                 fontSize: 12.5,
                 height: 1.5,
