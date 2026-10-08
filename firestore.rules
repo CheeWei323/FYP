@@ -31,6 +31,15 @@ service cloud.firestore {
             ).data.role == 'admin';
 }
 
+    // Checks whether the authenticated account has
+   // the Tourism Data Analyst role.
+   function isAnalyst() {
+      return request.auth != null
+             && get(
+               /databases/$(database)/documents/users/$(request.auth.uid)
+            ).data.role == 'analyst';
+}
+
     // Checks whether the authenticated user owns the selected trip.
     function ownsTrip(tripId) {
       return request.auth != null
@@ -523,7 +532,8 @@ service cloud.firestore {
 
       // Traveller may read only their own trip.
       allow read: if request.auth != null
-                  && resource.data.userId == request.auth.uid;
+                  && (resource.data.userId == request.auth.uid || isAnalyst()
+                  );
 
       // Traveller may edit only trip-planning fields.
       // Ownership and original creation information cannot change.
