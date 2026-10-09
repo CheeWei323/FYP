@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 
 import '../../services/analyst_service.dart';
+import '../analyst/destination_trends_screen.dart';
+import '../analyst/purpose_distribution_screen.dart';
 
 class AnalystDashboard extends StatefulWidget {
   const AnalystDashboard({super.key});
@@ -116,6 +118,15 @@ class _AnalystDashboardState extends State<AnalystDashboard> {
                 description:
                     'Compare trip activity across '
                     'the five supported destinations.',
+                available: true,
+                onTap: () {
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (context) => const DestinationTrendsScreen(),
+                    ),
+                  );
+                },
               ),
 
               const SizedBox(height: 10),
@@ -126,8 +137,16 @@ class _AnalystDashboardState extends State<AnalystDashboard> {
                 description:
                     'Review the distribution of tourism, '
                     'business and study trips.',
+                available: true,
+                onTap: () {
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (context) => const PurposeDistributionScreen(),
+                    ),
+                  );
+                },
               ),
-
               const SizedBox(height: 10),
 
               _buildAnalyticsModuleCard(
@@ -137,17 +156,6 @@ class _AnalystDashboardState extends State<AnalystDashboard> {
                     'Analyse aggregated traveller '
                     'requirement completion.',
               ),
-
-              const SizedBox(height: 10),
-
-              _buildAnalyticsModuleCard(
-                icon: Icons.fact_check_outlined,
-                title: 'Preparation Requirements',
-                description:
-                    'Review common regulatory preparation '
-                    'requirement categories.',
-              ),
-
               const SizedBox(height: 28),
 
               _buildInformationCard(),
@@ -362,72 +370,87 @@ class _AnalystDashboardState extends State<AnalystDashboard> {
     required IconData icon,
     required String title,
     required String description,
+    VoidCallback? onTap,
+    bool available = false,
   }) {
-    return Container(
-      width: double.infinity,
-      padding: const EdgeInsets.all(17),
-      decoration: BoxDecoration(
-        color: Colors.white,
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: available ? onTap : null,
         borderRadius: BorderRadius.circular(17),
-        border: Border.all(color: _borderColor),
-      ),
-      child: Row(
-        children: [
-          Container(
-            width: 48,
-            height: 48,
-            decoration: BoxDecoration(
-              color: const Color(0xFFE8F6F7),
-              borderRadius: BorderRadius.circular(14),
-            ),
-            child: Icon(icon, color: _primaryColor, size: 24),
+        child: Ink(
+          width: double.infinity,
+          padding: const EdgeInsets.all(17),
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(17),
+            border: Border.all(color: _borderColor),
           ),
-
-          const SizedBox(width: 14),
-
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  title,
-                  style: const TextStyle(
-                    fontSize: 15,
-                    fontWeight: FontWeight.w700,
-                    color: _darkTextColor,
-                  ),
+          child: Row(
+            children: [
+              Container(
+                width: 48,
+                height: 48,
+                decoration: BoxDecoration(
+                  color: const Color(0xFFE8F6F7),
+                  borderRadius: BorderRadius.circular(14),
                 ),
-
-                const SizedBox(height: 4),
-
-                Text(
-                  description,
-                  style: const TextStyle(
-                    fontSize: 11.5,
-                    height: 1.4,
-                    color: Colors.black54,
-                  ),
-                ),
-              ],
-            ),
-          ),
-
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 5),
-            decoration: BoxDecoration(
-              color: const Color(0xFFF0F4F6),
-              borderRadius: BorderRadius.circular(20),
-            ),
-            child: const Text(
-              'NEXT',
-              style: TextStyle(
-                fontSize: 9,
-                fontWeight: FontWeight.w800,
-                color: Color(0xFF627D98),
+                child: Icon(icon, color: _primaryColor, size: 24),
               ),
-            ),
+
+              const SizedBox(width: 14),
+
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      title,
+                      style: const TextStyle(
+                        fontSize: 15,
+                        fontWeight: FontWeight.w700,
+                        color: _darkTextColor,
+                      ),
+                    ),
+
+                    const SizedBox(height: 4),
+
+                    Text(
+                      description,
+                      style: const TextStyle(
+                        fontSize: 11.5,
+                        height: 1.4,
+                        color: Colors.black54,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+
+              if (available)
+                const Icon(Icons.chevron_right_rounded, color: Colors.black38)
+              else
+                Container(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 8,
+                    vertical: 5,
+                  ),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFF0F4F6),
+                    borderRadius: BorderRadius.circular(20),
+                  ),
+                  child: const Text(
+                    'NEXT',
+                    style: TextStyle(
+                      fontSize: 9,
+                      fontWeight: FontWeight.w800,
+                      color: Color(0xFF627D98),
+                    ),
+                  ),
+                ),
+            ],
           ),
-        ],
+        ),
       ),
     );
   }
