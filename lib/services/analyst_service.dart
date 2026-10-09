@@ -190,4 +190,133 @@ class AnalystService {
 
     return {'total': total, 'counts': counts};
   }
+
+  // ---------------------------------------------------------------------------
+  // CHECKLIST COMPLETION ANALYTICS
+  // ---------------------------------------------------------------------------
+
+  Future<Map<String, dynamic>> getChecklistCompletionAnalytics() async {
+    final Future<QuerySnapshot<Map<String, dynamic>>> tripsFuture = _firestore
+        .collection('trips')
+        .get();
+
+    final Future<QuerySnapshot<Map<String, dynamic>>> countriesFuture =
+        _firestore.collection('countries').get();
+
+    final QuerySnapshot<Map<String, dynamic>> tripsSnapshot = await tripsFuture;
+
+    final QuerySnapshot<Map<String, dynamic>> countriesSnapshot =
+        await countriesFuture;
+
+    // Country names are used only for aggregate display.
+    final Map<String, String> countryNames = <String, String>{};
+
+    for (final document in countriesSnapshot.docs) {
+      final String name = document.data()['name'] as String? ?? document.id;
+
+      countryNames[document.id] = name;
+    }
+
+    // Ensure all supported destinations can appear,
+    // even when no checklist data exists yet.
+    final Map<String, int> destinationTotals = <String, int>{};
+
+    final Map<String, int> destinationCompleted = <String, int>{};
+
+    for (final document in countriesSnapshot.docs) {
+      destinationTotals[document.id] = 0;
+
+      destinationCompleted[document.id] = 0;
+    }
+
+    int totalRequirements = 0;
+    int completedRequirements = 0;
+
+    // Read checklist items under each stored trip.
+    // No traveller profile information is retrieved.
+    for (final tripDocument in tripsSnapshot.docs) {
+      final Map<String, dynamic> tripData = tripDocument.data();
+
+      final String destinationId =
+          tripData['destinationCountryId'] as String? ?? '';
+
+      if (destinationId.isEmpty) {
+        continue;
+      }
+
+      final QuerySnapshot<Map<String, dynamic>> checklistSnapshot =
+          await _firestore
+              .collection('trips')
+              .doc(tripDocument.id)
+              .collection('checklistItems')
+              .get();
+
+      for (final checklistDocument in checklistSnapshot.docs) {
+        final bool completed =
+            checklistDocument.data()['completed'] as bool? ?? false;
+
+        totalRequirements++;
+
+        destinationTotals[destinationId] =
+            (destinationTotals[destinationId] ?? 0) + 1;
+
+        if (completed) {
+          completedRequirements++;
+
+          destinationCompleted[destinationId] =
+              (destinationCompleted[destinationId] ?? 0) + 1;
+        }
+      }
+    }
+
+    final int incompleteRequirements =
+        totalRequirements - completedRequirements;
+
+    final double completionRate = totalRequirements == 0
+        ? 0
+        : (completedRequirements / totalRequirements) * 100;
+
+    final List<Map<String, dynamic>> destinationResults = countryNames.entries
+        .map((MapEntry<String, String> entry) {
+          final int total = destinationTotals[entry.key] ?? 0;
+
+          final int completed = destinationCompleted[entry.key] ?? 0;
+
+          final int incomplete = total - completed;
+
+          final double rate = total == 0 ? 0 : (completed / total) * 100;
+
+          return {
+            'countryId': entry.key,
+            'name': entry.value,
+            'total': total,
+            'completed': completed,
+            'incomplete': incomplete,
+            'completionRate': rate,
+          };
+        })
+        .toList();
+
+    destinationResults.sort((a, b) {
+      final double rateA = a['completionRate'] as double? ?? 0;
+
+      final double rateB = b['completionRate'] as double? ?? 0;
+
+      final int rateCompare = rateB.compareTo(rateA);
+
+      if (rateCompare != 0) {
+        return rateCompare;
+      }
+
+      return (a['name'] as String).compareTo(b['name'] as String);
+    });
+
+    return {
+      'totalRequirements': totalRequirements,
+      'completedRequirements': completedRequirements,
+      'incompleteRequirements': incompleteRequirements,
+      'completionRate': completionRate,
+      'destinations': destinationResults,
+    };
+  }
 }

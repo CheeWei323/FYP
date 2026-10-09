@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../../services/analyst_service.dart';
 import '../analyst/destination_trends_screen.dart';
 import '../analyst/purpose_distribution_screen.dart';
+import '../analyst/checklist_completion_screen.dart';
 
 class AnalystDashboard extends StatefulWidget {
   const AnalystDashboard({super.key});
@@ -155,6 +156,15 @@ class _AnalystDashboardState extends State<AnalystDashboard> {
                 description:
                     'Analyse aggregated traveller '
                     'requirement completion.',
+                available: true,
+                onTap: () {
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (context) => const ChecklistCompletionScreen(),
+                    ),
+                  );
+                },
               ),
               const SizedBox(height: 28),
 
