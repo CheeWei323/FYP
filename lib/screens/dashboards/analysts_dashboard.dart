@@ -4,6 +4,7 @@ import '../../services/analyst_service.dart';
 import '../analyst/destination_trends_screen.dart';
 import '../analyst/purpose_distribution_screen.dart';
 import '../analyst/checklist_completion_screen.dart';
+import '../analyst/preparation_requirements_screen.dart';
 
 class AnalystDashboard extends StatefulWidget {
   const AnalystDashboard({super.key});
@@ -166,6 +167,27 @@ class _AnalystDashboardState extends State<AnalystDashboard> {
                   );
                 },
               ),
+
+              const SizedBox(height: 10),
+
+              _buildAnalyticsModuleCard(
+                icon: Icons.inventory_2_outlined,
+                title: 'Preparation Requirements',
+                description:
+                    'Analyse aggregated preparation '
+                    'requirement patterns.',
+                available: true,
+                onTap: () {
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (context) =>
+                          const PreparationRequirementsScreen(),
+                    ),
+                  );
+                },
+              ),
+
               const SizedBox(height: 28),
 
               _buildInformationCard(),

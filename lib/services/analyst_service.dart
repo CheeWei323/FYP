@@ -319,4 +319,108 @@ class AnalystService {
       'destinations': destinationResults,
     };
   }
+  // ---------------------------------------------------------------------------
+  // PREPARATION REQUIREMENT ANALYTICS
+  // ---------------------------------------------------------------------------
+
+  Future<Map<String, dynamic>> getPreparationRequirementAnalytics() async {
+    final QuerySnapshot<Map<String, dynamic>> tripsSnapshot = await _firestore
+        .collection('trips')
+        .get();
+
+    final Map<String, int> categoryCounts = <String, int>{};
+    final Map<String, int> requirementTitleCounts = <String, int>{};
+
+    int totalRequirements = 0;
+
+    for (final tripDocument in tripsSnapshot.docs) {
+      final QuerySnapshot<Map<String, dynamic>> checklistSnapshot =
+          await _firestore
+              .collection('trips')
+              .doc(tripDocument.id)
+              .collection('checklistItems')
+              .get();
+
+      for (final checklistDocument in checklistSnapshot.docs) {
+        final Map<String, dynamic> data = checklistDocument.data();
+
+        String category = data['category'] as String? ?? '';
+
+        final String title = data['title'] as String? ?? '';
+
+        category = category.trim();
+
+        if (category.isEmpty) {
+          category = 'uncategorised';
+        }
+
+        totalRequirements++;
+
+        categoryCounts[category] = (categoryCounts[category] ?? 0) + 1;
+
+        if (title.trim().isNotEmpty) {
+          final String cleanedTitle = title.trim();
+
+          requirementTitleCounts[cleanedTitle] =
+              (requirementTitleCounts[cleanedTitle] ?? 0) + 1;
+        }
+      }
+    }
+
+    final List<Map<String, dynamic>> categories = categoryCounts.entries.map((
+      MapEntry<String, int> entry,
+    ) {
+      final double percentage = totalRequirements == 0
+          ? 0
+          : (entry.value / totalRequirements) * 100;
+
+      return {
+        'category': entry.key,
+        'count': entry.value,
+        'percentage': percentage,
+      };
+    }).toList();
+
+    categories.sort((a, b) {
+      final int countCompare = (b['count'] as int).compareTo(a['count'] as int);
+
+      if (countCompare != 0) {
+        return countCompare;
+      }
+
+      return (a['category'] as String).compareTo(b['category'] as String);
+    });
+
+    final List<Map<String, dynamic>> topRequirements = requirementTitleCounts
+        .entries
+        .map((MapEntry<String, int> entry) {
+          final double percentage = totalRequirements == 0
+              ? 0
+              : (entry.value / totalRequirements) * 100;
+
+          return {
+            'title': entry.key,
+            'count': entry.value,
+            'percentage': percentage,
+          };
+        })
+        .toList();
+
+    topRequirements.sort((a, b) {
+      final int countCompare = (b['count'] as int).compareTo(a['count'] as int);
+
+      if (countCompare != 0) {
+        return countCompare;
+      }
+
+      return (a['title'] as String).compareTo(b['title'] as String);
+    });
+
+    return {
+      'totalRequirements': totalRequirements,
+      'categoryCount': categories.length,
+      'categories': categories,
+      'topRequirements': topRequirements.take(5).toList(),
+    };
+  }
 }
