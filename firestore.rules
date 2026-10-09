@@ -596,8 +596,11 @@ service cloud.firestore {
                         )
                       );
 
-        // Checklist items are visible only to the trip owner.
-        allow read: if ownsTrip(tripId);
+        // Trip owners may read their own checklist items.
+       // Tourism Data Analysts may read checklist items
+      // for read-only aggregate completion analytics.
+        allow read: if ownsTrip(tripId)
+                     || isAnalyst();
 
         // Travellers may change only completion information.
         allow update: if ownsTrip(tripId)
