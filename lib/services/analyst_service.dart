@@ -203,14 +203,16 @@ class AnalystService {
   // MONTHLY DEPARTURE TREND
   // ---------------------------------------------------------------------------
 
-  Future<List<Map<String, dynamic>>> getMonthlyDepartureTrend() async {
-    final QuerySnapshot<Map<String, dynamic>> snapshot = await _firestore
-        .collection('trips')
-        .get();
+  Future<List<Map<String, dynamic>>> getMonthlyDepartureTrend({
+    String? destinationId,
+    String? purpose,
+  }) async {
+    final List<QueryDocumentSnapshot<Map<String, dynamic>>> tripDocuments =
+        await _getFilteredTrips(destinationId: destinationId, purpose: purpose);
 
     final Map<DateTime, int> monthlyCounts = <DateTime, int>{};
 
-    for (final document in snapshot.docs) {
+    for (final document in tripDocuments) {
       final dynamic rawDepartureDate = document.data()['departureDate'];
 
       DateTime? departureDate;
