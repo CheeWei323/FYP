@@ -517,6 +517,70 @@ service cloud.firestore {
   allow update, delete: if false;
 }
 
+    // ---------------------------------------------------------------------------
+   // ANALYST GENERATED REPORTS
+  // ---------------------------------------------------------------------------
+
+match /analystReports/{reportId} {
+
+    // Tourism Data Analysts can create report snapshots
+    // only for their own authenticated account.
+    allow create: if isAnalyst()
+                  && request.resource.data.analystId == request.auth.uid
+                  && request.resource.data.keys().hasAll([
+                    'reportId',
+                    'analystId',
+                    'reportType',
+                    'reportTitle',
+                    'destinationId',
+                    'destinationName',
+                    'purpose',
+                    'purposeLabel',
+                    'format',
+                    'schemaVersion',
+                    'generatedAt',
+                    'data'
+                  ])
+                  && request.resource.data.keys().hasOnly([
+                    'reportId',
+                    'analystId',
+                    'reportType',
+                    'reportTitle',
+                    'destinationId',
+                    'destinationName',
+                    'purpose',
+                    'purposeLabel',
+                    'format',
+                    'schemaVersion',
+                    'generatedAt',
+                    'data'
+                  ])
+                  && request.resource.data.reportId == reportId
+                  && request.resource.data.reportType in [
+                    'destinationTrends',
+                    'purposeDistribution',
+                    'checklistCompletion',
+                    'requirementPatterns'
+                  ]
+                  && request.resource.data.reportTitle is string
+                  && request.resource.data.destinationId is string
+                  && request.resource.data.destinationName is string
+                  && request.resource.data.purpose is string
+                  && request.resource.data.purposeLabel is string
+                  && request.resource.data.format == 'xlsx'
+                  && request.resource.data.schemaVersion == 1
+                  && request.resource.data.generatedAt is timestamp
+                  && request.resource.data.generatedAt == request.time
+                  && request.resource.data.data is map;
+
+    // Analysts can only view their own generated reports.
+    allow read: if isAnalyst()
+                && resource.data.analystId == request.auth.uid;
+
+    // Historical report snapshots are immutable.
+    allow update, delete: if false;
+}
+
     // -----------------------------------------------------------------------
     // TRIPS
     // -----------------------------------------------------------------------
