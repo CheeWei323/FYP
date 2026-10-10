@@ -3,6 +3,7 @@ import 'dart:math' as math;
 import 'package:flutter/material.dart';
 
 import '../../services/analyst_service.dart';
+import '../../widgets/analyst/analytics_filter_card.dart';
 
 class PurposeDistributionScreen extends StatefulWidget {
   const PurposeDistributionScreen({super.key});
@@ -29,24 +30,83 @@ class _PurposeDistributionScreenState extends State<PurposeDistributionScreen> {
 
   static const Color _studyColor = Color(0xFF8AA9B8);
 
+  String? _selectedDestinationId;
+
   late Future<Map<String, dynamic>> _distributionFuture;
+
+  late Future<List<Map<String, String>>> _countriesFuture;
 
   @override
   void initState() {
     super.initState();
 
     _distributionFuture = _analystService.getPurposeDistribution();
+
+    _countriesFuture = _analystService.getAnalyticsFilterCountries();
+  }
+
+  void _reloadAnalytics() {
+    _distributionFuture = _analystService.getPurposeDistribution(
+      destinationId: _selectedDestinationId,
+    );
   }
 
   Future<void> _refresh() async {
-    final Future<Map<String, dynamic>> future = _analystService
-        .getPurposeDistribution();
+    final Future<Map<String, dynamic>> analyticsFuture = _analystService
+        .getPurposeDistribution(destinationId: _selectedDestinationId);
+
+    final Future<List<Map<String, String>>> countriesFuture = _analystService
+        .getAnalyticsFilterCountries();
 
     setState(() {
-      _distributionFuture = future;
+      _distributionFuture = analyticsFuture;
+
+      _countriesFuture = countriesFuture;
     });
 
-    await future;
+    await analyticsFuture;
+    await countriesFuture;
+  }
+
+  Widget _buildFilters() {
+    return FutureBuilder<List<Map<String, String>>>(
+      future: _countriesFuture,
+      builder: (context, snapshot) {
+        if (snapshot.connectionState == ConnectionState.waiting) {
+          return const Center(
+            child: Padding(
+              padding: EdgeInsets.all(12),
+              child: CircularProgressIndicator(),
+            ),
+          );
+        }
+
+        final List<Map<String, String>> countries = snapshot.data ?? [];
+
+        return AnalyticsFilterCard(
+          countries: countries,
+          selectedDestinationId: _selectedDestinationId,
+          selectedPurpose: null,
+          showDestination: true,
+          showPurpose: false,
+          onDestinationChanged: (value) {
+            setState(() {
+              _selectedDestinationId = value;
+
+              _reloadAnalytics();
+            });
+          },
+          onPurposeChanged: (_) {},
+          onClear: () {
+            setState(() {
+              _selectedDestinationId = null;
+
+              _reloadAnalytics();
+            });
+          },
+        );
+      },
+    );
   }
 
   String _purposeLabel(String purpose) {
@@ -106,6 +166,11 @@ class _PurposeDistributionScreenState extends State<PurposeDistributionScreen> {
               }
 
               if (snapshot.hasError) {
+                debugPrint(
+                  'PURPOSE ANALYTICS ERROR: '
+                  '${snapshot.error}',
+                );
+
                 return ListView(
                   physics: const AlwaysScrollableScrollPhysics(),
                   padding: const EdgeInsets.all(24),
@@ -132,6 +197,10 @@ class _PurposeDistributionScreenState extends State<PurposeDistributionScreen> {
                 children: [
                   _buildHeader(total),
 
+                  const SizedBox(height: 18),
+
+                  _buildFilters(),
+
                   const SizedBox(height: 24),
 
                   const Text(
@@ -145,23 +214,26 @@ class _PurposeDistributionScreenState extends State<PurposeDistributionScreen> {
 
                   const SizedBox(height: 5),
 
-                  const Text(
-                    'Share of stored trips by primary travel purpose.',
-                    style: TextStyle(fontSize: 12.5, color: Colors.black54),
+                  Text(
+                    _selectedDestinationId == null
+                        ? 'Understand why travellers are travelling '
+                              'across all supported destinations.'
+                        : 'Understand why travellers are travelling '
+                              'to the selected destination.',
+                    style: const TextStyle(
+                      fontSize: 12.5,
+                      height: 1.4,
+                      color: Colors.black54,
+                    ),
                   ),
 
                   const SizedBox(height: 16),
 
                   _buildDonutSection(counts: counts, total: total),
 
-                  const SizedBox(
-                    height: 18,
-                  ),
+                  const SizedBox(height: 18),
 
-                  _buildDistributionSummary(
-                    counts: counts,
-                    total: total,
-                  ),
+                  _buildDistributionSummary(counts: counts, total: total),
                 ],
               );
             },
@@ -170,6 +242,10 @@ class _PurposeDistributionScreenState extends State<PurposeDistributionScreen> {
       ),
     );
   }
+
+  // ---------------------------------------------------------------------------
+  // HEADER
+  // ---------------------------------------------------------------------------
 
   Widget _buildHeader(int total) {
     return Container(
@@ -208,8 +284,11 @@ class _PurposeDistributionScreenState extends State<PurposeDistributionScreen> {
                 const SizedBox(height: 5),
 
                 Text(
-                  '$total stored trips included '
-                  'in the current distribution.',
+                  total == 0
+                      ? 'No trips match the current destination filter.'
+                      : '$total stored '
+                            '${total == 1 ? 'trip is' : 'trips are'} '
+                            'included in the current distribution.',
                   style: const TextStyle(
                     fontSize: 12.5,
                     height: 1.4,
@@ -223,6 +302,10 @@ class _PurposeDistributionScreenState extends State<PurposeDistributionScreen> {
       ),
     );
   }
+
+  // ---------------------------------------------------------------------------
+  // DONUT
+  // ---------------------------------------------------------------------------
 
   Widget _buildDonutSection({
     required Map<String, int> counts,
@@ -281,9 +364,12 @@ class _PurposeDistributionScreenState extends State<PurposeDistributionScreen> {
 
                     const SizedBox(height: 2),
 
-                    const Text(
-                      'Total Trips',
-                      style: TextStyle(fontSize: 11, color: Colors.black54),
+                    Text(
+                      total == 1 ? 'Trip' : 'Trips',
+                      style: const TextStyle(
+                        fontSize: 11,
+                        color: Colors.black54,
+                      ),
                     ),
                   ],
                 ),
@@ -295,6 +381,7 @@ class _PurposeDistributionScreenState extends State<PurposeDistributionScreen> {
 
           for (int index = 0; index < slices.length; index++) ...[
             _buildLegendRow(slice: slices[index], total: total),
+
             if (index != slices.length - 1) const Divider(height: 22),
           ],
         ],
@@ -352,127 +439,97 @@ class _PurposeDistributionScreenState extends State<PurposeDistributionScreen> {
     );
   }
 
+  // ---------------------------------------------------------------------------
+  // DISTRIBUTION SUMMARY
+  // ---------------------------------------------------------------------------
+
   Widget _buildDistributionSummary({
     required Map<String, int> counts,
     required int total,
   }) {
     String leadingPurpose = 'tourism';
+
     int leadingCount = 0;
 
-    counts.forEach(
-          (purpose, itemCount) {
-        if (itemCount > leadingCount) {
-          leadingPurpose = purpose;
-          leadingCount = itemCount;
-        }
-      },
-    );
+    counts.forEach((purpose, itemCount) {
+      if (itemCount > leadingCount) {
+        leadingPurpose = purpose;
 
-    final double percentage =
-    total == 0
-        ? 0
-        : (leadingCount / total) * 100;
+        leadingCount = itemCount;
+      }
+    });
+
+    final double percentage = total == 0 ? 0 : (leadingCount / total) * 100;
 
     return Container(
       width: double.infinity,
-      padding: const EdgeInsets.all(
-        18,
-      ),
+      padding: const EdgeInsets.all(18),
       decoration: BoxDecoration(
-        color: const Color(
-          0xFFF1F6FA,
-        ),
-        borderRadius:
-        BorderRadius.circular(
-          17,
-        ),
-        border: Border.all(
-          color: const Color(
-            0xFFD8E6EE,
-          ),
-        ),
+        color: const Color(0xFFF1F6FA),
+        borderRadius: BorderRadius.circular(17),
+        border: Border.all(color: const Color(0xFFD8E6EE)),
       ),
       child: Row(
-        crossAxisAlignment:
-        CrossAxisAlignment.start,
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Container(
             width: 44,
             height: 44,
             decoration: BoxDecoration(
-              color: const Color(
-                0xFFE8F6F7,
-              ),
-              borderRadius:
-              BorderRadius.circular(
-                13,
-              ),
+              color: const Color(0xFFE8F6F7),
+              borderRadius: BorderRadius.circular(13),
             ),
-            child: const Icon(
-              Icons.insights_outlined,
-              color: _primaryColor,
-            ),
+            child: const Icon(Icons.insights_outlined, color: _primaryColor),
           ),
 
-          const SizedBox(
-            width: 13,
-          ),
+          const SizedBox(width: 13),
 
           Expanded(
             child: Column(
-              crossAxisAlignment:
-              CrossAxisAlignment.start,
+              crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 const Text(
                   'Leading Purpose',
-                  style: TextStyle(
-                    fontSize: 10.5,
-                    color: Colors.black54,
-                  ),
+                  style: TextStyle(fontSize: 10.5, color: Colors.black54),
                 ),
 
-                const SizedBox(
-                  height: 3,
-                ),
+                const SizedBox(height: 3),
 
                 Text(
-                  _purposeLabel(
-                    leadingPurpose,
-                  ),
+                  total == 0 ? 'No Data' : _purposeLabel(leadingPurpose),
                   style: const TextStyle(
                     fontSize: 15,
-                    fontWeight:
-                    FontWeight.w800,
-                    color:
-                    _darkTextColor,
+                    fontWeight: FontWeight.w800,
+                    color: _darkTextColor,
                   ),
                 ),
 
-                const SizedBox(
-                  height: 4,
-                ),
-
-                Text(
-                  '$leadingCount of $total trips · '
-                      '${percentage.toStringAsFixed(1)}%',
-                  style: const TextStyle(
-                    fontSize: 11,
-                    color: Color(
-                      0xFF486581,
-                    ),
-                  ),
-                ),
-
-                const SizedBox(
-                  height: 8,
-                ),
+                const SizedBox(height: 4),
 
                 Text(
                   total == 0
-                      ? 'No stored trip data is currently available.'
+                      ? 'No matching trips'
+                      : '$leadingCount of $total '
+                            '${total == 1 ? 'trip' : 'trips'} · '
+                            '${percentage.toStringAsFixed(1)}%',
+                  style: const TextStyle(
+                    fontSize: 11,
+                    color: Color(0xFF486581),
+                  ),
+                ),
+
+                const SizedBox(height: 8),
+
+                Text(
+                  total == 0
+                      ? 'No stored trips match the selected destination.'
+                      : _selectedDestinationId == null
+                      ? '${_purposeLabel(leadingPurpose)} is currently '
+                            'the most common travel purpose across '
+                            'the stored trip records.'
                       : '${_purposeLabel(leadingPurpose)} is currently '
-                      'the most common travel purpose in the '
-                      'stored trip records.',
+                            'the most common travel purpose for '
+                            'the selected destination.',
                   style: const TextStyle(
                     fontSize: 11.5,
                     height: 1.4,
@@ -502,6 +559,7 @@ class _PurposeSlice {
 
 class _DonutChartPainter extends CustomPainter {
   final List<_PurposeSlice> slices;
+
   final int total;
 
   const _DonutChartPainter({required this.slices, required this.total});

@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../../services/analyst_service.dart';
+import '../../widgets/analyst/analytics_filter_card.dart';
 
 class PreparationRequirementsScreen extends StatefulWidget {
   const PreparationRequirementsScreen({super.key});
@@ -15,53 +16,139 @@ class _PreparationRequirementsScreenState
   final AnalystService _analystService = AnalystService();
 
   static const Color _primaryColor = Color(0xFF087F8C);
+
   static const Color _darkTextColor = Color(0xFF102A43);
+
   static const Color _backgroundColor = Color(0xFFF7F9FB);
+
   static const Color _borderColor = Color(0xFFE1E7EC);
-  static const Color _barColor = Color(0xFF2F5F98);
+
+  String? _selectedDestinationId;
+  String? _selectedPurpose;
+
+  bool _showAllRequirements = false;
 
   late Future<Map<String, dynamic>> _analyticsFuture;
+
+  late Future<List<Map<String, String>>> _countriesFuture;
 
   @override
   void initState() {
     super.initState();
 
     _analyticsFuture = _analystService.getPreparationRequirementAnalytics();
+
+    _countriesFuture = _analystService.getAnalyticsFilterCountries();
+  }
+
+  void _reloadAnalytics() {
+    _analyticsFuture = _analystService.getPreparationRequirementAnalytics(
+      destinationId: _selectedDestinationId,
+      purpose: _selectedPurpose,
+    );
   }
 
   Future<void> _refresh() async {
-    final Future<Map<String, dynamic>> future = _analystService
-        .getPreparationRequirementAnalytics();
+    final Future<Map<String, dynamic>> analyticsFuture = _analystService
+        .getPreparationRequirementAnalytics(
+          destinationId: _selectedDestinationId,
+          purpose: _selectedPurpose,
+        );
+
+    final Future<List<Map<String, String>>> countriesFuture = _analystService
+        .getAnalyticsFilterCountries();
 
     setState(() {
-      _analyticsFuture = future;
+      _analyticsFuture = analyticsFuture;
+
+      _countriesFuture = countriesFuture;
     });
 
-    await future;
+    await analyticsFuture;
+    await countriesFuture;
   }
 
-  String _formatCategoryLabel(String value) {
-    final String cleaned = value
-        .trim()
-        .replaceAll('_', ' ')
-        .replaceAll('-', ' ');
+  String _formatPurpose(String purpose) {
+    switch (purpose) {
+      case 'tourism':
+        return 'Tourism';
 
-    if (cleaned.isEmpty) {
-      return 'Uncategorised';
+      case 'business':
+        return 'Business';
+
+      case 'study':
+        return 'Study';
+
+      default:
+        if (purpose.isEmpty) {
+          return 'Unknown';
+        }
+
+        return '${purpose[0].toUpperCase()}'
+            '${purpose.substring(1)}';
     }
-
-    return cleaned
-        .split(RegExp(r'\s+'))
-        .map((word) {
-          if (word.isEmpty) {
-            return '';
-          }
-
-          return '${word[0].toUpperCase()}'
-              '${word.substring(1).toLowerCase()}';
-        })
-        .join(' ');
   }
+
+  // ---------------------------------------------------------------------------
+  // FILTERS
+  // ---------------------------------------------------------------------------
+
+  Widget _buildFilters() {
+    return FutureBuilder<List<Map<String, String>>>(
+      future: _countriesFuture,
+      builder: (context, snapshot) {
+        if (snapshot.connectionState == ConnectionState.waiting) {
+          return const Center(
+            child: Padding(
+              padding: EdgeInsets.all(12),
+              child: CircularProgressIndicator(),
+            ),
+          );
+        }
+
+        final List<Map<String, String>> countries = snapshot.data ?? [];
+
+        return AnalyticsFilterCard(
+          countries: countries,
+          selectedDestinationId: _selectedDestinationId,
+          selectedPurpose: _selectedPurpose,
+          onDestinationChanged: (value) {
+            setState(() {
+              _selectedDestinationId = value;
+
+              _showAllRequirements = false;
+
+              _reloadAnalytics();
+            });
+          },
+          onPurposeChanged: (value) {
+            setState(() {
+              _selectedPurpose = value;
+
+              _showAllRequirements = false;
+
+              _reloadAnalytics();
+            });
+          },
+          onClear: () {
+            setState(() {
+              _selectedDestinationId = null;
+
+              _selectedPurpose = null;
+
+              _showAllRequirements = false;
+
+              _reloadAnalytics();
+            });
+          },
+        );
+      },
+    );
+  }
+
+  // ---------------------------------------------------------------------------
+  // BUILD
+  // ---------------------------------------------------------------------------
 
   @override
   Widget build(BuildContext context) {
@@ -73,7 +160,7 @@ class _PreparationRequirementsScreenState
         foregroundColor: _darkTextColor,
         elevation: 0,
         title: const Text(
-          'Preparation Requirements',
+          'Requirement Patterns',
           style: TextStyle(fontWeight: FontWeight.w700),
         ),
       ),
@@ -89,7 +176,7 @@ class _PreparationRequirementsScreenState
 
               if (snapshot.hasError) {
                 debugPrint(
-                  'PREPARATION ANALYTICS ERROR: '
+                  'REQUIREMENT PATTERN ERROR: '
                   '${snapshot.error}',
                 );
 
@@ -100,7 +187,8 @@ class _PreparationRequirementsScreenState
                     SizedBox(height: 130),
                     Center(
                       child: Text(
-                        'Unable to load preparation requirement analytics.',
+                        'Unable to load requirement patterns.',
+                        textAlign: TextAlign.center,
                       ),
                     ),
                   ],
@@ -109,120 +197,29 @@ class _PreparationRequirementsScreenState
 
               final Map<String, dynamic> data = snapshot.data ?? {};
 
-              final int totalRequirements =
-                  data['totalRequirements'] as int? ?? 0;
+              final int analysedTrips = data['analysedTrips'] as int? ?? 0;
 
-              final int categoryCount = data['categoryCount'] as int? ?? 0;
-
-              final List<Map<String, dynamic>> categories =
+              final List<Map<String, dynamic>> requirements =
                   List<Map<String, dynamic>>.from(
-                    data['categories'] as List? ?? [],
+                    data['requirementPatterns'] as List? ?? [],
                   );
-
-              final List<Map<String, dynamic>> topRequirements =
-                  List<Map<String, dynamic>>.from(
-                    data['topRequirements'] as List? ?? [],
-                  );
-
-              final int maximumCategoryCount = categories.isEmpty
-                  ? 0
-                  : categories
-                        .map((item) => item['count'] as int? ?? 0)
-                        .fold<int>(
-                          0,
-                          (currentMax, itemCount) =>
-                              itemCount > currentMax ? itemCount : currentMax,
-                        );
 
               return ListView(
                 physics: const AlwaysScrollableScrollPhysics(),
                 padding: const EdgeInsets.fromLTRB(18, 18, 18, 36),
                 children: [
-                  _buildHeader(),
+                  _buildHeader(analysedTrips),
 
-                  const SizedBox(height: 24),
+                  const SizedBox(height: 18),
 
-                  Row(
-                    children: [
-                      Expanded(
-                        child: _buildSummaryCard(
-                          icon: Icons.fact_check_outlined,
-                          value: '$totalRequirements',
-                          label: 'Requirements',
-                        ),
-                      ),
+                  _buildFilters(),
 
-                      const SizedBox(width: 10),
+                  const SizedBox(height: 26),
 
-                      Expanded(
-                        child: _buildSummaryCard(
-                          icon: Icons.category_outlined,
-                          value: '$categoryCount',
-                          label: 'Categories',
-                        ),
-                      ),
-                    ],
+                  _buildPatternSection(
+                    requirements: requirements,
+                    analysedTrips: analysedTrips,
                   ),
-
-                  const SizedBox(height: 28),
-
-                  const Text(
-                    'Requirement Category Distribution',
-                    style: TextStyle(
-                      fontSize: 18,
-                      fontWeight: FontWeight.w800,
-                      color: _darkTextColor,
-                    ),
-                  ),
-
-                  const SizedBox(height: 5),
-
-                  const Text(
-                    'Distribution of generated preparation '
-                    'requirements across checklist categories.',
-                    style: TextStyle(fontSize: 12.5, color: Colors.black54),
-                  ),
-
-                  const SizedBox(height: 16),
-
-                  if (categories.isEmpty)
-                    _buildEmptyState()
-                  else ...[
-                    _buildCategoryChart(
-                      categories: categories,
-                      maximumCount: maximumCategoryCount,
-                    ),
-
-                    const SizedBox(height: 18),
-
-                    _buildTopCategoryCard(categories.first),
-                  ],
-
-                  const SizedBox(height: 28),
-
-                  const Text(
-                    'Frequently Generated Requirements',
-                    style: TextStyle(
-                      fontSize: 18,
-                      fontWeight: FontWeight.w800,
-                      color: _darkTextColor,
-                    ),
-                  ),
-
-                  const SizedBox(height: 5),
-
-                  const Text(
-                    'Most frequently generated checklist '
-                    'requirements across stored trips.',
-                    style: TextStyle(fontSize: 12.5, color: Colors.black54),
-                  ),
-
-                  const SizedBox(height: 16),
-
-                  if (topRequirements.isEmpty)
-                    _buildEmptyRequirements()
-                  else
-                    _buildTopRequirements(topRequirements),
                 ],
               );
             },
@@ -232,7 +229,11 @@ class _PreparationRequirementsScreenState
     );
   }
 
-  Widget _buildHeader() {
+  // ---------------------------------------------------------------------------
+  // HEADER
+  // ---------------------------------------------------------------------------
+
+  Widget _buildHeader(int analysedTrips) {
     return Container(
       width: double.infinity,
       padding: const EdgeInsets.all(20),
@@ -243,18 +244,18 @@ class _PreparationRequirementsScreenState
         borderRadius: BorderRadius.circular(20),
         border: Border.all(color: const Color(0xFFCBE8EB)),
       ),
-      child: const Row(
+      child: Row(
         children: [
-          Icon(Icons.inventory_2_outlined, color: _primaryColor, size: 32),
+          const Icon(Icons.insights_outlined, color: _primaryColor, size: 32),
 
-          SizedBox(width: 14),
+          const SizedBox(width: 14),
 
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(
-                  'Preparation Requirements',
+                const Text(
+                  'Requirement Patterns',
                   style: TextStyle(
                     fontSize: 20,
                     fontWeight: FontWeight.w800,
@@ -262,12 +263,16 @@ class _PreparationRequirementsScreenState
                   ),
                 ),
 
-                SizedBox(height: 5),
+                const SizedBox(height: 5),
 
                 Text(
-                  'Aggregated analysis of generated travel '
-                  'preparation requirements.',
-                  style: TextStyle(
+                  analysedTrips == 0
+                      ? 'No generated requirements match '
+                            'the selected traveller segment.'
+                      : 'Explore preparation requirements '
+                            'generated across $analysedTrips '
+                            '${analysedTrips == 1 ? 'trip' : 'trips'}.',
+                  style: const TextStyle(
                     fontSize: 12.5,
                     height: 1.4,
                     color: Colors.black54,
@@ -281,315 +286,329 @@ class _PreparationRequirementsScreenState
     );
   }
 
-  Widget _buildSummaryCard({
-    required IconData icon,
-    required String value,
-    required String label,
+  // ---------------------------------------------------------------------------
+  // REQUIREMENT PATTERNS
+  // ---------------------------------------------------------------------------
+
+  Widget _buildPatternSection({
+    required List<Map<String, dynamic>> requirements,
+    required int analysedTrips,
   }) {
-    return Container(
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: _borderColor),
-      ),
-      child: Column(
-        children: [
-          Icon(icon, color: _primaryColor, size: 23),
-
-          const SizedBox(height: 7),
-
-          Text(
-            value,
-            style: const TextStyle(
-              fontSize: 21,
-              fontWeight: FontWeight.w800,
-              color: _darkTextColor,
-            ),
-          ),
-
-          const SizedBox(height: 3),
-
-          Text(
-            label,
-            textAlign: TextAlign.center,
-            style: const TextStyle(fontSize: 10.5, color: Colors.black54),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildCategoryChart({
-    required List<Map<String, dynamic>> categories,
-    required int maximumCount,
-  }) {
-    return Container(
-      width: double.infinity,
-      padding: const EdgeInsets.fromLTRB(16, 20, 16, 18),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(18),
-        border: Border.all(color: _borderColor),
-      ),
-      child: Column(
-        children: [
-          for (int index = 0; index < categories.length; index++) ...[
-            _buildCategoryBar(
-              category: categories[index],
-              maximumCount: maximumCount,
-            ),
-            if (index != categories.length - 1) const SizedBox(height: 18),
-          ],
-        ],
-      ),
-    );
-  }
-
-  Widget _buildCategoryBar({
-    required Map<String, dynamic> category,
-    required int maximumCount,
-  }) {
-    final String categoryName = category['category'] as String? ?? '';
-
-    final int itemCount = category['count'] as int? ?? 0;
-
-    final double percentage = category['percentage'] as double? ?? 0;
-
-    final double barFactor = maximumCount == 0 ? 0 : itemCount / maximumCount;
+    final List<Map<String, dynamic>> visibleRequirements = _showAllRequirements
+        ? requirements
+        : requirements.take(5).toList();
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Row(
-          children: [
-            SizedBox(
-              width: 94,
-              child: Text(
-                _formatCategoryLabel(categoryName),
-                maxLines: 2,
-                overflow: TextOverflow.ellipsis,
-                style: const TextStyle(
-                  fontSize: 11.5,
-                  fontWeight: FontWeight.w700,
-                  color: _darkTextColor,
-                ),
-              ),
-            ),
-
-            const SizedBox(width: 10),
-
-            Expanded(
-              child: LayoutBuilder(
-                builder: (context, constraints) {
-                  return Stack(
-                    children: [
-                      Container(
-                        height: 22,
-                        decoration: BoxDecoration(
-                          color: const Color(0xFFEAF0F3),
-                          borderRadius: BorderRadius.circular(6),
-                        ),
-                      ),
-
-                      AnimatedContainer(
-                        duration: const Duration(milliseconds: 300),
-                        height: 22,
-                        width: constraints.maxWidth * barFactor,
-                        decoration: BoxDecoration(
-                          color: _barColor,
-                          borderRadius: BorderRadius.circular(6),
-                        ),
-                      ),
-                    ],
-                  );
-                },
-              ),
-            ),
-
-            const SizedBox(width: 9),
-
-            SizedBox(
-              width: 28,
-              child: Text(
-                '$itemCount',
-                textAlign: TextAlign.right,
-                style: const TextStyle(
-                  fontSize: 12,
-                  fontWeight: FontWeight.w800,
-                  color: _primaryColor,
-                ),
-              ),
-            ),
-          ],
+        const Text(
+          'Commonly Generated Requirements',
+          style: TextStyle(
+            fontSize: 18,
+            fontWeight: FontWeight.w800,
+            color: _darkTextColor,
+          ),
         ),
 
         const SizedBox(height: 5),
 
-        Padding(
-          padding: const EdgeInsets.only(left: 104),
-          child: Text(
-            '${percentage.toStringAsFixed(1)}% of generated requirements',
-            style: const TextStyle(fontSize: 9.5, color: Colors.black45),
-          ),
+        const Text(
+          'Shows which preparation requirements occur '
+          'most often within the selected traveller segment.',
+          style: TextStyle(fontSize: 12.5, height: 1.4, color: Colors.black54),
         ),
+
+        const SizedBox(height: 16),
+
+        if (requirements.isEmpty)
+          _buildEmptyState()
+        else ...[
+          Container(
+            width: double.infinity,
+            decoration: BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(18),
+              border: Border.all(color: _borderColor),
+            ),
+            child: Column(
+              children: [
+                for (
+                  int index = 0;
+                  index < visibleRequirements.length;
+                  index++
+                ) ...[
+                  _buildRequirementRow(
+                    rank: index + 1,
+                    requirement: visibleRequirements[index],
+                    analysedTrips: analysedTrips,
+                  ),
+
+                  if (index != visibleRequirements.length - 1)
+                    const Divider(height: 1, indent: 16, endIndent: 16),
+                ],
+              ],
+            ),
+          ),
+
+          if (requirements.length > 5) ...[
+            const SizedBox(height: 10),
+
+            Center(
+              child: TextButton.icon(
+                onPressed: () {
+                  setState(() {
+                    _showAllRequirements = !_showAllRequirements;
+                  });
+                },
+                icon: Icon(
+                  _showAllRequirements
+                      ? Icons.keyboard_arrow_up_rounded
+                      : Icons.keyboard_arrow_down_rounded,
+                ),
+                label: Text(
+                  _showAllRequirements
+                      ? 'Show less'
+                      : 'View all ${requirements.length}',
+                ),
+              ),
+            ),
+          ],
+
+          const SizedBox(height: 16),
+
+          _buildExplanationCard(),
+        ],
       ],
     );
   }
 
-  Widget _buildTopCategoryCard(Map<String, dynamic> category) {
-    final String categoryName =
-        category['category'] as String? ?? 'Uncategorised';
-
-    final int itemCount = category['count'] as int? ?? 0;
-
-    final double percentage = category['percentage'] as double? ?? 0;
-
-    return Container(
-      width: double.infinity,
-      padding: const EdgeInsets.all(17),
-      decoration: BoxDecoration(
-        color: const Color(0xFFF1F6FA),
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: const Color(0xFFD8E6EE)),
-      ),
-      child: Row(
-        children: [
-          Container(
-            width: 44,
-            height: 44,
-            decoration: BoxDecoration(
-              color: const Color(0xFFE8F6F7),
-              borderRadius: BorderRadius.circular(13),
-            ),
-            child: const Icon(Icons.insights_outlined, color: _primaryColor),
-          ),
-
-          const SizedBox(width: 13),
-
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                const Text(
-                  'Most Common Category',
-                  style: TextStyle(fontSize: 10.5, color: Colors.black54),
-                ),
-
-                const SizedBox(height: 3),
-
-                Text(
-                  _formatCategoryLabel(categoryName),
-                  style: const TextStyle(
-                    fontSize: 15,
-                    fontWeight: FontWeight.w800,
-                    color: _darkTextColor,
-                  ),
-                ),
-
-                const SizedBox(height: 3),
-
-                Text(
-                  '$itemCount requirements · '
-                  '${percentage.toStringAsFixed(1)}%',
-                  style: const TextStyle(
-                    fontSize: 11,
-                    color: Color(0xFF486581),
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildTopRequirements(List<Map<String, dynamic>> requirements) {
-    return Container(
-      width: double.infinity,
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(18),
-        border: Border.all(color: _borderColor),
-      ),
-      child: Column(
-        children: [
-          for (int index = 0; index < requirements.length; index++) ...[
-            _buildRequirementRow(
-              index: index,
-              requirement: requirements[index],
-            ),
-            if (index != requirements.length - 1)
-              const Divider(height: 1, indent: 16, endIndent: 16),
-          ],
-        ],
-      ),
-    );
-  }
-
   Widget _buildRequirementRow({
-    required int index,
+    required int rank,
     required Map<String, dynamic> requirement,
+    required int analysedTrips,
   }) {
-    final String title = requirement['title'] as String? ?? '';
+    final String title =
+        requirement['title'] as String? ?? 'Unnamed requirement';
 
-    final int itemCount = requirement['count'] as int? ?? 0;
+    final int tripCount = requirement['tripCount'] as int? ?? 0;
 
     final double percentage = requirement['percentage'] as double? ?? 0;
 
+    final double progress = (percentage / 100).clamp(0.0, 1.0);
+
+    final List<Map<String, dynamic>> destinationBreakdown =
+        List<Map<String, dynamic>>.from(
+          requirement['destinationBreakdown'] as List? ?? [],
+        );
+
+    final List<Map<String, dynamic>> purposeBreakdown =
+        List<Map<String, dynamic>>.from(
+          requirement['purposeBreakdown'] as List? ?? [],
+        );
+
     return Padding(
       padding: const EdgeInsets.all(16),
-      child: Row(
+      child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Container(
-            width: 28,
-            height: 28,
-            alignment: Alignment.center,
-            decoration: BoxDecoration(
-              color: const Color(0xFFE8F6F7),
-              borderRadius: BorderRadius.circular(8),
-            ),
-            child: Text(
-              '${index + 1}',
-              style: const TextStyle(
-                fontSize: 11,
-                fontWeight: FontWeight.w800,
-                color: _primaryColor,
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Container(
+                width: 30,
+                height: 30,
+                alignment: Alignment.center,
+                decoration: BoxDecoration(
+                  color: const Color(0xFFE8F6F7),
+                  borderRadius: BorderRadius.circular(9),
+                ),
+                child: Text(
+                  '$rank',
+                  style: const TextStyle(
+                    fontSize: 11,
+                    fontWeight: FontWeight.w800,
+                    color: _primaryColor,
+                  ),
+                ),
               ),
-            ),
-          ),
 
-          const SizedBox(width: 11),
+              const SizedBox(width: 11),
 
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
+              Expanded(
+                child: Text(
                   title,
                   style: const TextStyle(
                     fontSize: 12.5,
                     fontWeight: FontWeight.w700,
                     color: _darkTextColor,
+                    height: 1.35,
                   ),
                 ),
+              ),
+            ],
+          ),
 
-                const SizedBox(height: 4),
+          const SizedBox(height: 12),
 
-                Text(
-                  '$itemCount occurrences · '
-                  '${percentage.toStringAsFixed(1)}%',
-                  style: const TextStyle(fontSize: 10.5, color: Colors.black54),
+          Row(
+            children: [
+              Expanded(
+                child: ClipRRect(
+                  borderRadius: BorderRadius.circular(20),
+                  child: LinearProgressIndicator(
+                    value: progress,
+                    minHeight: 7,
+                    backgroundColor: const Color(0xFFEAF0F3),
+                    color: _primaryColor,
+                  ),
                 ),
-              ],
+              ),
+
+              const SizedBox(width: 10),
+
+              Text(
+                '${percentage.toStringAsFixed(1)}%',
+                style: const TextStyle(
+                  fontSize: 11,
+                  fontWeight: FontWeight.w800,
+                  color: _primaryColor,
+                ),
+              ),
+            ],
+          ),
+
+          const SizedBox(height: 7),
+
+          Text(
+            'Generated for $tripCount of $analysedTrips '
+            '${analysedTrips == 1 ? 'trip' : 'trips'}',
+            style: const TextStyle(fontSize: 10.5, color: Colors.black54),
+          ),
+
+          // If no destination filter is selected,
+          // show which destinations generated this requirement.
+          if (_selectedDestinationId == null &&
+              destinationBreakdown.isNotEmpty) ...[
+            const SizedBox(height: 12),
+
+            const Text(
+              'Destinations',
+              style: TextStyle(
+                fontSize: 9.5,
+                fontWeight: FontWeight.w700,
+                color: Colors.black45,
+              ),
+            ),
+
+            const SizedBox(height: 6),
+
+            Wrap(
+              spacing: 6,
+              runSpacing: 6,
+              children: destinationBreakdown.map((item) {
+                final String name = item['name'] as String? ?? 'Unknown';
+
+                final int count = item['tripCount'] as int? ?? 0;
+
+                return _buildContextChip('$name · $count');
+              }).toList(),
+            ),
+          ],
+
+          // If no purpose filter is selected,
+          // show which traveller purposes generated it.
+          if (_selectedPurpose == null && purposeBreakdown.isNotEmpty) ...[
+            const SizedBox(height: 10),
+
+            const Text(
+              'Travel purposes',
+              style: TextStyle(
+                fontSize: 9.5,
+                fontWeight: FontWeight.w700,
+                color: Colors.black45,
+              ),
+            ),
+
+            const SizedBox(height: 6),
+
+            Wrap(
+              spacing: 6,
+              runSpacing: 6,
+              children: purposeBreakdown.map((item) {
+                final String purpose = item['purpose'] as String? ?? '';
+
+                final int count = item['tripCount'] as int? ?? 0;
+
+                return _buildContextChip('${_formatPurpose(purpose)} · $count');
+              }).toList(),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+
+  Widget _buildContextChip(String label) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 6),
+      decoration: BoxDecoration(
+        color: const Color(0xFFF3F7F9),
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(color: const Color(0xFFE1E7EC)),
+      ),
+      child: Text(
+        label,
+        style: const TextStyle(
+          fontSize: 9.5,
+          fontWeight: FontWeight.w600,
+          color: Color(0xFF486581),
+        ),
+      ),
+    );
+  }
+
+  // ---------------------------------------------------------------------------
+  // EXPLANATION
+  // ---------------------------------------------------------------------------
+
+  Widget _buildExplanationCard() {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: const Color(0xFFF1F6FA),
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: const Color(0xFFD8E6EE)),
+      ),
+      child: const Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Icon(Icons.info_outline_rounded, color: _primaryColor, size: 19),
+
+          SizedBox(width: 9),
+
+          Expanded(
+            child: Text(
+              'Requirement patterns describe the types of '
+              'preparation commonly generated for different '
+              'traveller groups. They support comparison of '
+              'travel preparation patterns and do not indicate '
+              'whether regulation content is accurate or requires updating.',
+              style: TextStyle(
+                fontSize: 10.5,
+                height: 1.45,
+                color: Colors.black54,
+              ),
             ),
           ),
         ],
       ),
     );
   }
+
+  // ---------------------------------------------------------------------------
+  // EMPTY STATE
+  // ---------------------------------------------------------------------------
 
   Widget _buildEmptyState() {
     return Container(
@@ -602,28 +621,16 @@ class _PreparationRequirementsScreenState
       ),
       child: const Column(
         children: [
-          Icon(Icons.category_outlined, size: 38, color: Colors.black38),
-          SizedBox(height: 8),
-          Text('No requirement category data available.'),
-        ],
-      ),
-    );
-  }
+          Icon(Icons.insights_outlined, size: 38, color: Colors.black38),
 
-  Widget _buildEmptyRequirements() {
-    return Container(
-      width: double.infinity,
-      padding: const EdgeInsets.all(28),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: _borderColor),
-      ),
-      child: const Column(
-        children: [
-          Icon(Icons.fact_check_outlined, size: 38, color: Colors.black38),
           SizedBox(height: 8),
-          Text('No generated requirements available.'),
+
+          Text(
+            'No requirement patterns are available '
+            'for the selected filters.',
+            textAlign: TextAlign.center,
+            style: TextStyle(fontSize: 11.5, color: Colors.black54),
+          ),
         ],
       ),
     );

@@ -118,8 +118,7 @@ class _AnalystDashboardState extends State<AnalystDashboard> {
                 icon: Icons.public_outlined,
                 title: 'Destination Trends',
                 description:
-                    'Compare trip activity across '
-                    'the five supported destinations.',
+                'Analyse popular destinations and monthly departure activity.',
                 available: true,
                 onTap: () {
                   Navigator.push(
@@ -137,8 +136,7 @@ class _AnalystDashboardState extends State<AnalystDashboard> {
                 icon: Icons.donut_large_outlined,
                 title: 'Travel Purpose Distribution',
                 description:
-                    'Review the distribution of tourism, '
-                    'business and study trips.',
+                'Compare tourism, business and study travel patterns.',
                 available: true,
                 onTap: () {
                   Navigator.push(
@@ -155,8 +153,7 @@ class _AnalystDashboardState extends State<AnalystDashboard> {
                 icon: Icons.task_alt_outlined,
                 title: 'Checklist Completion',
                 description:
-                    'Analyse aggregated traveller '
-                    'requirement completion.',
+                'Analyse aggregated checklist completion and lower-completion requirements.',
                 available: true,
                 onTap: () {
                   Navigator.push(
@@ -172,10 +169,9 @@ class _AnalystDashboardState extends State<AnalystDashboard> {
 
               _buildAnalyticsModuleCard(
                 icon: Icons.inventory_2_outlined,
-                title: 'Preparation Requirements',
+                title: 'Requirement Patterns',
                 description:
-                    'Analyse aggregated preparation '
-                    'requirement patterns.',
+                    'Explore commonly generated requirements by traveller segment',
                 available: true,
                 onTap: () {
                   Navigator.push(
