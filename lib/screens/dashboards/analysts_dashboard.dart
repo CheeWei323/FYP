@@ -5,6 +5,8 @@ import '../analyst/destination_trends_screen.dart';
 import '../analyst/purpose_distribution_screen.dart';
 import '../analyst/checklist_completion_screen.dart';
 import '../analyst/preparation_requirements_screen.dart';
+import '../analyst/analyst_reports_screen.dart';
+import '../analyst/analyst_profile_screen.dart';
 
 class AnalystDashboard extends StatefulWidget {
   const AnalystDashboard({super.key});
@@ -25,6 +27,8 @@ class _AnalystDashboardState extends State<AnalystDashboard> {
   static const Color _borderColor = Color(0xFFE1E7EC);
 
   late Future<Map<String, dynamic>> _overviewFuture;
+
+  int _selectedIndex = 0;
 
   // ---------------------------------------------------------------------------
   // LIFECYCLE
@@ -57,6 +61,8 @@ class _AnalystDashboardState extends State<AnalystDashboard> {
 
   @override
   Widget build(BuildContext context) {
+    const List<String> titles = ['Tourism Data Analyst', 'Reports', 'Profile'];
+
     return Scaffold(
       backgroundColor: _backgroundColor,
       appBar: AppBar(
@@ -64,131 +70,180 @@ class _AnalystDashboardState extends State<AnalystDashboard> {
         backgroundColor: Colors.white,
         surfaceTintColor: Colors.white,
         elevation: 0,
-        title: const Text(
-          'Tourism Data Analyst',
-          style: TextStyle(color: _darkTextColor, fontWeight: FontWeight.w700),
+        title: Text(
+          titles[_selectedIndex],
+          style: const TextStyle(
+            color: _darkTextColor,
+            fontWeight: FontWeight.w700,
+          ),
         ),
       ),
-      body: SafeArea(
-        child: RefreshIndicator(
-          onRefresh: _refresh,
-          child: ListView(
-            physics: const AlwaysScrollableScrollPhysics(),
-            padding: const EdgeInsets.fromLTRB(18, 18, 18, 36),
-            children: [
-              _buildWelcomeCard(),
 
-              const SizedBox(height: 26),
+      body: IndexedStack(
+        index: _selectedIndex,
+        children: [
+          _buildDashboardTab(),
+          const AnalystReportsScreen(),
+          const AnalystProfileScreen(),
+        ],
+      ),
 
-              const Text(
-                'Analytics Overview',
-                style: TextStyle(
-                  fontSize: 18,
-                  fontWeight: FontWeight.w800,
-                  color: _darkTextColor,
-                ),
-              ),
-
-              const SizedBox(height: 5),
-
-              const Text(
-                'Aggregated travel activity '
-                'across supported destinations.',
-                style: TextStyle(fontSize: 12.5, color: Colors.black54),
-              ),
-
-              const SizedBox(height: 14),
-
-              _buildOverview(),
-
-              const SizedBox(height: 28),
-
-              const Text(
-                'Analytics Modules',
-                style: TextStyle(
-                  fontSize: 18,
-                  fontWeight: FontWeight.w800,
-                  color: _darkTextColor,
-                ),
-              ),
-
-              const SizedBox(height: 12),
-
-              _buildAnalyticsModuleCard(
-                icon: Icons.public_outlined,
-                title: 'Destination Trends',
-                description:
-                'Analyse popular destinations and monthly departure activity.',
-                available: true,
-                onTap: () {
-                  Navigator.push(
-                    context,
-                    MaterialPageRoute(
-                      builder: (context) => const DestinationTrendsScreen(),
-                    ),
-                  );
-                },
-              ),
-
-              const SizedBox(height: 10),
-
-              _buildAnalyticsModuleCard(
-                icon: Icons.donut_large_outlined,
-                title: 'Travel Purpose Distribution',
-                description:
-                'Compare tourism, business and study travel patterns.',
-                available: true,
-                onTap: () {
-                  Navigator.push(
-                    context,
-                    MaterialPageRoute(
-                      builder: (context) => const PurposeDistributionScreen(),
-                    ),
-                  );
-                },
-              ),
-              const SizedBox(height: 10),
-
-              _buildAnalyticsModuleCard(
-                icon: Icons.task_alt_outlined,
-                title: 'Checklist Completion',
-                description:
-                'Analyse aggregated checklist completion and lower-completion requirements.',
-                available: true,
-                onTap: () {
-                  Navigator.push(
-                    context,
-                    MaterialPageRoute(
-                      builder: (context) => const ChecklistCompletionScreen(),
-                    ),
-                  );
-                },
-              ),
-
-              const SizedBox(height: 10),
-
-              _buildAnalyticsModuleCard(
-                icon: Icons.inventory_2_outlined,
-                title: 'Requirement Patterns',
-                description:
-                    'Explore commonly generated requirements by traveller segment',
-                available: true,
-                onTap: () {
-                  Navigator.push(
-                    context,
-                    MaterialPageRoute(
-                      builder: (context) =>
-                          const PreparationRequirementsScreen(),
-                    ),
-                  );
-                },
-              ),
-
-              const SizedBox(height: 28),
-
-              _buildInformationCard(),
-            ],
+      bottomNavigationBar: NavigationBar(
+        selectedIndex: _selectedIndex,
+        backgroundColor: Colors.white,
+        indicatorColor: const Color(0xFFDDF3F4),
+        onDestinationSelected: (index) {
+          setState(() {
+            _selectedIndex = index;
+          });
+        },
+        destinations: const [
+          NavigationDestination(
+            icon: Icon(Icons.dashboard_outlined),
+            selectedIcon: Icon(Icons.dashboard_rounded),
+            label: 'Dashboard',
           ),
+
+          NavigationDestination(
+            icon: Icon(Icons.description_outlined),
+            selectedIcon: Icon(Icons.description_rounded),
+            label: 'Reports',
+          ),
+
+          NavigationDestination(
+            icon: Icon(Icons.person_outline_rounded),
+            selectedIcon: Icon(Icons.person_rounded),
+            label: 'Profile',
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildDashboardTab() {
+    return SafeArea(
+      child: RefreshIndicator(
+        onRefresh: _refresh,
+        child: ListView(
+          physics: const AlwaysScrollableScrollPhysics(),
+          padding: const EdgeInsets.fromLTRB(18, 18, 18, 36),
+          children: [
+            _buildWelcomeCard(),
+
+            const SizedBox(height: 26),
+
+            const Text(
+              'Analytics Overview',
+              style: TextStyle(
+                fontSize: 18,
+                fontWeight: FontWeight.w800,
+                color: _darkTextColor,
+              ),
+            ),
+
+            const SizedBox(height: 5),
+
+            const Text(
+              'Aggregated travel activity '
+              'across supported destinations.',
+              style: TextStyle(fontSize: 12.5, color: Colors.black54),
+            ),
+
+            const SizedBox(height: 14),
+
+            _buildOverview(),
+
+            const SizedBox(height: 28),
+
+            const Text(
+              'Analytics Modules',
+              style: TextStyle(
+                fontSize: 18,
+                fontWeight: FontWeight.w800,
+                color: _darkTextColor,
+              ),
+            ),
+
+            const SizedBox(height: 12),
+
+            _buildAnalyticsModuleCard(
+              icon: Icons.public_outlined,
+              title: 'Destination Trends',
+              description:
+                  'Analyse popular destinations and '
+                  'monthly departure activity.',
+              available: true,
+              onTap: () {
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (context) => const DestinationTrendsScreen(),
+                  ),
+                );
+              },
+            ),
+
+            const SizedBox(height: 10),
+
+            _buildAnalyticsModuleCard(
+              icon: Icons.donut_large_outlined,
+              title: 'Travel Purpose Distribution',
+              description:
+                  'Compare tourism, business and '
+                  'study travel patterns.',
+              available: true,
+              onTap: () {
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (context) => const PurposeDistributionScreen(),
+                  ),
+                );
+              },
+            ),
+
+            const SizedBox(height: 10),
+
+            _buildAnalyticsModuleCard(
+              icon: Icons.task_alt_outlined,
+              title: 'Checklist Completion',
+              description:
+                  'Analyse aggregated checklist completion '
+                  'and lower-completion requirements.',
+              available: true,
+              onTap: () {
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (context) => const ChecklistCompletionScreen(),
+                  ),
+                );
+              },
+            ),
+
+            const SizedBox(height: 10),
+
+            _buildAnalyticsModuleCard(
+              icon: Icons.insights_outlined,
+              title: 'Requirement Patterns',
+              description:
+                  'Explore commonly generated requirements '
+                  'by traveller segment.',
+              available: true,
+              onTap: () {
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (context) => const PreparationRequirementsScreen(),
+                  ),
+                );
+              },
+            ),
+
+            const SizedBox(height: 28),
+
+            _buildInformationCard(),
+          ],
         ),
       ),
     );
