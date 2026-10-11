@@ -330,6 +330,7 @@ class _AnalystReportsScreenState extends State<AnalystReportsScreen> {
         children: [
           DropdownButtonFormField<String>(
             initialValue: _selectedReportType,
+            isExpanded: true,
             decoration: InputDecoration(
               labelText: 'Report Type',
               prefixIcon: const Icon(Icons.analytics_outlined),
@@ -346,7 +347,11 @@ class _AnalystReportsScreenState extends State<AnalystReportsScreen> {
                 ].map((String value) {
                   return DropdownMenuItem<String>(
                     value: value,
-                    child: Text(_reportTypeLabel(value)),
+                    child: Text(
+                      _reportTypeLabel(value),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
                   );
                 }).toList(),
             onChanged: _changeReportType,
@@ -412,8 +417,13 @@ class _AnalystReportsScreenState extends State<AnalystReportsScreen> {
                       ),
                     )
                   : const Icon(Icons.file_download_outlined),
-              label: Text(
-                _isGenerating ? 'Generating...' : 'Generate & Export Excel',
+              label: FittedBox(
+                fit: BoxFit.scaleDown,
+                child: Text(
+                  _isGenerating ? 'Generating...' : 'Generate & Export Excel',
+                  maxLines: 1,
+                  softWrap: false,
+                ),
               ),
             ),
           ),
@@ -547,11 +557,20 @@ class _AnalystReportsScreenState extends State<AnalystReportsScreen> {
             children: [
               Expanded(
                 child: OutlinedButton.icon(
+                  style: OutlinedButton.styleFrom(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 8,
+                      vertical: 12,
+                    ),
+                  ),
                   onPressed: () {
                     _viewReport(report);
                   },
                   icon: const Icon(Icons.visibility_outlined, size: 18),
-                  label: const Text('View Report'),
+                  label: const FittedBox(
+                    fit: BoxFit.scaleDown,
+                    child: Text('View Report', maxLines: 1, softWrap: false),
+                  ),
                 ),
               ),
 
@@ -559,11 +578,20 @@ class _AnalystReportsScreenState extends State<AnalystReportsScreen> {
 
               Expanded(
                 child: FilledButton.icon(
+                  style: FilledButton.styleFrom(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 8,
+                      vertical: 12,
+                    ),
+                  ),
                   onPressed: () {
                     _exportExcel(report);
                   },
                   icon: const Icon(Icons.file_download_outlined, size: 18),
-                  label: const Text('Export Excel'),
+                  label: const FittedBox(
+                    fit: BoxFit.scaleDown,
+                    child: Text('Export Excel', maxLines: 1, softWrap: false),
+                  ),
                 ),
               ),
             ],
