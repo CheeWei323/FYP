@@ -3,7 +3,10 @@ import 'dart:convert';
 import 'package:http/http.dart' as http;
 
 class PackingAiService {
-  static const String _baseUrl = 'http://10.0.2.2:3000';
+  static const String _baseUrl = String.fromEnvironment(
+    'BACKEND_URL',
+    defaultValue: 'http://192.168.1.197:3000',
+  );
 
   Future<List<Map<String, dynamic>>> generatePackingItems({
     required String destination,
