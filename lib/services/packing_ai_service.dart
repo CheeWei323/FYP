@@ -5,7 +5,7 @@ import 'package:http/http.dart' as http;
 class PackingAiService {
   static const String _baseUrl = String.fromEnvironment(
     'BACKEND_URL',
-    defaultValue: 'http://192.168.1.197:3000',
+    defaultValue: 'https://fyp-g28m.onrender.com',
   );
 
   Future<List<Map<String, dynamic>>> generatePackingItems({
@@ -14,39 +14,29 @@ class PackingAiService {
     required int durationDays,
     required DateTime departureDate,
   }) async {
-    final Uri url = Uri.parse(
-      '$_baseUrl/api/packing/generate',
-    );
+    final Uri url = Uri.parse('$_baseUrl/api/packing/generate');
 
     final response = await http.post(
       url,
-      headers: {
-        'Content-Type': 'application/json',
-      },
+      headers: {'Content-Type': 'application/json'},
       body: jsonEncode({
         'destination': destination,
         'purpose': purpose.toLowerCase(),
         'durationDays': durationDays,
-        'departureDate':
-        departureDate.toIso8601String().split('T').first,
+        'departureDate': departureDate.toIso8601String().split('T').first,
       }),
     );
 
     if (response.statusCode != 200) {
-      throw Exception(
-        'Packing generation failed: ${response.body}',
-      );
+      throw Exception('Packing generation failed: ${response.body}');
     }
 
-    final Map<String, dynamic> data =
-    jsonDecode(response.body);
+    final Map<String, dynamic> data = jsonDecode(response.body);
 
     final List<dynamic>? items = data['items'];
 
     if (items == null) {
-      throw Exception(
-        'No packing items were returned.',
-      );
+      throw Exception('No packing items were returned.');
     }
 
     return items.map<Map<String, dynamic>>((item) {
