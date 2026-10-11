@@ -2,7 +2,10 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 
 import '../models/reminder.dart';
+import '../models/trip.dart';
 import '../services/reminder_service.dart';
+import '../services/trip_service.dart';
+import 'checklist_screen.dart';
 
 class TravellerAlertsScreen extends StatefulWidget {
   const TravellerAlertsScreen({super.key});
@@ -14,9 +17,13 @@ class TravellerAlertsScreen extends StatefulWidget {
 class _TravellerAlertsScreenState extends State<TravellerAlertsScreen> {
   final ReminderService _reminderService = ReminderService();
 
-  late Future<List<Reminder>> _remindersFuture;
+  final TripService _tripService = TripService();
+
+  late Future<_AlertsData> _alertsFuture;
 
   String _selectedFilter = 'upcoming';
+
+  static const int _preparationAlertWindowDays = 30;
 
   static const Color _primaryColor = Color(0xFF087F8C);
 
@@ -30,31 +37,152 @@ class _TravellerAlertsScreenState extends State<TravellerAlertsScreen> {
   void initState() {
     super.initState();
 
-    _remindersFuture = _loadReminders();
+    _alertsFuture = _loadAlertsData();
   }
 
   // ---------------------------------------------------------------------------
-  // REMINDER DATA
+  // ALERT DATA
   // ---------------------------------------------------------------------------
 
-  Future<List<Reminder>> _loadReminders() async {
+  Future<_AlertsData> _loadAlertsData() async {
     final User? currentUser = FirebaseAuth.instance.currentUser;
 
     if (currentUser == null) {
       throw Exception('No authenticated user was found.');
     }
 
-    return _reminderService.getUserReminders(currentUser.uid);
+    final Future<List<Trip>> tripsFuture = _tripService.getUserTrips(
+      currentUser.uid,
+    );
+
+    final Future<List<Reminder>> remindersFuture = _reminderService
+        .getUserReminders(currentUser.uid);
+
+    final List<Trip> trips = await tripsFuture;
+
+    final List<Reminder> reminders = await remindersFuture;
+
+    final List<Trip> activeTrips = trips
+        .where((trip) => !_isPastTrip(trip))
+        .toList();
+
+    final List<Trip> preparationTrips = activeTrips
+        .where(_isWithinPreparationAlertWindow)
+        .toList();
+
+    final Set<String> activeTripIds = activeTrips
+        .map((trip) => trip.id)
+        .toSet();
+
+    final List<Future<_PreparationAlert?>> preparationFutures = preparationTrips
+        .map((trip) async {
+          final Map<String, int> progress = await _tripService
+              .getChecklistProgress(trip.id);
+
+          final int completed = progress['completed'] ?? 0;
+
+          final int total = progress['total'] ?? 0;
+
+          if (total == 0 || completed >= total) {
+            return null;
+          }
+
+          return _PreparationAlert(
+            trip: trip,
+            completed: completed,
+            total: total,
+          );
+        })
+        .toList();
+
+    final List<_PreparationAlert?> preparationResults = await Future.wait(
+      preparationFutures,
+    );
+
+    final List<_PreparationAlert> preparationAlerts = preparationResults
+        .whereType<_PreparationAlert>()
+        .toList();
+
+    preparationAlerts.sort(
+      (first, second) =>
+          first.trip.departureDate.compareTo(second.trip.departureDate),
+    );
+
+    // Active reminders are hidden once their
+    // associated trip has passed.
+    final List<Reminder> activeReminders = reminders
+        .where(
+          (reminder) =>
+              !reminder.completed && activeTripIds.contains(reminder.tripId),
+        )
+        .toList();
+
+    activeReminders.sort(
+      (first, second) => first.reminderAt.compareTo(second.reminderAt),
+    );
+
+    // Completed reminders are retained as
+    // a simple history even if the trip passed.
+    final List<Reminder> completedReminders = reminders
+        .where((reminder) => reminder.completed)
+        .toList();
+
+    completedReminders.sort(
+      (first, second) => second.reminderAt.compareTo(first.reminderAt),
+    );
+
+    return _AlertsData(
+      preparationAlerts: preparationAlerts,
+      activeReminders: activeReminders,
+      completedReminders: completedReminders,
+    );
   }
 
   Future<void> _refresh() async {
-    final Future<List<Reminder>> refreshed = _loadReminders();
+    final Future<_AlertsData> refreshed = _loadAlertsData();
 
     setState(() {
-      _remindersFuture = refreshed;
+      _alertsFuture = refreshed;
     });
 
     await refreshed;
+  }
+
+  // ---------------------------------------------------------------------------
+  // TRIP STATUS
+  // ---------------------------------------------------------------------------
+
+  bool _isPastTrip(Trip trip) {
+    final DateTime now = DateTime.now();
+
+    final DateTime today = DateTime(now.year, now.month, now.day);
+
+    final DateTime departure = DateTime(
+      trip.departureDate.year,
+      trip.departureDate.month,
+      trip.departureDate.day,
+    );
+
+    // Departure today is still treated
+    // as an active/upcoming trip.
+    return departure.isBefore(today);
+  }
+
+  bool _isWithinPreparationAlertWindow(Trip trip) {
+    final DateTime now = DateTime.now();
+
+    final DateTime today = DateTime(now.year, now.month, now.day);
+
+    final DateTime departure = DateTime(
+      trip.departureDate.year,
+      trip.departureDate.month,
+      trip.departureDate.day,
+    );
+
+    final int daysUntilDeparture = departure.difference(today).inDays;
+
+    return daysUntilDeparture >= 0 &&
+        daysUntilDeparture <= _preparationAlertWindowDays;
   }
 
   // ---------------------------------------------------------------------------
@@ -69,6 +197,23 @@ class _TravellerAlertsScreenState extends State<TravellerAlertsScreen> {
     setState(() {
       _selectedFilter = filter;
     });
+  }
+
+  // ---------------------------------------------------------------------------
+  // NAVIGATION
+  // ---------------------------------------------------------------------------
+
+  Future<void> _openChecklist(_PreparationAlert alert) async {
+    await Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (context) => ChecklistScreen(tripId: alert.trip.id),
+      ),
+    );
+
+    if (!mounted) return;
+
+    await _refresh();
   }
 
   // ---------------------------------------------------------------------------
@@ -116,6 +261,22 @@ class _TravellerAlertsScreenState extends State<TravellerAlertsScreen> {
         '$period';
   }
 
+  String _formatText(String value) {
+    if (value.isEmpty) {
+      return value;
+    }
+
+    return value
+        .split('_')
+        .map(
+          (word) => word.isEmpty
+              ? word
+              : '${word[0].toUpperCase()}'
+                    '${word.substring(1)}',
+        )
+        .join(' ');
+  }
+
   bool _isOverdue(Reminder reminder) {
     return !reminder.completed && reminder.reminderAt.isBefore(DateTime.now());
   }
@@ -129,8 +290,8 @@ class _TravellerAlertsScreenState extends State<TravellerAlertsScreen> {
     return ColoredBox(
       color: _backgroundColor,
       child: SafeArea(
-        child: FutureBuilder<List<Reminder>>(
-          future: _remindersFuture,
+        child: FutureBuilder<_AlertsData>(
+          future: _alertsFuture,
           builder: (context, snapshot) {
             if (snapshot.connectionState == ConnectionState.waiting) {
               return const Center(child: CircularProgressIndicator());
@@ -140,23 +301,18 @@ class _TravellerAlertsScreenState extends State<TravellerAlertsScreen> {
               return _buildErrorState();
             }
 
-            final List<Reminder> reminders = snapshot.data ?? [];
+            final _AlertsData data =
+                snapshot.data ??
+                const _AlertsData(
+                  preparationAlerts: [],
+                  activeReminders: [],
+                  completedReminders: [],
+                );
 
-            final List<Reminder> upcomingReminders = reminders
-                .where((reminder) => !reminder.completed)
-                .toList();
+            final int upcomingCount =
+                data.preparationAlerts.length + data.activeReminders.length;
 
-            final List<Reminder> completedReminders = reminders
-                .where((reminder) => reminder.completed)
-                .toList();
-
-            upcomingReminders.sort(
-              (first, second) => first.reminderAt.compareTo(second.reminderAt),
-            );
-
-            completedReminders.sort(
-              (first, second) => second.reminderAt.compareTo(first.reminderAt),
-            );
+            final int completedCount = data.completedReminders.length;
 
             return RefreshIndicator(
               onRefresh: _refresh,
@@ -169,29 +325,16 @@ class _TravellerAlertsScreenState extends State<TravellerAlertsScreen> {
                   const SizedBox(height: 22),
 
                   _buildFilterRow(
-                    upcomingCount: upcomingReminders.length,
-                    completedCount: completedReminders.length,
+                    upcomingCount: upcomingCount,
+                    completedCount: completedCount,
                   ),
 
-                  const SizedBox(height: 18),
+                  const SizedBox(height: 20),
 
                   if (_selectedFilter == 'upcoming')
-                    _buildReminderSection(
-                      reminders: upcomingReminders,
-                      emptyTitle: 'No upcoming reminders',
-                      emptyMessage:
-                          'Travel preparation reminders '
-                          'for your upcoming trips will '
-                          'appear here.',
-                    )
+                    _buildUpcomingContent(data)
                   else
-                    _buildReminderSection(
-                      reminders: completedReminders,
-                      emptyTitle: 'No completed reminders',
-                      emptyMessage:
-                          'Reminders marked as completed '
-                          'will appear here.',
-                    ),
+                    _buildCompletedContent(data.completedReminders),
                 ],
               ),
             );
@@ -227,14 +370,14 @@ class _TravellerAlertsScreenState extends State<TravellerAlertsScreen> {
               color: Colors.white,
               borderRadius: BorderRadius.all(Radius.circular(15)),
             ),
-            child: Icon(
+            child: const Icon(
               Icons.notifications_active_outlined,
               color: _primaryColor,
               size: 29,
             ),
           ),
 
-          SizedBox(width: 14),
+          const SizedBox(width: 14),
 
           const Expanded(
             child: Column(
@@ -252,8 +395,8 @@ class _TravellerAlertsScreenState extends State<TravellerAlertsScreen> {
                 SizedBox(height: 5),
 
                 Text(
-                  'Keep track of travel preparation '
-                  'reminders for your saved trips.',
+                  'Automatic preparation alerts and '
+                  'personal reminders for your trips.',
                   style: TextStyle(
                     fontSize: 12.5,
                     height: 1.4,
@@ -361,18 +504,289 @@ class _TravellerAlertsScreenState extends State<TravellerAlertsScreen> {
   }
 
   // ---------------------------------------------------------------------------
-  // REMINDER LIST
+  // UPCOMING CONTENT
   // ---------------------------------------------------------------------------
 
-  Widget _buildReminderSection({
-    required List<Reminder> reminders,
-    required String emptyTitle,
-    required String emptyMessage,
-  }) {
-    if (reminders.isEmpty) {
-      return _buildEmptyState(title: emptyTitle, message: emptyMessage);
+  Widget _buildUpcomingContent(_AlertsData data) {
+    if (data.preparationAlerts.isEmpty && data.activeReminders.isEmpty) {
+      return _buildEmptyState(
+        title: 'No upcoming alerts',
+        message:
+            'There are no outstanding travel '
+            'requirements or active reminders '
+            'for your upcoming trips.',
+      );
     }
 
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        if (data.preparationAlerts.isNotEmpty) ...[
+          _buildSectionHeader(
+            title: 'Preparation Alerts',
+            count: data.preparationAlerts.length,
+          ),
+
+          const SizedBox(height: 12),
+
+          for (
+            int index = 0;
+            index < data.preparationAlerts.length;
+            index++
+          ) ...[
+            _buildPreparationAlertCard(data.preparationAlerts[index]),
+
+            if (index != data.preparationAlerts.length - 1)
+              const SizedBox(height: 12),
+          ],
+        ],
+
+        if (data.preparationAlerts.isNotEmpty &&
+            data.activeReminders.isNotEmpty)
+          const SizedBox(height: 26),
+
+        if (data.activeReminders.isNotEmpty) ...[
+          _buildSectionHeader(
+            title: 'Personal Reminders',
+            count: data.activeReminders.length,
+          ),
+
+          const SizedBox(height: 12),
+
+          _buildReminderSection(reminders: data.activeReminders),
+        ],
+      ],
+    );
+  }
+
+  // ---------------------------------------------------------------------------
+  // COMPLETED CONTENT
+  // ---------------------------------------------------------------------------
+
+  Widget _buildCompletedContent(List<Reminder> reminders) {
+    if (reminders.isEmpty) {
+      return _buildEmptyState(
+        title: 'No completed reminders',
+        message:
+            'Personal reminders marked as '
+            'completed will appear here.',
+      );
+    }
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        _buildSectionHeader(
+          title: 'Completed Reminders',
+          count: reminders.length,
+        ),
+
+        const SizedBox(height: 12),
+
+        _buildReminderSection(reminders: reminders),
+      ],
+    );
+  }
+
+  // ---------------------------------------------------------------------------
+  // SECTION HEADER
+  // ---------------------------------------------------------------------------
+
+  Widget _buildSectionHeader({required String title, required int count}) {
+    return Row(
+      children: [
+        Expanded(
+          child: Text(
+            title,
+            style: const TextStyle(
+              fontSize: 17,
+              fontWeight: FontWeight.w800,
+              color: _darkTextColor,
+            ),
+          ),
+        ),
+
+        Container(
+          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+          decoration: BoxDecoration(
+            color: const Color(0xFFE8F6F7),
+            borderRadius: BorderRadius.circular(20),
+          ),
+          child: Text(
+            '$count',
+            style: const TextStyle(
+              fontSize: 11,
+              fontWeight: FontWeight.w700,
+              color: _primaryColor,
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
+  // ---------------------------------------------------------------------------
+  // SYSTEM PREPARATION ALERT
+  // ---------------------------------------------------------------------------
+
+  Widget _buildPreparationAlertCard(_PreparationAlert alert) {
+    final int incomplete = alert.total - alert.completed;
+
+    final String destination = _formatText(alert.trip.destinationCountryId);
+
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(17),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(color: const Color(0xFFF0D8A8)),
+        boxShadow: const [
+          BoxShadow(
+            color: Color(0x09000000),
+            blurRadius: 10,
+            offset: Offset(0, 4),
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Container(
+                width: 46,
+                height: 46,
+                decoration: BoxDecoration(
+                  color: const Color(0xFFFFF4DC),
+                  borderRadius: BorderRadius.circular(13),
+                ),
+                child: const Icon(
+                  Icons.fact_check_outlined,
+                  color: Color(0xFFA86300),
+                  size: 24,
+                ),
+              ),
+
+              const SizedBox(width: 13),
+
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      '$destination preparation incomplete',
+                      style: const TextStyle(
+                        fontSize: 16,
+                        fontWeight: FontWeight.w800,
+                        color: _darkTextColor,
+                      ),
+                    ),
+
+                    const SizedBox(height: 5),
+
+                    Text(
+                      incomplete == 1
+                          ? '1 travel requirement is still incomplete.'
+                          : '$incomplete travel requirements are still incomplete.',
+                      style: const TextStyle(
+                        fontSize: 12,
+                        height: 1.4,
+                        color: Colors.black54,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+
+              const SizedBox(width: 8),
+
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 5),
+                decoration: BoxDecoration(
+                  color: const Color(0xFFFFE9BE),
+                  borderRadius: BorderRadius.circular(20),
+                ),
+                child: const Text(
+                  'Action Needed',
+                  style: TextStyle(
+                    fontSize: 9,
+                    fontWeight: FontWeight.w700,
+                    color: Color(0xFF925800),
+                  ),
+                ),
+              ),
+            ],
+          ),
+
+          const SizedBox(height: 15),
+
+          Container(
+            width: double.infinity,
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 11),
+            decoration: BoxDecoration(
+              color: const Color(0xFFF7F9FB),
+              borderRadius: BorderRadius.circular(12),
+            ),
+            child: Row(
+              children: [
+                const Icon(
+                  Icons.calendar_today_outlined,
+                  size: 16,
+                  color: Colors.black45,
+                ),
+
+                const SizedBox(width: 8),
+
+                Expanded(
+                  child: Text(
+                    'Departure '
+                    '${_formatDate(alert.trip.departureDate)}',
+                    style: const TextStyle(
+                      fontSize: 12.5,
+                      color: Color(0xFF486581),
+                    ),
+                  ),
+                ),
+
+                Text(
+                  '${alert.completed}/${alert.total}',
+                  style: const TextStyle(
+                    fontSize: 12,
+                    fontWeight: FontWeight.w700,
+                    color: _primaryColor,
+                  ),
+                ),
+              ],
+            ),
+          ),
+
+          const SizedBox(height: 13),
+
+          SizedBox(
+            width: double.infinity,
+            child: OutlinedButton.icon(
+              onPressed: () {
+                _openChecklist(alert);
+              },
+              icon: const Icon(Icons.checklist_rounded, size: 19),
+              label: const Text(
+                'View Checklist',
+                style: TextStyle(fontWeight: FontWeight.w700),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  // ---------------------------------------------------------------------------
+  // PERSONAL REMINDERS
+  // ---------------------------------------------------------------------------
+
+  Widget _buildReminderSection({required List<Reminder> reminders}) {
     return Column(
       children: [
         for (int index = 0; index < reminders.length; index++) ...[
@@ -456,7 +870,7 @@ class _TravellerAlertsScreenState extends State<TravellerAlertsScreen> {
                           ? 'Completed reminder'
                           : overdue
                           ? 'This reminder is overdue'
-                          : 'Upcoming travel reminder',
+                          : 'Upcoming personal reminder',
                       style: TextStyle(
                         fontSize: 11.5,
                         color: reminder.completed
@@ -472,7 +886,7 @@ class _TravellerAlertsScreenState extends State<TravellerAlertsScreen> {
 
               const SizedBox(width: 8),
 
-              _buildStatusBadge(reminder: reminder, overdue: overdue),
+              _buildReminderStatusBadge(reminder: reminder, overdue: overdue),
             ],
           ),
 
@@ -527,7 +941,7 @@ class _TravellerAlertsScreenState extends State<TravellerAlertsScreen> {
     );
   }
 
-  Widget _buildStatusBadge({
+  Widget _buildReminderStatusBadge({
     required Reminder reminder,
     required bool overdue,
   }) {
@@ -537,15 +951,21 @@ class _TravellerAlertsScreenState extends State<TravellerAlertsScreen> {
 
     if (reminder.completed) {
       label = 'Completed';
+
       backgroundColor = const Color(0xFFE4F3E9);
+
       textColor = const Color(0xFF347A50);
     } else if (overdue) {
       label = 'Overdue';
+
       backgroundColor = const Color(0xFFFDE7E7);
+
       textColor = const Color(0xFFC62828);
     } else {
       label = 'Upcoming';
+
       backgroundColor = const Color(0xFFDFF5EA);
+
       textColor = const Color(0xFF177245);
     }
 
@@ -637,7 +1057,7 @@ class _TravellerAlertsScreenState extends State<TravellerAlertsScreen> {
           SizedBox(height: 18),
 
           Text(
-            'Unable to load reminders',
+            'Unable to load alerts',
             textAlign: TextAlign.center,
             style: TextStyle(
               fontSize: 20,
@@ -657,4 +1077,34 @@ class _TravellerAlertsScreenState extends State<TravellerAlertsScreen> {
       ),
     );
   }
+}
+
+// -----------------------------------------------------------------------------
+// INTERNAL ALERT DATA
+// -----------------------------------------------------------------------------
+
+class _PreparationAlert {
+  final Trip trip;
+  final int completed;
+  final int total;
+
+  const _PreparationAlert({
+    required this.trip,
+    required this.completed,
+    required this.total,
+  });
+}
+
+class _AlertsData {
+  final List<_PreparationAlert> preparationAlerts;
+
+  final List<Reminder> activeReminders;
+
+  final List<Reminder> completedReminders;
+
+  const _AlertsData({
+    required this.preparationAlerts,
+    required this.activeReminders,
+    required this.completedReminders,
+  });
 }
