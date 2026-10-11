@@ -9,19 +9,16 @@ import '../checklist_screen.dart';
 import '../my_trips_screen.dart';
 import '../traveller_alerts_screen.dart';
 import '../traveller_settings_screen.dart';
+import '../trip_details_screen.dart';
 
 class TravellerDashboard extends StatefulWidget {
-  const TravellerDashboard({
-    super.key,
-  });
+  const TravellerDashboard({super.key});
 
   @override
-  State<TravellerDashboard> createState() =>
-      _TravellerDashboardState();
+  State<TravellerDashboard> createState() => _TravellerDashboardState();
 }
 
-class _TravellerDashboardState
-    extends State<TravellerDashboard> {
+class _TravellerDashboardState extends State<TravellerDashboard> {
   final UserService _userService = UserService();
   final TripService _tripService = TripService();
 
@@ -52,10 +49,10 @@ class _TravellerDashboardState
         .split('_')
         .map(
           (word) => word.isEmpty
-          ? word
-          : '${word[0].toUpperCase()}'
-          '${word.substring(1)}',
-    )
+              ? word
+              : '${word[0].toUpperCase()}'
+                    '${word.substring(1)}',
+        )
         .join(' ');
   }
 
@@ -81,8 +78,7 @@ class _TravellerDashboardState
   }
 
   String get _firstName {
-    final String cleaned =
-    _travellerName.trim();
+    final String cleaned = _travellerName.trim();
 
     if (cleaned.isEmpty) {
       return 'Traveller';
@@ -96,8 +92,7 @@ class _TravellerDashboardState
       return 0;
     }
 
-    return _completedRequirements /
-        _totalRequirements;
+    return _completedRequirements / _totalRequirements;
   }
 
   int get _progressPercent {
@@ -105,9 +100,7 @@ class _TravellerDashboardState
   }
 
   int get _remainingRequirements {
-    final int remaining =
-        _totalRequirements -
-            _completedRequirements;
+    final int remaining = _totalRequirements - _completedRequirements;
 
     return remaining < 0 ? 0 : remaining;
   }
@@ -119,35 +112,23 @@ class _TravellerDashboardState
     });
 
     try {
-      final User? currentUser =
-          FirebaseAuth.instance.currentUser;
+      final User? currentUser = FirebaseAuth.instance.currentUser;
 
       if (currentUser == null) {
-        throw Exception(
-          'No authenticated user was found.',
-        );
+        throw Exception('No authenticated user was found.');
       }
 
-      final Map<String, dynamic>? profile =
-      await _userService.getUserProfile(
+      final Map<String, dynamic>? profile = await _userService.getUserProfile(
         currentUser.uid,
       );
 
-      final List<Trip> trips =
-      await _tripService.getUserTrips(
-        currentUser.uid,
-      );
+      final List<Trip> trips = await _tripService.getUserTrips(currentUser.uid);
 
       final DateTime now = DateTime.now();
 
-      final DateTime today = DateTime(
-        now.year,
-        now.month,
-        now.day,
-      );
+      final DateTime today = DateTime(now.year, now.month, now.day);
 
-      final List<Trip> upcomingTrips =
-      trips.where((trip) {
+      final List<Trip> upcomingTrips = trips.where((trip) {
         final DateTime departure = DateTime(
           trip.departureDate.year,
           trip.departureDate.month,
@@ -157,14 +138,9 @@ class _TravellerDashboardState
         return !departure.isBefore(today);
       }).toList();
 
-      upcomingTrips.sort(
-            (a, b) => a.departureDate.compareTo(
-          b.departureDate,
-        ),
-      );
+      upcomingTrips.sort((a, b) => a.departureDate.compareTo(b.departureDate));
 
-      final Trip? upcomingTrip =
-      upcomingTrips.isEmpty
+      final Trip? upcomingTrip = upcomingTrips.isEmpty
           ? null
           : upcomingTrips.first;
 
@@ -172,14 +148,10 @@ class _TravellerDashboardState
       int total = 0;
 
       if (upcomingTrip != null) {
-        final Map<String, int> progress =
-        await _tripService
-            .getChecklistProgress(
-          upcomingTrip.id,
-        );
+        final Map<String, int> progress = await _tripService
+            .getChecklistProgress(upcomingTrip.id);
 
-        completed =
-            progress['completed'] ?? 0;
+        completed = progress['completed'] ?? 0;
 
         total = progress['total'] ?? 0;
       }
@@ -188,10 +160,9 @@ class _TravellerDashboardState
 
       setState(() {
         _travellerName =
-            (profile?['fullName'] as String?)
-                ?.trim() ??
-                currentUser.displayName?.trim() ??
-                'Traveller';
+            (profile?['fullName'] as String?)?.trim() ??
+            currentUser.displayName?.trim() ??
+            'Traveller';
 
         _upcomingTrip = upcomingTrip;
         _completedRequirements = completed;
@@ -200,16 +171,13 @@ class _TravellerDashboardState
         _isLoadingHome = false;
       });
     } catch (e) {
-      debugPrint(
-        'TRAVELLER HOME ERROR: $e',
-      );
+      debugPrint('TRAVELLER HOME ERROR: $e');
 
       if (!mounted) return;
 
       setState(() {
         _isLoadingHome = false;
-        _homeError =
-        'Unable to load your dashboard.';
+        _homeError = 'Unable to load your dashboard.';
       });
     }
   }
@@ -217,10 +185,7 @@ class _TravellerDashboardState
   Future<void> _openAddTrip() async {
     await Navigator.push(
       context,
-      MaterialPageRoute(
-        builder: (context) =>
-        const AddTripScreen(),
-      ),
+      MaterialPageRoute(builder: (context) => const AddTripScreen()),
     );
 
     if (!mounted) return;
@@ -237,12 +202,7 @@ class _TravellerDashboardState
 
     await Navigator.push(
       context,
-      MaterialPageRoute(
-        builder: (context) =>
-            ChecklistScreen(
-              tripId: trip.id,
-            ),
-      ),
+      MaterialPageRoute(builder: (context) => ChecklistScreen(tripId: trip.id)),
     );
 
     if (!mounted) return;
@@ -277,16 +237,13 @@ class _TravellerDashboardState
   Widget build(BuildContext context) {
     final List<Widget> pages = [
       _buildHome(),
-      const MyTripsScreen(
-        embedded: true,
-      ),
+      const MyTripsScreen(embedded: true),
       const TravellerAlertsScreen(),
       const TravellerSettingsScreen(),
     ];
 
     return Scaffold(
-      backgroundColor:
-      const Color(0xFFF7F9FB),
+      backgroundColor: const Color(0xFFF7F9FB),
 
       appBar: AppBar(
         automaticallyImplyLeading: false,
@@ -302,10 +259,7 @@ class _TravellerDashboardState
         ),
       ),
 
-      body: IndexedStack(
-        index: _selectedIndex,
-        children: pages,
-      ),
+      body: IndexedStack(index: _selectedIndex, children: pages),
 
       bottomNavigationBar: NavigationBar(
         selectedIndex: _selectedIndex,
@@ -313,39 +267,23 @@ class _TravellerDashboardState
         height: 70,
         destinations: const [
           NavigationDestination(
-            icon: Icon(
-              Icons.home_outlined,
-            ),
-            selectedIcon: Icon(
-              Icons.home_rounded,
-            ),
+            icon: Icon(Icons.home_outlined),
+            selectedIcon: Icon(Icons.home_rounded),
             label: 'Home',
           ),
           NavigationDestination(
-            icon: Icon(
-              Icons.luggage_outlined,
-            ),
-            selectedIcon: Icon(
-              Icons.luggage_rounded,
-            ),
+            icon: Icon(Icons.luggage_outlined),
+            selectedIcon: Icon(Icons.luggage_rounded),
             label: 'My Trips',
           ),
           NavigationDestination(
-            icon: Icon(
-              Icons.notifications_none_rounded,
-            ),
-            selectedIcon: Icon(
-              Icons.notifications_rounded,
-            ),
+            icon: Icon(Icons.notifications_none_rounded),
+            selectedIcon: Icon(Icons.notifications_rounded),
             label: 'Alerts',
           ),
           NavigationDestination(
-            icon: Icon(
-              Icons.settings_outlined,
-            ),
-            selectedIcon: Icon(
-              Icons.settings_rounded,
-            ),
+            icon: Icon(Icons.settings_outlined),
+            selectedIcon: Icon(Icons.settings_rounded),
             label: 'Settings',
           ),
         ],
@@ -355,17 +293,14 @@ class _TravellerDashboardState
 
   Widget _buildHome() {
     if (_isLoadingHome) {
-      return const Center(
-        child: CircularProgressIndicator(),
-      );
+      return const Center(child: CircularProgressIndicator());
     }
 
     if (_homeError != null) {
       return RefreshIndicator(
         onRefresh: _loadHomeData,
         child: ListView(
-          physics:
-          const AlwaysScrollableScrollPhysics(),
+          physics: const AlwaysScrollableScrollPhysics(),
           padding: const EdgeInsets.all(24),
           children: [
             const SizedBox(height: 160),
@@ -381,9 +316,7 @@ class _TravellerDashboardState
             Text(
               _homeError!,
               textAlign: TextAlign.center,
-              style: const TextStyle(
-                fontSize: 16,
-              ),
+              style: const TextStyle(fontSize: 16),
             ),
 
             const SizedBox(height: 8),
@@ -391,9 +324,7 @@ class _TravellerDashboardState
             const Text(
               'Pull down to try again.',
               textAlign: TextAlign.center,
-              style: TextStyle(
-                color: Colors.black54,
-              ),
+              style: TextStyle(color: Colors.black54),
             ),
           ],
         ),
@@ -403,14 +334,8 @@ class _TravellerDashboardState
     return RefreshIndicator(
       onRefresh: _loadHomeData,
       child: ListView(
-        physics:
-        const AlwaysScrollableScrollPhysics(),
-        padding: const EdgeInsets.fromLTRB(
-          18,
-          20,
-          18,
-          110,
-        ),
+        physics: const AlwaysScrollableScrollPhysics(),
+        padding: const EdgeInsets.fromLTRB(18, 20, 18, 110),
         children: [
           Text(
             'Hello, $_firstName!',
@@ -425,20 +350,15 @@ class _TravellerDashboardState
 
           const Text(
             'Ready for your next trip?',
-            style: TextStyle(
-              fontSize: 14,
-              color: Colors.black54,
-            ),
+            style: TextStyle(fontSize: 14, color: Colors.black54),
           ),
 
           const SizedBox(height: 24),
 
-          if (_upcomingTrip != null &&
-              _remainingRequirements > 0)
+          if (_upcomingTrip != null && _remainingRequirements > 0)
             _buildActionRequiredCard(),
 
-          if (_upcomingTrip != null &&
-              _remainingRequirements > 0)
+          if (_upcomingTrip != null && _remainingRequirements > 0)
             const SizedBox(height: 24),
 
           _buildUpcomingTripSection(),
@@ -460,8 +380,7 @@ class _TravellerDashboardState
             children: [
               Expanded(
                 child: _QuickActionCard(
-                  icon:
-                  Icons.add_location_alt_outlined,
+                  icon: Icons.add_location_alt_outlined,
                   title: 'Create New Trip',
                   onTap: _openAddTrip,
                 ),
@@ -471,8 +390,7 @@ class _TravellerDashboardState
 
               Expanded(
                 child: _QuickActionCard(
-                  icon:
-                  Icons.luggage_outlined,
+                  icon: Icons.luggage_outlined,
                   title: 'View My Trips',
                   onTap: () {
                     _changeTab(1);
@@ -492,13 +410,10 @@ class _TravellerDashboardState
       decoration: BoxDecoration(
         color: const Color(0xFFFFEBE9),
         borderRadius: BorderRadius.circular(18),
-        border: Border.all(
-          color: const Color(0xFFFFC6C1),
-        ),
+        border: Border.all(color: const Color(0xFFFFC6C1)),
       ),
       child: Row(
-        crossAxisAlignment:
-        CrossAxisAlignment.start,
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Container(
             width: 42,
@@ -517,15 +432,13 @@ class _TravellerDashboardState
 
           Expanded(
             child: Column(
-              crossAxisAlignment:
-              CrossAxisAlignment.start,
+              crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 const Text(
                   'Action Required',
                   style: TextStyle(
                     fontSize: 16,
-                    fontWeight:
-                    FontWeight.w700,
+                    fontWeight: FontWeight.w700,
                     color: Color(0xFF9B1C1C),
                   ),
                 ),
@@ -534,30 +447,22 @@ class _TravellerDashboardState
 
                 Text(
                   'You have '
-                      '$_remainingRequirements '
-                      'travel requirement'
-                      '${_remainingRequirements == 1 ? '' : 's'} '
-                      'remaining for your upcoming trip.',
-                  style: const TextStyle(
-                    height: 1.4,
-                    color: Color(0xFF6F1D1B),
-                  ),
+                  '$_remainingRequirements '
+                  'travel requirement'
+                  '${_remainingRequirements == 1 ? '' : 's'} '
+                  'remaining for your upcoming trip.',
+                  style: const TextStyle(height: 1.4, color: Color(0xFF6F1D1B)),
                 ),
 
                 const SizedBox(height: 12),
 
                 FilledButton(
                   style: FilledButton.styleFrom(
-                    backgroundColor:
-                    const Color(0xFFC62828),
-                    foregroundColor:
-                    Colors.white,
+                    backgroundColor: const Color(0xFFC62828),
+                    foregroundColor: Colors.white,
                   ),
-                  onPressed:
-                  _openUpcomingChecklist,
-                  child: const Text(
-                    'View Checklist',
-                  ),
+                  onPressed: _openUpcomingChecklist,
+                  child: const Text('View Checklist'),
                 ),
               ],
             ),
@@ -571,8 +476,7 @@ class _TravellerDashboardState
     final Trip? trip = _upcomingTrip;
 
     return Column(
-      crossAxisAlignment:
-      CrossAxisAlignment.start,
+      crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         const Text(
           'Upcoming Trip',
@@ -591,11 +495,8 @@ class _TravellerDashboardState
             padding: const EdgeInsets.all(22),
             decoration: BoxDecoration(
               color: Colors.white,
-              borderRadius:
-              BorderRadius.circular(20),
-              border: Border.all(
-                color: const Color(0xFFE1E7EC),
-              ),
+              borderRadius: BorderRadius.circular(20),
+              border: Border.all(color: const Color(0xFFE1E7EC)),
             ),
             child: Column(
               children: [
@@ -609,35 +510,24 @@ class _TravellerDashboardState
 
                 const Text(
                   'No upcoming trip',
-                  style: TextStyle(
-                    fontSize: 18,
-                    fontWeight:
-                    FontWeight.w700,
-                  ),
+                  style: TextStyle(fontSize: 18, fontWeight: FontWeight.w700),
                 ),
 
                 const SizedBox(height: 7),
 
                 const Text(
                   'Create a trip to receive '
-                      'personalised travel requirements.',
+                  'personalised travel requirements.',
                   textAlign: TextAlign.center,
-                  style: TextStyle(
-                    color: Colors.black54,
-                    height: 1.4,
-                  ),
+                  style: TextStyle(color: Colors.black54, height: 1.4),
                 ),
 
                 const SizedBox(height: 16),
 
                 FilledButton.icon(
                   onPressed: _openAddTrip,
-                  icon: const Icon(
-                    Icons.add_rounded,
-                  ),
-                  label: const Text(
-                    'Create New Trip',
-                  ),
+                  icon: const Icon(Icons.add_rounded),
+                  label: const Text('Create New Trip'),
                 ),
               ],
             ),
@@ -648,11 +538,8 @@ class _TravellerDashboardState
             padding: const EdgeInsets.all(18),
             decoration: BoxDecoration(
               color: Colors.white,
-              borderRadius:
-              BorderRadius.circular(20),
-              border: Border.all(
-                color: const Color(0xFFE1E7EC),
-              ),
+              borderRadius: BorderRadius.circular(20),
+              border: Border.all(color: const Color(0xFFE1E7EC)),
               boxShadow: const [
                 BoxShadow(
                   color: Color(0x0D000000),
@@ -662,8 +549,7 @@ class _TravellerDashboardState
               ],
             ),
             child: Column(
-              crossAxisAlignment:
-              CrossAxisAlignment.start,
+              crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Row(
                   children: [
@@ -671,17 +557,12 @@ class _TravellerDashboardState
                       width: 46,
                       height: 46,
                       decoration: BoxDecoration(
-                        color:
-                        const Color(0xFFE8F6F7),
-                        borderRadius:
-                        BorderRadius.circular(
-                          14,
-                        ),
+                        color: const Color(0xFFE8F6F7),
+                        borderRadius: BorderRadius.circular(14),
                       ),
                       child: const Icon(
                         Icons.flight_rounded,
-                        color:
-                        Color(0xFF087F8C),
+                        color: Color(0xFF087F8C),
                       ),
                     ),
 
@@ -689,36 +570,23 @@ class _TravellerDashboardState
 
                     Expanded(
                       child: Column(
-                        crossAxisAlignment:
-                        CrossAxisAlignment
-                            .start,
+                        crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
                           Text(
-                            _formatText(
-                              trip.destinationCountryId,
-                            ),
-                            style:
-                            const TextStyle(
+                            _formatText(trip.destinationCountryId),
+                            style: const TextStyle(
                               fontSize: 20,
-                              fontWeight:
-                              FontWeight
-                                  .w800,
+                              fontWeight: FontWeight.w800,
                             ),
                           ),
 
-                          const SizedBox(
-                            height: 3,
-                          ),
+                          const SizedBox(height: 3),
 
                           Text(
                             '${_formatText(trip.purpose)}'
-                                ' • '
-                                '${trip.durationDays} days',
-                            style:
-                            const TextStyle(
-                              color:
-                              Colors.black54,
-                            ),
+                            ' • '
+                            '${trip.durationDays} days',
+                            style: const TextStyle(color: Colors.black54),
                           ),
                         ],
                       ),
@@ -740,7 +608,7 @@ class _TravellerDashboardState
 
                     Text(
                       'Departure: '
-                          '${_formatDate(trip.departureDate)}',
+                      '${_formatDate(trip.departureDate)}',
                     ),
                   ],
                 ),
@@ -748,24 +616,17 @@ class _TravellerDashboardState
                 const SizedBox(height: 20),
 
                 Row(
-                  mainAxisAlignment:
-                  MainAxisAlignment
-                      .spaceBetween,
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
                     const Text(
                       'Checklist Progress',
-                      style: TextStyle(
-                        fontWeight:
-                        FontWeight.w600,
-                      ),
+                      style: TextStyle(fontWeight: FontWeight.w600),
                     ),
                     Text(
                       '$_progressPercent%',
                       style: const TextStyle(
-                        fontWeight:
-                        FontWeight.w700,
-                        color:
-                        Color(0xFF087F8C),
+                        fontWeight: FontWeight.w700,
+                        color: Color(0xFF087F8C),
                       ),
                     ),
                   ],
@@ -774,17 +635,12 @@ class _TravellerDashboardState
                 const SizedBox(height: 9),
 
                 ClipRRect(
-                  borderRadius:
-                  BorderRadius.circular(20),
-                  child:
-                  LinearProgressIndicator(
+                  borderRadius: BorderRadius.circular(20),
+                  child: LinearProgressIndicator(
                     value: _progressValue,
                     minHeight: 8,
-                    backgroundColor:
-                    const Color(0xFFE5EEF0),
-                    valueColor:
-                    const AlwaysStoppedAnimation<
-                        Color>(
+                    backgroundColor: const Color(0xFFE5EEF0),
+                    valueColor: const AlwaysStoppedAnimation<Color>(
                       Color(0xFF087F8C),
                     ),
                   ),
@@ -794,12 +650,9 @@ class _TravellerDashboardState
 
                 Text(
                   '$_completedRequirements of '
-                      '$_totalRequirements '
-                      'requirements completed',
-                  style: const TextStyle(
-                    fontSize: 12,
-                    color: Colors.black54,
-                  ),
+                  '$_totalRequirements '
+                  'requirements completed',
+                  style: const TextStyle(fontSize: 12, color: Colors.black54),
                 ),
 
                 const SizedBox(height: 18),
@@ -807,12 +660,19 @@ class _TravellerDashboardState
                 SizedBox(
                   width: double.infinity,
                   child: FilledButton(
-                    onPressed: () {
-                      _changeTab(1);
+                    onPressed: () async {
+                      await Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder: (context) => TripDetailsScreen(trip: trip),
+                        ),
+                      );
+
+                      if (!mounted) return;
+
+                      await _loadHomeData();
                     },
-                    child: const Text(
-                      'View Trip',
-                    ),
+                    child: const Text('View Trip'),
                   ),
                 ),
               ],
@@ -845,28 +705,19 @@ class _QuickActionCard extends StatelessWidget {
         decoration: BoxDecoration(
           color: Colors.white,
           borderRadius: BorderRadius.circular(18),
-          border: Border.all(
-            color: const Color(0xFFE1E7EC),
-          ),
+          border: Border.all(color: const Color(0xFFE1E7EC)),
         ),
         child: Column(
-          mainAxisAlignment:
-          MainAxisAlignment.center,
+          mainAxisAlignment: MainAxisAlignment.center,
           children: [
             Container(
               width: 42,
               height: 42,
               decoration: BoxDecoration(
-                color:
-                const Color(0xFFE8F6F7),
-                borderRadius:
-                BorderRadius.circular(13),
+                color: const Color(0xFFE8F6F7),
+                borderRadius: BorderRadius.circular(13),
               ),
-              child: Icon(
-                icon,
-                color:
-                const Color(0xFF087F8C),
-              ),
+              child: Icon(icon, color: const Color(0xFF087F8C)),
             ),
 
             const SizedBox(height: 10),
@@ -874,11 +725,7 @@ class _QuickActionCard extends StatelessWidget {
             Text(
               title,
               textAlign: TextAlign.center,
-              style: const TextStyle(
-                fontSize: 13,
-                fontWeight:
-                FontWeight.w600,
-              ),
+              style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600),
             ),
           ],
         ),
