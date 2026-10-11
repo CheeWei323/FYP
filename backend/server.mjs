@@ -4,7 +4,10 @@ import { rateLimit } from 'express-rate-limit';
 import { GoogleGenAI } from '@google/genai';
 
 const app = express();
-const port = 3000;
+
+const port = process.env.PORT || 3000;
+
+app.set('trust proxy', 1);
 
 app.use(express.json());
 
@@ -12,7 +15,7 @@ const apiKey = process.env.GEMINI_API_KEY;
 
 if (!apiKey) {
   throw new Error(
-    'GEMINI_API_KEY was not found in backend/.env',
+    'GEMINI_API_KEY environment variable is not configured.',
   );
 }
 
@@ -523,8 +526,8 @@ Return only the structured packing items requested by the schema.
   },
 );
 
-app.listen(port, () => {
+app.listen(port, '0.0.0.0', () => {
   console.log(
-    `TravelGuard AI backend running on http://localhost:${port}`,
+    `TravelGuard AI backend running on port ${port}`,
   );
 });
