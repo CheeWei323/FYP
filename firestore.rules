@@ -581,6 +581,91 @@ match /analystReports/{reportId} {
     allow update, delete: if false;
 }
 
+   // ---------------------------------------------------------------------------
+  // TRAVELLER REMINDERS
+ // ---------------------------------------------------------------------------
+
+match /reminders/{reminderId} {
+
+    // Travellers may create reminders only for themselves
+    // and only for trips they own.
+    allow create: if isTraveller()
+                  && request.resource.data.keys().hasAll([
+                    'reminderId',
+                    'userId',
+                    'tripId',
+                    'title',
+                    'reminderAt',
+                    'completed',
+                    'notificationId',
+                    'createdAt',
+                    'updatedAt'
+                  ])
+                  && request.resource.data.keys().hasOnly([
+                    'reminderId',
+                    'userId',
+                    'tripId',
+                    'title',
+                    'reminderAt',
+                    'completed',
+                    'notificationId',
+                    'createdAt',
+                    'updatedAt'
+                  ])
+                  && request.resource.data.reminderId == reminderId
+                  && request.resource.data.userId == request.auth.uid
+                  && request.resource.data.tripId is string
+                  && request.resource.data.tripId.size() > 0
+                  && ownsTrip(request.resource.data.tripId)
+                  && request.resource.data.title is string
+                  && request.resource.data.title.size() > 0
+                  && request.resource.data.title.size() <= 120
+                  && request.resource.data.reminderAt is timestamp
+                  && request.resource.data.completed == false
+                  && request.resource.data.notificationId is int
+                  && request.resource.data.notificationId > 0
+                  && request.resource.data.createdAt == request.time
+                  && request.resource.data.updatedAt == request.time;
+
+    // Travellers may read only their own reminders.
+    allow read: if request.auth != null
+                && resource.data.userId == request.auth.uid;
+
+    // Travellers may change only reminder content,
+   // reminder time and completion state.
+    allow update: if isTraveller()
+                  && resource.data.userId == request.auth.uid
+                  && request.resource.data.userId
+                     == resource.data.userId
+                  && request.resource.data.tripId
+                     == resource.data.tripId
+                  && request.resource.data.reminderId
+                     == resource.data.reminderId
+                  && request.resource.data.notificationId
+                     == resource.data.notificationId
+                  && request.resource.data.createdAt
+                     == resource.data.createdAt
+                  && request.resource.data
+                       .diff(resource.data)
+                       .affectedKeys()
+                       .hasOnly([
+                         'title',
+                         'reminderAt',
+                         'completed',
+                         'updatedAt'
+                       ])
+                  && request.resource.data.title is string
+                  && request.resource.data.title.size() > 0
+                  && request.resource.data.title.size() <= 120
+                  && request.resource.data.reminderAt is timestamp
+                 && request.resource.data.completed is bool
+                  && request.resource.data.updatedAt == request.time;
+
+    // Travellers may delete only their own reminders.
+    allow delete: if isTraveller()
+                  && resource.data.userId == request.auth.uid;
+}
+
     // -----------------------------------------------------------------------
     // TRIPS
     // -----------------------------------------------------------------------
