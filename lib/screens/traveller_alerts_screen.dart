@@ -7,6 +7,7 @@ import '../services/reminder_service.dart';
 import '../services/trip_service.dart';
 import 'checklist_screen.dart';
 import 'trip_details_screen.dart';
+import '../services/notification_service.dart';
 
 class TravellerAlertsScreen extends StatefulWidget {
   const TravellerAlertsScreen({super.key});
@@ -246,50 +247,84 @@ class _TravellerAlertsScreenState extends State<TravellerAlertsScreen> {
   // ---------------------------------------------------------------------------
 
   Future<void> _completeReminder(_ReminderAlert alert) async {
-    final String reminderId = alert.reminder.id;
+    final Reminder reminder = alert.reminder;
 
-    if (_busyReminderIds.contains(reminderId)) {
+    if (_busyReminderIds.contains(reminder.id)) {
       return;
     }
 
     final ScaffoldMessengerState messenger = ScaffoldMessenger.of(context);
 
     setState(() {
-      _busyReminderIds.add(reminderId);
+      _busyReminderIds.add(reminder.id);
     });
 
+    bool reminderCompleted = false;
+    bool notificationCancelled = true;
+
     try {
+      // Mark the reminder as completed in Firestore.
       await _reminderService.updateReminderCompletion(
-        reminderId: reminderId,
+        reminderId: reminder.id,
         completed: true,
       );
+
+      reminderCompleted = true;
+
+      // Cancel the matching scheduled Android notification.
+      try {
+        await NotificationService.instance.cancelReminder(
+          reminder.notificationId,
+        );
+      } catch (error) {
+        notificationCancelled = false;
+
+        debugPrint('CANCEL COMPLETED REMINDER NOTIFICATION ERROR: $error');
+      }
 
       if (!mounted) return;
 
       await _refresh();
 
+      if (!mounted) return;
+
       messenger.showSnackBar(
-        const SnackBar(content: Text('Reminder completed.')),
+        SnackBar(
+          content: Text(
+            notificationCancelled
+                ? 'Reminder completed and phone notification cancelled.'
+                : 'Reminder completed, but the phone notification '
+                      'could not be cancelled.',
+          ),
+        ),
       );
     } catch (error) {
       debugPrint('COMPLETE REMINDER ERROR: $error');
 
+      if (!mounted) return;
+
       messenger.showSnackBar(
-        const SnackBar(content: Text('Unable to complete reminder.')),
+        SnackBar(
+          content: Text(
+            reminderCompleted
+                ? 'Reminder completed, but the list could not refresh.'
+                : 'Unable to complete reminder.',
+          ),
+        ),
       );
     } finally {
       if (mounted) {
         setState(() {
-          _busyReminderIds.remove(reminderId);
+          _busyReminderIds.remove(reminder.id);
         });
       }
     }
   }
 
   Future<void> _deleteReminder(_ReminderAlert alert) async {
-    final String reminderId = alert.reminder.id;
+    final Reminder reminder = alert.reminder;
 
-    if (_busyReminderIds.contains(reminderId)) {
+    if (_busyReminderIds.contains(reminder.id)) {
       return;
     }
 
@@ -304,8 +339,7 @@ class _TravellerAlertsScreenState extends State<TravellerAlertsScreen> {
           ),
           title: const Text('Delete Reminder?'),
           content: const Text(
-            'This personal reminder will be '
-            'permanently deleted.',
+            'This personal reminder will be permanently deleted.',
           ),
           actions: [
             TextButton(
@@ -336,29 +370,63 @@ class _TravellerAlertsScreenState extends State<TravellerAlertsScreen> {
     final ScaffoldMessengerState messenger = ScaffoldMessenger.of(context);
 
     setState(() {
-      _busyReminderIds.add(reminderId);
+      _busyReminderIds.add(reminder.id);
     });
 
+    bool reminderDeleted = false;
+    bool notificationCancelled = true;
+
     try {
-      await _reminderService.deleteReminder(reminderId);
+      // Delete the reminder document from Firestore.
+      await _reminderService.deleteReminder(reminder.id);
+
+      reminderDeleted = true;
+
+      // Cancel the corresponding Android notification.
+      try {
+        await NotificationService.instance.cancelReminder(
+          reminder.notificationId,
+        );
+      } catch (error) {
+        notificationCancelled = false;
+
+        debugPrint('CANCEL DELETED REMINDER NOTIFICATION ERROR: $error');
+      }
 
       if (!mounted) return;
 
       await _refresh();
 
+      if (!mounted) return;
+
       messenger.showSnackBar(
-        const SnackBar(content: Text('Reminder deleted.')),
+        SnackBar(
+          content: Text(
+            notificationCancelled
+                ? 'Reminder deleted and phone notification cancelled.'
+                : 'Reminder deleted, but the phone notification '
+                      'could not be cancelled.',
+          ),
+        ),
       );
     } catch (error) {
       debugPrint('DELETE REMINDER ERROR: $error');
 
+      if (!mounted) return;
+
       messenger.showSnackBar(
-        const SnackBar(content: Text('Unable to delete reminder.')),
+        SnackBar(
+          content: Text(
+            reminderDeleted
+                ? 'Reminder deleted, but the list could not refresh.'
+                : 'Unable to delete reminder.',
+          ),
+        ),
       );
     } finally {
       if (mounted) {
         setState(() {
-          _busyReminderIds.remove(reminderId);
+          _busyReminderIds.remove(reminder.id);
         });
       }
     }

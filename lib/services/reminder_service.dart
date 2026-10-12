@@ -9,7 +9,7 @@ class ReminderService {
   // CREATE REMINDER
   // ---------------------------------------------------------------------------
 
-  Future<String> createReminder({
+  Future<({String reminderId, int notificationId})> createReminder({
     required String userId,
     required String tripId,
     required String title,
@@ -47,7 +47,7 @@ class ReminderService {
       'updatedAt': FieldValue.serverTimestamp(),
     });
 
-    return reference.id;
+    return (reminderId: reference.id, notificationId: notificationId);
   }
 
   // ---------------------------------------------------------------------------

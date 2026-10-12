@@ -6,6 +6,7 @@ import 'checklist_screen.dart';
 import 'edit_trip_screen.dart';
 import 'packing_screen.dart';
 import '../services/reminder_service.dart';
+import '../services/notification_service.dart';
 
 class TripDetailsScreen extends StatefulWidget {
   final Trip trip;
@@ -111,6 +112,8 @@ class _TripDetailsScreenState extends State<TripDetailsScreen> {
     }
 
     bool isSaving = false;
+
+    ({int notificationId, String title, DateTime reminderAt})? createdReminder;
 
     final bool? saved = await showDialog<bool>(
       context: context,
@@ -298,9 +301,18 @@ class _TripDetailsScreenState extends State<TripDetailsScreen> {
                           });
 
                           try {
-                            await _reminderService.createReminder(
-                              userId: _trip.userId,
-                              tripId: _trip.id,
+                            final result = await _reminderService
+                                .createReminder(
+                                  userId: _trip.userId,
+                                  tripId: _trip.id,
+                                  title: title,
+                                  reminderAt: selectedDateTime,
+                                );
+
+                            // Keep the notification information for scheduling
+                            // after the reminder dialog has closed.
+                            createdReminder = (
+                              notificationId: result.notificationId,
                               title: title,
                               reminderAt: selectedDateTime,
                             );
@@ -353,8 +365,54 @@ class _TripDetailsScreenState extends State<TripDetailsScreen> {
       return;
     }
 
+    final reminder = createdReminder;
+
+    if (reminder == null) {
+      messenger.showSnackBar(
+        const SnackBar(
+          content: Text(
+            'Reminder saved, but notification details are unavailable.',
+          ),
+        ),
+      );
+      return;
+    }
+
+    bool notificationScheduled = false;
+
+    try {
+      // Request Android notification and exact-alarm permissions.
+      final bool permissionGranted = await NotificationService.instance
+          .requestPermissions();
+
+      if (permissionGranted) {
+        // Schedule exactly one Android notification
+        // using the ID already stored in Firestore.
+        await NotificationService.instance.scheduleReminder(
+          notificationId: reminder.notificationId,
+          tripId: _trip.id,
+          title: reminder.title,
+          destination: _formatText(_trip.destinationCountryId),
+          reminderAt: reminder.reminderAt,
+        );
+
+        notificationScheduled = true;
+      }
+    } catch (error) {
+      debugPrint('SCHEDULE REMINDER NOTIFICATION ERROR: $error');
+    }
+
+    if (!mounted) return;
+
     messenger.showSnackBar(
-      const SnackBar(content: Text('Trip reminder added.')),
+      SnackBar(
+        content: Text(
+          notificationScheduled
+              ? 'Reminder saved and phone notification scheduled.'
+              : 'Reminder saved, but phone notification was not scheduled. '
+                    'Check notification and alarm permissions.',
+        ),
+      ),
     );
   }
 
@@ -389,8 +447,10 @@ class _TripDetailsScreenState extends State<TripDetailsScreen> {
           title: const Text('Delete Trip?', textAlign: TextAlign.center),
           content: const Text(
             'This will permanently remove this trip, '
-            'its travel requirements, checklist progress '
-            'and packing list.\n\n'
+            'its travel requirements, checklist progress, '
+            'packing list and personal reminders.\n\n'
+            'Any scheduled phone notifications for this '
+            'trip will also be cancelled.\n\n'
             'This action cannot be undone.',
             textAlign: TextAlign.center,
           ),
