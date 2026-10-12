@@ -5,6 +5,7 @@ import '../services/trip_service.dart';
 import 'checklist_screen.dart';
 import 'edit_trip_screen.dart';
 import 'packing_screen.dart';
+import '../services/reminder_service.dart';
 
 class TripDetailsScreen extends StatefulWidget {
   final Trip trip;
@@ -17,6 +18,8 @@ class TripDetailsScreen extends StatefulWidget {
 
 class _TripDetailsScreenState extends State<TripDetailsScreen> {
   final TripService _tripService = TripService();
+
+  final ReminderService _reminderService = ReminderService();
 
   static const Color _primaryColor = Color(0xFF087F8C);
 
@@ -72,6 +75,286 @@ class _TripDetailsScreenState extends State<TripDetailsScreen> {
     await Navigator.push(
       context,
       MaterialPageRoute(builder: (context) => PackingScreen(trip: _trip)),
+    );
+  }
+
+  Future<void> _addReminder() async {
+    if (_isPastTrip) {
+      return;
+    }
+
+    final ScaffoldMessengerState messenger = ScaffoldMessenger.of(context);
+
+    final DateTime now = DateTime.now();
+
+    final DateTime departureEnd = _departureEnd;
+
+    if (!departureEnd.isAfter(now)) {
+      messenger.showSnackBar(
+        const SnackBar(
+          content: Text(
+            'No future reminder time is available '
+            'for this trip.',
+          ),
+        ),
+      );
+
+      return;
+    }
+
+    String reminderTitle = '';
+
+    DateTime selectedDateTime = now.add(const Duration(hours: 1));
+
+    if (selectedDateTime.isAfter(departureEnd)) {
+      selectedDateTime = now.add(const Duration(minutes: 5));
+    }
+
+    bool isSaving = false;
+
+    final bool? saved = await showDialog<bool>(
+      context: context,
+      barrierDismissible: false,
+      builder: (dialogContext) {
+        return StatefulBuilder(
+          builder: (context, setDialogState) {
+            Future<void> selectDate() async {
+              final DateTime today = DateTime(now.year, now.month, now.day);
+
+              final DateTime lastDate = DateTime(
+                _trip.departureDate.year,
+                _trip.departureDate.month,
+                _trip.departureDate.day,
+              );
+
+              final DateTime selectedDay = DateTime(
+                selectedDateTime.year,
+                selectedDateTime.month,
+                selectedDateTime.day,
+              );
+
+              final DateTime initialDate = selectedDay.isAfter(lastDate)
+                  ? lastDate
+                  : selectedDay;
+
+              final DateTime? picked = await showDatePicker(
+                context: dialogContext,
+                initialDate: initialDate,
+                firstDate: today,
+                lastDate: lastDate,
+              );
+
+              if (picked == null || !dialogContext.mounted) {
+                return;
+              }
+
+              setDialogState(() {
+                selectedDateTime = DateTime(
+                  picked.year,
+                  picked.month,
+                  picked.day,
+                  selectedDateTime.hour,
+                  selectedDateTime.minute,
+                );
+              });
+            }
+
+            Future<void> selectTime() async {
+              final TimeOfDay? picked = await showTimePicker(
+                context: dialogContext,
+                initialTime: TimeOfDay.fromDateTime(selectedDateTime),
+              );
+
+              if (picked == null || !dialogContext.mounted) {
+                return;
+              }
+
+              setDialogState(() {
+                selectedDateTime = DateTime(
+                  selectedDateTime.year,
+                  selectedDateTime.month,
+                  selectedDateTime.day,
+                  picked.hour,
+                  picked.minute,
+                );
+              });
+            }
+
+            return AlertDialog(
+              icon: const Icon(
+                Icons.add_alert_outlined,
+                color: _primaryColor,
+                size: 32,
+              ),
+              title: const Text('Add Trip Reminder'),
+              content: SingleChildScrollView(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text(
+                      '${_formatText(_trip.destinationCountryId)}'
+                      ' • '
+                      '${_formatDate(_trip.departureDate)}',
+                      style: const TextStyle(color: Colors.black54),
+                    ),
+
+                    const SizedBox(height: 18),
+
+                    TextFormField(
+                      maxLength: 120,
+                      enabled: !isSaving,
+                      onChanged: (value) {
+                        reminderTitle = value;
+                      },
+                      decoration: const InputDecoration(
+                        labelText: 'Reminder',
+                        hintText: 'e.g. Review passport documents',
+                        prefixIcon: Icon(Icons.edit_note_rounded),
+                        border: OutlineInputBorder(),
+                      ),
+                    ),
+
+                    const SizedBox(height: 6),
+
+                    SizedBox(
+                      width: double.infinity,
+                      child: OutlinedButton.icon(
+                        onPressed: isSaving ? null : selectDate,
+                        icon: const Icon(Icons.calendar_today_outlined),
+                        label: Text(_formatDate(selectedDateTime)),
+                      ),
+                    ),
+
+                    const SizedBox(height: 8),
+
+                    SizedBox(
+                      width: double.infinity,
+                      child: OutlinedButton.icon(
+                        onPressed: isSaving ? null : selectTime,
+                        icon: const Icon(Icons.access_time_rounded),
+                        label: Text(_formatTime(selectedDateTime)),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              actions: [
+                TextButton(
+                  onPressed: isSaving
+                      ? null
+                      : () {
+                          Navigator.pop(dialogContext, false);
+                        },
+                  child: const Text('Cancel'),
+                ),
+
+                FilledButton(
+                  onPressed: isSaving
+                      ? null
+                      : () async {
+                          final String title = reminderTitle.trim();
+
+                          if (title.isEmpty) {
+                            messenger.showSnackBar(
+                              const SnackBar(
+                                content: Text('Enter a reminder title.'),
+                              ),
+                            );
+
+                            return;
+                          }
+
+                          final DateTime current = DateTime.now();
+
+                          if (!selectedDateTime.isAfter(current)) {
+                            messenger.showSnackBar(
+                              const SnackBar(
+                                content: Text(
+                                  'Select a future reminder '
+                                  'date and time.',
+                                ),
+                              ),
+                            );
+
+                            return;
+                          }
+
+                          if (selectedDateTime.isAfter(departureEnd)) {
+                            messenger.showSnackBar(
+                              const SnackBar(
+                                content: Text(
+                                  'The reminder must be '
+                                  'scheduled on or before '
+                                  'the departure date.',
+                                ),
+                              ),
+                            );
+
+                            return;
+                          }
+
+                          setDialogState(() {
+                            isSaving = true;
+                          });
+
+                          try {
+                            await _reminderService.createReminder(
+                              userId: _trip.userId,
+                              tripId: _trip.id,
+                              title: title,
+                              reminderAt: selectedDateTime,
+                            );
+
+                            if (!dialogContext.mounted) {
+                              return;
+                            }
+
+                            Navigator.pop(dialogContext, true);
+                          } catch (error) {
+                            debugPrint(
+                              'CREATE REMINDER ERROR: '
+                              '$error',
+                            );
+
+                            if (!dialogContext.mounted) {
+                              return;
+                            }
+
+                            setDialogState(() {
+                              isSaving = false;
+                            });
+
+                            messenger.showSnackBar(
+                              const SnackBar(
+                                content: Text('Unable to create reminder.'),
+                              ),
+                            );
+                          }
+                        },
+                  child: isSaving
+                      ? const SizedBox(
+                          width: 18,
+                          height: 18,
+                          child: CircularProgressIndicator(
+                            strokeWidth: 2,
+                            color: Colors.white,
+                          ),
+                        )
+                      : const Text('Add'),
+                ),
+              ],
+            );
+          },
+        );
+      },
+    );
+
+    if (saved != true || !mounted) {
+      return;
+    }
+
+    messenger.showSnackBar(
+      const SnackBar(content: Text('Trip reminder added.')),
     );
   }
 
@@ -201,6 +484,32 @@ class _TripDetailsScreenState extends State<TripDetailsScreen> {
         '${date.year}';
   }
 
+  String _formatTime(DateTime date) {
+    final int hour = date.hour;
+
+    final String period = hour >= 12 ? 'PM' : 'AM';
+
+    final int displayHour = hour == 0
+        ? 12
+        : hour > 12
+        ? hour - 12
+        : hour;
+
+    final String minute = date.minute.toString().padLeft(2, '0');
+
+    return '$displayHour:$minute $period';
+  }
+
+  DateTime get _departureEnd {
+    return DateTime(
+      _trip.departureDate.year,
+      _trip.departureDate.month,
+      _trip.departureDate.day,
+      23,
+      59,
+    );
+  }
+
   bool get _isPastTrip {
     final DateTime now = DateTime.now();
 
@@ -255,6 +564,18 @@ class _TripDetailsScreenState extends State<TripDetailsScreen> {
           'Trip Details',
           style: TextStyle(color: _darkTextColor, fontWeight: FontWeight.w700),
         ),
+        actions: [
+          IconButton(
+            tooltip: _isPastTrip
+                ? 'Reminders unavailable for past trips'
+                : 'Add trip reminder',
+            onPressed: _isPastTrip || _isDeleting ? null : _addReminder,
+            icon: const Icon(Icons.add_alert_outlined),
+            color: _primaryColor,
+          ),
+
+          const SizedBox(width: 6),
+        ],
       ),
       body: RefreshIndicator(
         onRefresh: _refreshProgress,
