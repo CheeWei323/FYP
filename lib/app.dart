@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
+
 import 'screens/onboarding_screen.dart';
+import 'theme/app_theme.dart';
 
 class TravelGuardApp extends StatelessWidget {
   const TravelGuardApp({super.key});
@@ -9,12 +11,7 @@ class TravelGuardApp extends StatelessWidget {
     return MaterialApp(
       title: 'TravelGuard MY',
       debugShowCheckedModeBanner: false,
-      theme: ThemeData(
-        useMaterial3: true,
-        colorScheme: ColorScheme.fromSeed(
-          seedColor: const Color(0xFF1976D2),
-        ),
-      ),
+      theme: AppTheme.light,
       home: const OnboardingScreen(),
     );
   }

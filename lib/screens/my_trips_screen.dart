@@ -4,6 +4,8 @@ import 'package:flutter/material.dart';
 import '../models/trip.dart';
 import '../services/trip_service.dart';
 import 'trip_details_screen.dart';
+import '../theme/app_theme.dart';
+import '../widgets/destination_photo.dart';
 
 class MyTripsScreen extends StatefulWidget {
   final bool embedded;
@@ -27,11 +29,11 @@ class _MyTripsScreenState extends State<MyTripsScreen> {
 
   final Set<String> _selectedTripIds = <String>{};
 
+  final Map<String, Future<Map<String, int>>> _progressCache = {};
+
   static const Color _primaryColor = Color(0xFF087F8C);
 
   static const Color _darkTextColor = Color(0xFF102A43);
-
-  static const Color _backgroundColor = Color(0xFFF7F9FB);
 
   static const Color _borderColor = Color(0xFFE1E7EC);
 
@@ -40,6 +42,13 @@ class _MyTripsScreenState extends State<MyTripsScreen> {
     super.initState();
 
     _tripsFuture = _fetchTrips();
+  }
+
+  Future<Map<String, int>> _getProgress(String tripId) {
+    return _progressCache.putIfAbsent(
+      tripId,
+      () => _tripService.getChecklistProgress(tripId),
+    );
   }
 
   // ---------------------------------------------------------------------------
@@ -60,6 +69,7 @@ class _MyTripsScreenState extends State<MyTripsScreen> {
     final Future<List<Trip>> refreshedTrips = _fetchTrips();
 
     setState(() {
+      _progressCache.clear();
       _tripsFuture = refreshedTrips;
     });
 
@@ -202,10 +212,14 @@ class _MyTripsScreenState extends State<MyTripsScreen> {
           ),
           content: Text(
             selectedCount == 1
-                ? 'This will permanently remove the selected trip, '
-                      'its travel requirements and packing list.'
-                : 'This will permanently remove the selected trips, '
-                      'their travel requirements and packing lists.',
+                ? 'This will permanently delete the selected trip, '
+                      'its travel requirements, packing list and '
+                      'personal reminders. Scheduled phone notifications '
+                      'for this trip will also be cancelled.'
+                : 'This will permanently delete the selected trips, '
+                      'their travel requirements, packing lists and '
+                      'personal reminders. Scheduled phone notifications '
+                      'will also be cancelled.',
           ),
           actions: [
             TextButton(
@@ -297,28 +311,60 @@ class _MyTripsScreenState extends State<MyTripsScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final Widget content = Container(
-      color: _backgroundColor,
-      child: FutureBuilder<List<Trip>>(
-        future: _tripsFuture,
-        builder: (context, snapshot) {
-          if (snapshot.connectionState == ConnectionState.waiting) {
-            return const Center(child: CircularProgressIndicator());
-          }
+    final Widget content = Stack(
+      children: [
+        Container(
+          color: AppColors.background,
+          child: FutureBuilder<List<Trip>>(
+            future: _tripsFuture,
+            builder: (context, snapshot) {
+              if (snapshot.connectionState == ConnectionState.waiting) {
+                return const Center(child: CircularProgressIndicator());
+              }
 
-          if (snapshot.hasError) {
-            return _buildErrorState();
-          }
+              if (snapshot.hasError) {
+                return _buildErrorState();
+              }
 
-          final List<Trip> trips = snapshot.data ?? [];
+              final List<Trip> trips = snapshot.data ?? [];
 
-          if (trips.isEmpty) {
-            return _buildEmptyState();
-          }
+              if (trips.isEmpty) {
+                return _buildEmptyState();
+              }
 
-          return _buildTripsList(trips);
-        },
-      ),
+              return _buildTripsList(trips);
+            },
+          ),
+        ),
+
+        // Keep delete action accessible without scrolling
+        // through every trip card.
+        if (_selectionMode)
+          Positioned(
+            left: 16,
+            right: 16,
+            bottom: 12,
+            child: SafeArea(
+              top: false,
+              child: Container(
+                padding: const EdgeInsets.all(10),
+                decoration: BoxDecoration(
+                  color: Colors.white,
+                  borderRadius: BorderRadius.circular(18),
+                  border: Border.all(color: AppColors.border),
+                  boxShadow: const [
+                    BoxShadow(
+                      color: Color(0x18000000),
+                      blurRadius: 16,
+                      offset: Offset(0, 5),
+                    ),
+                  ],
+                ),
+                child: _buildDeleteSelectedButton(),
+              ),
+            ),
+          ),
+      ],
     );
 
     if (widget.embedded) {
@@ -326,16 +372,8 @@ class _MyTripsScreenState extends State<MyTripsScreen> {
     }
 
     return Scaffold(
-      backgroundColor: _backgroundColor,
-      appBar: AppBar(
-        backgroundColor: Colors.white,
-        surfaceTintColor: Colors.white,
-        elevation: 0,
-        title: const Text(
-          'My Trips',
-          style: TextStyle(color: _darkTextColor, fontWeight: FontWeight.w700),
-        ),
-      ),
+      backgroundColor: AppColors.background,
+      appBar: AppBar(title: const Text('My Trips')),
       body: content,
     );
   }
@@ -560,12 +598,6 @@ class _MyTripsScreenState extends State<MyTripsScreen> {
               ),
             ),
           ],
-
-          if (_selectionMode) ...[
-            const SizedBox(height: 4),
-
-            _buildDeleteSelectedButton(),
-          ],
         ],
       ),
     );
@@ -666,183 +698,246 @@ class _MyTripsScreenState extends State<MyTripsScreen> {
   Widget _buildTripCard(Trip trip, {required bool past}) {
     final bool selected = _selectedTripIds.contains(trip.id);
 
-    return Container(
+    return AnimatedContainer(
+      duration: const Duration(milliseconds: 200),
+      curve: Curves.easeOutCubic,
       decoration: BoxDecoration(
         color: Colors.white,
         borderRadius: BorderRadius.circular(20),
         border: Border.all(
-          color: selected ? _primaryColor : _borderColor,
+          color: selected ? AppColors.primary : AppColors.border,
           width: selected ? 2 : 1,
         ),
         boxShadow: const [
           BoxShadow(
-            color: Color(0x09000000),
-            blurRadius: 10,
+            color: Color(0x0A000000),
+            blurRadius: 12,
             offset: Offset(0, 4),
           ),
         ],
       ),
+      clipBehavior: Clip.antiAlias,
       child: Material(
         color: Colors.transparent,
         child: InkWell(
-          borderRadius: BorderRadius.circular(20),
-          onTap: () {
-            if (_selectionMode) {
-              _toggleTripSelection(trip.id);
-            } else {
-              _openTrip(trip);
-            }
-          },
-          child: Padding(
-            padding: const EdgeInsets.all(17),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Row(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    // Material icon used instead
-                    // of country flag emoji.
-                    Container(
-                      width: 50,
-                      height: 50,
-                      decoration: BoxDecoration(
-                        color: const Color(0xFFF1F7F8),
-                        borderRadius: BorderRadius.circular(15),
-                      ),
-                      child: const Icon(
-                        Icons.location_on_outlined,
-                        size: 27,
-                        color: _primaryColor,
-                      ),
-                    ),
-
-                    const SizedBox(width: 13),
-
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
+          onTap: _isDeletingSelected
+              ? null
+              : () {
+                  if (_selectionMode) {
+                    _toggleTripSelection(trip.id);
+                  } else {
+                    _openTrip(trip);
+                  }
+                },
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              // ---------------------------------------------------------------
+              // LANDMARK IMAGE
+              // ---------------------------------------------------------------
+              DestinationPhoto(
+                countryId: trip.destinationCountryId,
+                height: 145,
+                child: Padding(
+                  padding: const EdgeInsets.all(17),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
                         children: [
-                          Text(
-                            _formatText(trip.destinationCountryId),
-                            style: const TextStyle(
-                              fontSize: 19,
-                              fontWeight: FontWeight.w800,
-                              color: _darkTextColor,
+                          const Expanded(
+                            child: Text(
+                              'TRIP DESTINATION',
+                              style: TextStyle(
+                                color: Colors.white,
+                                fontSize: 10,
+                                fontWeight: FontWeight.w800,
+                                letterSpacing: 1.3,
+                              ),
                             ),
                           ),
 
-                          const SizedBox(height: 4),
-
-                          Text(
-                            '${_formatText(trip.purpose)}'
-                            ' • '
-                            '${trip.durationDays} days',
-                            style: const TextStyle(
-                              fontSize: 13,
-                              color: Colors.black54,
+                          if (_selectionMode)
+                            Container(
+                              width: 34,
+                              height: 34,
+                              decoration: BoxDecoration(
+                                color: selected
+                                    ? AppColors.primary
+                                    : const Color(0xCCFFFFFF),
+                                shape: BoxShape.circle,
+                                border: Border.all(
+                                  color: Colors.white,
+                                  width: 1.5,
+                                ),
+                              ),
+                              child: Icon(
+                                selected
+                                    ? Icons.check_rounded
+                                    : Icons.circle_outlined,
+                                size: 21,
+                                color: selected
+                                    ? Colors.white
+                                    : AppColors.primary,
+                              ),
                             ),
-                          ),
                         ],
                       ),
-                    ),
 
-                    if (_selectionMode)
-                      Checkbox(
-                        value: selected,
-                        activeColor: _primaryColor,
-                        onChanged: (_) {
-                          _toggleTripSelection(trip.id);
-                        },
-                      )
-                    else
-                      const Icon(
-                        Icons.chevron_right_rounded,
-                        color: Colors.black38,
-                      ),
-                  ],
-                ),
+                      const Spacer(),
 
-                const SizedBox(height: 16),
-
-                Row(
-                  children: [
-                    const Icon(
-                      Icons.calendar_today_outlined,
-                      size: 16,
-                      color: Colors.black45,
-                    ),
-
-                    const SizedBox(width: 7),
-
-                    Text(
-                      _formatDate(trip.departureDate),
-                      style: const TextStyle(
-                        fontSize: 13,
-                        color: Color(0xFF486581),
-                      ),
-                    ),
-
-                    const Spacer(),
-
-                    Container(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 9,
-                        vertical: 5,
-                      ),
-                      decoration: BoxDecoration(
-                        color: past
-                            ? const Color(0xFFF0F2F4)
-                            : const Color(0xFFDFF5EA),
-                        borderRadius: BorderRadius.circular(20),
-                      ),
-                      child: Text(
-                        past ? 'Past' : 'Upcoming',
-                        style: TextStyle(
-                          fontSize: 10.5,
-                          fontWeight: FontWeight.w700,
-                          color: past
-                              ? const Color(0xFF607D8B)
-                              : const Color(0xFF177245),
+                      Text(
+                        _formatText(trip.destinationCountryId),
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(
+                          color: Colors.white,
+                          fontSize: 23,
+                          fontWeight: FontWeight.w800,
+                          shadows: [
+                            Shadow(color: Color(0x77000000), blurRadius: 8),
+                          ],
                         ),
                       ),
-                    ),
-                  ],
-                ),
-
-                const SizedBox(height: 17),
-
-                _buildProgressSection(trip.id),
-
-                if (!_selectionMode) ...[
-                  const SizedBox(height: 16),
-
-                  SizedBox(
-                    width: double.infinity,
-                    height: 46,
-                    child: FilledButton.icon(
-                      style: FilledButton.styleFrom(
-                        backgroundColor: _primaryColor,
-                        foregroundColor: Colors.white,
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(13),
-                        ),
-                      ),
-                      onPressed: () {
-                        _openTrip(trip);
-                      },
-                      icon: const Icon(Icons.arrow_forward_rounded, size: 19),
-                      label: const Text(
-                        'View Trip',
-                        style: TextStyle(fontWeight: FontWeight.w700),
-                      ),
-                    ),
+                    ],
                   ),
-                ],
-              ],
-            ),
+                ),
+              ),
+
+              // ---------------------------------------------------------------
+              // TRIP INFORMATION
+              // ---------------------------------------------------------------
+              Padding(
+                padding: const EdgeInsets.all(17),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    // Purpose and duration adapt to available width.
+                    Wrap(
+                      spacing: 8,
+                      runSpacing: 8,
+                      children: [
+                        _buildTripInfoChip(
+                          Icons.explore_outlined,
+                          _formatText(trip.purpose),
+                        ),
+                        _buildTripInfoChip(
+                          Icons.schedule_outlined,
+                          '${trip.durationDays} days',
+                        ),
+                      ],
+                    ),
+
+                    const SizedBox(height: 17),
+
+                    // Departure date and trip status can wrap
+                    // instead of overflowing on smaller phones.
+                    Wrap(
+                      spacing: 12,
+                      runSpacing: 9,
+                      crossAxisAlignment: WrapCrossAlignment.center,
+                      children: [
+                        Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            const Icon(
+                              Icons.calendar_today_outlined,
+                              size: 17,
+                              color: AppColors.secondaryText,
+                            ),
+                            const SizedBox(width: 8),
+                            Text(
+                              _formatDate(trip.departureDate),
+                              style: const TextStyle(
+                                color: AppColors.navy,
+                                fontSize: 13,
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                          ],
+                        ),
+
+                        Container(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 11,
+                            vertical: 6,
+                          ),
+                          decoration: BoxDecoration(
+                            color: past
+                                ? const Color(0xFFF0F2F4)
+                                : const Color(0xFFDFF5EA),
+                            borderRadius: BorderRadius.circular(20),
+                          ),
+                          child: Text(
+                            past ? 'Past' : 'Upcoming',
+                            style: TextStyle(
+                              color: past
+                                  ? const Color(0xFF607D8B)
+                                  : AppColors.success,
+                              fontSize: 11,
+                              fontWeight: FontWeight.w700,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+
+                    const SizedBox(height: 18),
+
+                    // Existing Firestore checklist progress.
+                    _buildProgressSection(trip.id),
+
+                    // Hide navigation buttons while selecting trips.
+                    if (!_selectionMode) ...[
+                      const SizedBox(height: 19),
+
+                      SizedBox(
+                        width: double.infinity,
+                        child: FilledButton.icon(
+                          onPressed: () => _openTrip(trip),
+                          icon: const Icon(
+                            Icons.arrow_forward_rounded,
+                            size: 19,
+                          ),
+                          label: const Text('View Trip'),
+                        ),
+                      ),
+                    ],
+                  ],
+                ),
+              ),
+            ],
           ),
         ),
+      ),
+    );
+  }
+
+  // -----------------------------------------------------------------------------
+  // REUSABLE TRIP INFORMATION CHIP
+  // -----------------------------------------------------------------------------
+
+  Widget _buildTripInfoChip(IconData icon, String label) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 11, vertical: 8),
+      decoration: BoxDecoration(
+        color: AppColors.primaryLight,
+        borderRadius: BorderRadius.circular(10),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(icon, size: 16, color: AppColors.primary),
+          const SizedBox(width: 6),
+          Text(
+            label,
+            style: const TextStyle(
+              color: AppColors.primary,
+              fontSize: 12,
+              fontWeight: FontWeight.w700,
+            ),
+          ),
+        ],
       ),
     );
   }
@@ -895,7 +990,7 @@ class _MyTripsScreenState extends State<MyTripsScreen> {
 
   Widget _buildProgressSection(String tripId) {
     return FutureBuilder<Map<String, int>>(
-      future: _tripService.getChecklistProgress(tripId),
+      future: _getProgress(tripId),
       builder: (context, snapshot) {
         if (snapshot.connectionState == ConnectionState.waiting) {
           return const Padding(

@@ -7,6 +7,8 @@ import 'edit_trip_screen.dart';
 import 'packing_screen.dart';
 import '../services/reminder_service.dart';
 import '../services/notification_service.dart';
+import '../theme/app_theme.dart';
+import '../widgets/destination_photo.dart';
 
 class TripDetailsScreen extends StatefulWidget {
   final Trip trip;
@@ -27,8 +29,6 @@ class _TripDetailsScreenState extends State<TripDetailsScreen> {
   static const Color _darkTextColor = Color(0xFF102A43);
 
   static const Color _backgroundColor = Color(0xFFF7F9FB);
-
-  static const Color _borderColor = Color(0xFFE1E7EC);
 
   late Trip _trip;
 
@@ -79,48 +79,92 @@ class _TripDetailsScreenState extends State<TripDetailsScreen> {
     );
   }
 
-  Future<void> _addReminder() async {
-    if (_isPastTrip) {
-      return;
-    }
+  Future<void> _showReminderFeedback({
+    required String title,
+    required String message,
+    required IconData icon,
+    Color iconColor = AppColors.primary,
+  }) async {
+    if (!mounted) return;
 
-    final ScaffoldMessengerState messenger = ScaffoldMessenger.of(context);
+    await showDialog<void>(
+      context: context,
+      builder: (dialogContext) {
+        return AlertDialog(
+          icon: Icon(icon, color: iconColor, size: 38),
+          title: Text(title, textAlign: TextAlign.center),
+          content: Text(message, textAlign: TextAlign.center),
+          actionsAlignment: MainAxisAlignment.center,
+          actions: [
+            SizedBox(
+              width: double.infinity,
+              child: FilledButton(
+                onPressed: () {
+                  Navigator.pop(dialogContext);
+                },
+                child: const Text('OK'),
+              ),
+            ),
+          ],
+        );
+      },
+    );
+  }
+
+  Future<void> _addReminder() async {
+    if (_isPastTrip || _isDeleting) return;
 
     final DateTime now = DateTime.now();
-
     final DateTime departureEnd = _departureEnd;
 
+    // -----------------------------------------------------------
+    // CHECK WHETHER FUTURE REMINDERS ARE STILL POSSIBLE
+    // -----------------------------------------------------------
+
     if (!departureEnd.isAfter(now)) {
-      messenger.showSnackBar(
-        const SnackBar(
-          content: Text(
+      await _showReminderFeedback(
+        title: 'Reminder Unavailable',
+        message:
             'No future reminder time is available '
             'for this trip.',
-          ),
-        ),
+        icon: Icons.info_outline_rounded,
       );
-
       return;
     }
 
-    String reminderTitle = '';
+    final formKey = GlobalKey<FormState>();
 
+    String reminderTitle = '';
+    String? dateTimeError;
+    String? saveError;
+
+    bool isSaving = false;
+
+    // Suggest a time one hour from now.
     DateTime selectedDateTime = now.add(const Duration(hours: 1));
 
     if (selectedDateTime.isAfter(departureEnd)) {
       selectedDateTime = now.add(const Duration(minutes: 5));
     }
 
-    bool isSaving = false;
-
+    // Save notification information for use after
+    // the dialog has closed.
     ({int notificationId, String title, DateTime reminderAt})? createdReminder;
+
+    // -----------------------------------------------------------
+    // ADD REMINDER DIALOG
+    // -----------------------------------------------------------
 
     final bool? saved = await showDialog<bool>(
       context: context,
       barrierDismissible: false,
       builder: (dialogContext) {
         return StatefulBuilder(
-          builder: (context, setDialogState) {
+          builder: (dialogContext, setDialogState) {
+            // ---------------------------------------------------
+            // SELECT DATE
+            // ---------------------------------------------------
+
             Future<void> selectDate() async {
               final DateTime today = DateTime(now.year, now.month, now.day);
 
@@ -159,8 +203,14 @@ class _TripDetailsScreenState extends State<TripDetailsScreen> {
                   selectedDateTime.hour,
                   selectedDateTime.minute,
                 );
+
+                dateTimeError = null;
               });
             }
+
+            // ---------------------------------------------------
+            // SELECT TIME
+            // ---------------------------------------------------
 
             Future<void> selectTime() async {
               final TimeOfDay? picked = await showTimePicker(
@@ -180,67 +230,246 @@ class _TripDetailsScreenState extends State<TripDetailsScreen> {
                   picked.hour,
                   picked.minute,
                 );
+
+                dateTimeError = null;
               });
             }
 
+            // ---------------------------------------------------
+            // DIALOG CONTENT
+            // ---------------------------------------------------
+
             return AlertDialog(
-              icon: const Icon(
-                Icons.add_alert_outlined,
-                color: _primaryColor,
-                size: 32,
+              scrollable: true,
+              icon: Container(
+                width: 54,
+                height: 54,
+                decoration: BoxDecoration(
+                  color: AppColors.primaryLight,
+                  borderRadius: BorderRadius.circular(17),
+                ),
+                child: const Icon(
+                  Icons.add_alert_outlined,
+                  color: AppColors.primary,
+                  size: 28,
+                ),
               ),
-              title: const Text('Add Trip Reminder'),
-              content: SingleChildScrollView(
+
+              title: const Text(
+                'Add Trip Reminder',
+                textAlign: TextAlign.center,
+              ),
+
+              content: Form(
+                key: formKey,
+                autovalidateMode: AutovalidateMode.onUserInteraction,
                 child: Column(
                   mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text(
-                      '${_formatText(_trip.destinationCountryId)}'
-                      ' • '
-                      '${_formatDate(_trip.departureDate)}',
-                      style: const TextStyle(color: Colors.black54),
-                    ),
-
-                    const SizedBox(height: 18),
-
-                    TextFormField(
-                      maxLength: 120,
-                      enabled: !isSaving,
-                      onChanged: (value) {
-                        reminderTitle = value;
-                      },
-                      decoration: const InputDecoration(
-                        labelText: 'Reminder',
-                        hintText: 'e.g. Review passport documents',
-                        prefixIcon: Icon(Icons.edit_note_rounded),
-                        border: OutlineInputBorder(),
+                    // Trip context.
+                    Center(
+                      child: Text(
+                        '${_formatText(_trip.destinationCountryId)}'
+                        ' • '
+                        '${_formatDate(_trip.departureDate)}',
+                        textAlign: TextAlign.center,
+                        style: const TextStyle(
+                          color: AppColors.secondaryText,
+                          fontSize: 12,
+                        ),
                       ),
                     ),
 
-                    const SizedBox(height: 6),
+                    const SizedBox(height: 22),
+
+                    // -------------------------------------------
+                    // REMINDER TITLE
+                    // -------------------------------------------
+                    const Text(
+                      'Reminder Title',
+                      style: TextStyle(
+                        color: AppColors.navy,
+                        fontSize: 13,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+
+                    const SizedBox(height: 9),
+
+                    TextFormField(
+                      enabled: !isSaving,
+                      maxLength: 120,
+                      maxLines: 2,
+                      minLines: 1,
+                      textCapitalization: TextCapitalization.sentences,
+                      decoration: const InputDecoration(
+                        hintText: 'e.g. Review passport documents',
+                        prefixIcon: Icon(Icons.edit_note_rounded),
+                      ),
+                      onChanged: (value) {
+                        reminderTitle = value;
+                      },
+                      validator: (value) {
+                        if (value == null || value.trim().isEmpty) {
+                          return 'Please enter a reminder title.';
+                        }
+
+                        return null;
+                      },
+                    ),
+
+                    const SizedBox(height: 10),
+
+                    // -------------------------------------------
+                    // REMINDER DATE
+                    // -------------------------------------------
+                    const Text(
+                      'Reminder Date',
+                      style: TextStyle(
+                        color: AppColors.navy,
+                        fontSize: 13,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+
+                    const SizedBox(height: 9),
 
                     SizedBox(
                       width: double.infinity,
                       child: OutlinedButton.icon(
                         onPressed: isSaving ? null : selectDate,
-                        icon: const Icon(Icons.calendar_today_outlined),
+                        icon: const Icon(
+                          Icons.calendar_today_outlined,
+                          size: 18,
+                        ),
                         label: Text(_formatDate(selectedDateTime)),
                       ),
                     ),
 
-                    const SizedBox(height: 8),
+                    const SizedBox(height: 17),
+
+                    // -------------------------------------------
+                    // REMINDER TIME
+                    // -------------------------------------------
+                    const Text(
+                      'Reminder Time',
+                      style: TextStyle(
+                        color: AppColors.navy,
+                        fontSize: 13,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+
+                    const SizedBox(height: 9),
 
                     SizedBox(
                       width: double.infinity,
                       child: OutlinedButton.icon(
                         onPressed: isSaving ? null : selectTime,
-                        icon: const Icon(Icons.access_time_rounded),
+                        icon: const Icon(Icons.access_time_rounded, size: 19),
                         label: Text(_formatTime(selectedDateTime)),
+                      ),
+                    ),
+
+                    const SizedBox(height: 14),
+
+                    // -------------------------------------------
+                    // DATE/TIME VALIDATION
+                    // -------------------------------------------
+                    if (dateTimeError != null) ...[
+                      Row(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          const Icon(
+                            Icons.error_outline_rounded,
+                            color: AppColors.danger,
+                            size: 17,
+                          ),
+
+                          const SizedBox(width: 7),
+
+                          Expanded(
+                            child: Text(
+                              dateTimeError!,
+                              style: const TextStyle(
+                                color: AppColors.danger,
+                                fontSize: 12,
+                                height: 1.4,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+
+                      const SizedBox(height: 12),
+                    ],
+
+                    // -------------------------------------------
+                    // SAVE ERROR
+                    // -------------------------------------------
+                    if (saveError != null) ...[
+                      Container(
+                        width: double.infinity,
+                        padding: const EdgeInsets.all(11),
+                        decoration: BoxDecoration(
+                          color: const Color(0xFFFFF1F0),
+                          borderRadius: BorderRadius.circular(11),
+                        ),
+                        child: Text(
+                          saveError!,
+                          style: const TextStyle(
+                            color: AppColors.danger,
+                            fontSize: 12,
+                          ),
+                        ),
+                      ),
+
+                      const SizedBox(height: 12),
+                    ],
+
+                    // -------------------------------------------
+                    // INFORMATION NOTE
+                    // -------------------------------------------
+                    Container(
+                      width: double.infinity,
+                      padding: const EdgeInsets.all(12),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFFF1F6FA),
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      child: const Row(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Icon(
+                            Icons.info_outline_rounded,
+                            color: AppColors.primary,
+                            size: 18,
+                          ),
+
+                          SizedBox(width: 9),
+
+                          Expanded(
+                            child: Text(
+                              'Choose a future date and time '
+                              'on or before your trip departure date.',
+                              style: TextStyle(
+                                color: AppColors.secondaryText,
+                                fontSize: 11.5,
+                                height: 1.4,
+                              ),
+                            ),
+                          ),
+                        ],
                       ),
                     ),
                   ],
                 ),
               ),
+
+              // -------------------------------------------------
+              // ACTION BUTTONS
+              // -------------------------------------------------
               actions: [
                 TextButton(
                   onPressed: isSaving
@@ -255,65 +484,54 @@ class _TripDetailsScreenState extends State<TripDetailsScreen> {
                   onPressed: isSaving
                       ? null
                       : () async {
-                          final String title = reminderTitle.trim();
-
-                          if (title.isEmpty) {
-                            messenger.showSnackBar(
-                              const SnackBar(
-                                content: Text('Enter a reminder title.'),
-                              ),
-                            );
-
+                          // Validate the title first.
+                          if (!(formKey.currentState?.validate() ?? false)) {
                             return;
                           }
 
                           final DateTime current = DateTime.now();
 
+                          // Validate the selected date/time.
                           if (!selectedDateTime.isAfter(current)) {
-                            messenger.showSnackBar(
-                              const SnackBar(
-                                content: Text(
-                                  'Select a future reminder '
-                                  'date and time.',
-                                ),
-                              ),
-                            );
+                            setDialogState(() {
+                              dateTimeError =
+                                  'Please select a future '
+                                  'reminder date and time.';
+                            });
 
                             return;
                           }
 
                           if (selectedDateTime.isAfter(departureEnd)) {
-                            messenger.showSnackBar(
-                              const SnackBar(
-                                content: Text(
+                            setDialogState(() {
+                              dateTimeError =
                                   'The reminder must be '
                                   'scheduled on or before '
-                                  'the departure date.',
-                                ),
-                              ),
-                            );
+                                  'the departure date.';
+                            });
 
                             return;
                           }
 
                           setDialogState(() {
                             isSaving = true;
+                            saveError = null;
+                            dateTimeError = null;
                           });
 
                           try {
+                            // Create reminder in Firestore.
                             final result = await _reminderService
                                 .createReminder(
                                   userId: _trip.userId,
                                   tripId: _trip.id,
-                                  title: title,
+                                  title: reminderTitle.trim(),
                                   reminderAt: selectedDateTime,
                                 );
 
-                            // Keep the notification information for scheduling
-                            // after the reminder dialog has closed.
                             createdReminder = (
                               notificationId: result.notificationId,
-                              title: title,
+                              title: reminderTitle.trim(),
                               reminderAt: selectedDateTime,
                             );
 
@@ -323,10 +541,7 @@ class _TripDetailsScreenState extends State<TripDetailsScreen> {
 
                             Navigator.pop(dialogContext, true);
                           } catch (error) {
-                            debugPrint(
-                              'CREATE REMINDER ERROR: '
-                              '$error',
-                            );
+                            debugPrint('CREATE REMINDER ERROR: $error');
 
                             if (!dialogContext.mounted) {
                               return;
@@ -334,25 +549,22 @@ class _TripDetailsScreenState extends State<TripDetailsScreen> {
 
                             setDialogState(() {
                               isSaving = false;
+                              saveError =
+                                  'Unable to save the reminder. '
+                                  'Please try again.';
                             });
-
-                            messenger.showSnackBar(
-                              const SnackBar(
-                                content: Text('Unable to create reminder.'),
-                              ),
-                            );
                           }
                         },
                   child: isSaving
                       ? const SizedBox(
-                          width: 18,
-                          height: 18,
+                          width: 19,
+                          height: 19,
                           child: CircularProgressIndicator(
                             strokeWidth: 2,
                             color: Colors.white,
                           ),
                         )
-                      : const Text('Add'),
+                      : const Text('Save Reminder'),
                 ),
               ],
             );
@@ -361,6 +573,10 @@ class _TripDetailsScreenState extends State<TripDetailsScreen> {
       },
     );
 
+    // -----------------------------------------------------------
+    // STOP IF CANCELLED
+    // -----------------------------------------------------------
+
     if (saved != true || !mounted) {
       return;
     }
@@ -368,26 +584,28 @@ class _TripDetailsScreenState extends State<TripDetailsScreen> {
     final reminder = createdReminder;
 
     if (reminder == null) {
-      messenger.showSnackBar(
-        const SnackBar(
-          content: Text(
-            'Reminder saved, but notification details are unavailable.',
-          ),
-        ),
+      await _showReminderFeedback(
+        title: 'Reminder Saved',
+        message:
+            'The reminder was saved, but its notification '
+            'details are unavailable.',
+        icon: Icons.info_outline_rounded,
       );
+
       return;
     }
+
+    // -----------------------------------------------------------
+    // SCHEDULE ANDROID NOTIFICATION
+    // -----------------------------------------------------------
 
     bool notificationScheduled = false;
 
     try {
-      // Request Android notification and exact-alarm permissions.
       final bool permissionGranted = await NotificationService.instance
           .requestPermissions();
 
       if (permissionGranted) {
-        // Schedule exactly one Android notification
-        // using the ID already stored in Firestore.
         await NotificationService.instance.scheduleReminder(
           notificationId: reminder.notificationId,
           tripId: _trip.id,
@@ -404,16 +622,32 @@ class _TripDetailsScreenState extends State<TripDetailsScreen> {
 
     if (!mounted) return;
 
-    messenger.showSnackBar(
-      SnackBar(
-        content: Text(
-          notificationScheduled
-              ? 'Reminder saved and phone notification scheduled.'
-              : 'Reminder saved, but phone notification was not scheduled. '
-                    'Check notification and alarm permissions.',
-        ),
-      ),
-    );
+    // -----------------------------------------------------------
+    // CENTRED RESULT DIALOG
+    // -----------------------------------------------------------
+
+    if (notificationScheduled) {
+      await _showReminderFeedback(
+        title: 'Reminder Created',
+        message:
+            'Your reminder has been saved successfully.\n\n'
+            'A phone notification has also been scheduled '
+            'for the selected date and time.',
+        icon: Icons.check_circle_outline_rounded,
+        iconColor: AppColors.success,
+      );
+    } else {
+      await _showReminderFeedback(
+        title: 'Reminder Saved',
+        message:
+            'Your reminder was saved successfully, but '
+            'the phone notification could not be scheduled.\n\n'
+            'Please check notification and exact alarm '
+            'permissions in your Android settings.',
+        icon: Icons.notifications_off_outlined,
+        iconColor: const Color(0xFF9A5B15),
+      );
+    }
   }
 
   Future<void> _editTrip() async {
@@ -722,134 +956,211 @@ class _TripDetailsScreenState extends State<TripDetailsScreen> {
   Widget _buildTripHeader() {
     return Container(
       width: double.infinity,
-      padding: const EdgeInsets.all(20),
       decoration: BoxDecoration(
-        gradient: const LinearGradient(
-          colors: [Color(0xFFE7F7F8), Color(0xFFF1F8FB)],
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-        ),
+        color: Colors.white,
         borderRadius: BorderRadius.circular(22),
-        border: Border.all(color: const Color(0xFFCBE8EB)),
+        border: Border.all(color: AppColors.border),
       ),
+      clipBehavior: Clip.antiAlias,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Container(
-                width: 58,
-                height: 58,
-                decoration: BoxDecoration(
-                  color: Colors.white,
-                  borderRadius: BorderRadius.circular(16),
-                ),
-                child: const Icon(
-                  Icons.location_on_outlined,
-                  color: _primaryColor,
-                  size: 30,
-                ),
-              ),
-
-              const SizedBox(width: 15),
-
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      _formatText(_trip.destinationCountryId),
-                      style: const TextStyle(
-                        fontSize: 23,
-                        fontWeight: FontWeight.w800,
-                        color: _darkTextColor,
+          // -----------------------------------------------------
+          // DESTINATION LANDMARK PHOTO
+          // -----------------------------------------------------
+          DestinationPhoto(
+            countryId: _trip.destinationCountryId,
+            height: 190,
+            child: Padding(
+              padding: const EdgeInsets.all(20),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  // Trip status displayed over the image.
+                  Align(
+                    alignment: Alignment.topLeft,
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 12,
+                        vertical: 7,
+                      ),
+                      decoration: BoxDecoration(
+                        color: const Color(0xDDFFFFFF),
+                        borderRadius: BorderRadius.circular(20),
+                      ),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Icon(
+                            _isPastTrip
+                                ? Icons.history_rounded
+                                : Icons.flight_takeoff_rounded,
+                            size: 15,
+                            color: AppColors.primary,
+                          ),
+                          const SizedBox(width: 6),
+                          Text(
+                            _isPastTrip ? 'Past Trip' : 'Upcoming Trip',
+                            style: const TextStyle(
+                              color: AppColors.navy,
+                              fontSize: 11,
+                              fontWeight: FontWeight.w800,
+                            ),
+                          ),
+                        ],
                       ),
                     ),
-                    const SizedBox(height: 4),
-                    Text(
-                      '${_formatText(_trip.purpose)}'
-                      ' • '
+                  ),
+
+                  const Spacer(),
+
+                  const Text(
+                    'TRIP DESTINATION',
+                    style: TextStyle(
+                      color: Color(0xE6FFFFFF),
+                      fontSize: 10,
+                      fontWeight: FontWeight.w800,
+                      letterSpacing: 1.4,
+                    ),
+                  ),
+
+                  const SizedBox(height: 7),
+
+                  Text(
+                    _formatText(_trip.destinationCountryId),
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontSize: 27,
+                      fontWeight: FontWeight.w800,
+                      shadows: [
+                        Shadow(color: Color(0x88000000), blurRadius: 9),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+
+          // -----------------------------------------------------
+          // TRIP DETAILS
+          // -----------------------------------------------------
+          Padding(
+            padding: const EdgeInsets.all(18),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                // Wrap avoids overflow on smaller phones.
+                Wrap(
+                  spacing: 9,
+                  runSpacing: 9,
+                  children: [
+                    _buildHeaderChip(
+                      Icons.explore_outlined,
+                      _formatText(_trip.purpose),
+                    ),
+                    _buildHeaderChip(
+                      Icons.schedule_outlined,
                       '${_trip.durationDays} days',
-                      style: const TextStyle(
-                        color: Colors.black54,
-                        fontSize: 14,
+                    ),
+                  ],
+                ),
+
+                const SizedBox(height: 19),
+
+                const Divider(height: 1, color: AppColors.border),
+
+                const SizedBox(height: 18),
+
+                Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Container(
+                      width: 44,
+                      height: 44,
+                      decoration: BoxDecoration(
+                        color: AppColors.primaryLight,
+                        borderRadius: BorderRadius.circular(13),
+                      ),
+                      child: const Icon(
+                        Icons.calendar_month_outlined,
+                        color: AppColors.primary,
+                        size: 22,
+                      ),
+                    ),
+
+                    const SizedBox(width: 12),
+
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          const Text(
+                            'Departure Date',
+                            style: TextStyle(
+                              fontSize: 12,
+                              color: AppColors.secondaryText,
+                            ),
+                          ),
+
+                          const SizedBox(height: 4),
+
+                          Text(
+                            _formatDate(_trip.departureDate),
+                            style: const TextStyle(
+                              color: AppColors.navy,
+                              fontSize: 16,
+                              fontWeight: FontWeight.w800,
+                            ),
+                          ),
+
+                          const SizedBox(height: 5),
+
+                          Text(
+                            _departureStatus,
+                            style: const TextStyle(
+                              color: AppColors.primary,
+                              fontSize: 12,
+                              fontWeight: FontWeight.w700,
+                            ),
+                          ),
+                        ],
                       ),
                     ),
                   ],
                 ),
-              ),
-
-              Container(
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 10,
-                  vertical: 6,
-                ),
-                decoration: BoxDecoration(
-                  color: _isPastTrip
-                      ? const Color(0xFFECEFF1)
-                      : const Color(0xFFDFF5EA),
-                  borderRadius: BorderRadius.circular(20),
-                ),
-                child: Text(
-                  _isPastTrip ? 'Past' : 'Upcoming',
-                  style: TextStyle(
-                    fontSize: 11,
-                    fontWeight: FontWeight.w700,
-                    color: _isPastTrip
-                        ? const Color(0xFF546E7A)
-                        : const Color(0xFF177245),
-                  ),
-                ),
-              ),
-            ],
-          ),
-
-          const SizedBox(height: 22),
-
-          Container(
-            width: double.infinity,
-            padding: const EdgeInsets.all(15),
-            decoration: BoxDecoration(
-              color: Colors.white,
-              borderRadius: BorderRadius.circular(16),
-            ),
-            child: Row(
-              children: [
-                const Icon(
-                  Icons.calendar_today_outlined,
-                  size: 20,
-                  color: _primaryColor,
-                ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      const Text(
-                        'Departure',
-                        style: TextStyle(fontSize: 12, color: Colors.black54),
-                      ),
-                      const SizedBox(height: 2),
-                      Text(
-                        _formatDate(_trip.departureDate),
-                        style: const TextStyle(
-                          fontWeight: FontWeight.w700,
-                          color: _darkTextColor,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-                Text(
-                  _departureStatus,
-                  style: TextStyle(
-                    fontSize: 12,
-                    fontWeight: FontWeight.w600,
-                    color: _isPastTrip ? Colors.black54 : _primaryColor,
-                  ),
-                ),
               ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  // -----------------------------------------------------------------------------
+  // REUSABLE TRIP HEADER CHIP
+  // -----------------------------------------------------------------------------
+
+  Widget _buildHeaderChip(IconData icon, String label) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 9),
+      decoration: BoxDecoration(
+        color: AppColors.primaryLight,
+        borderRadius: BorderRadius.circular(11),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(icon, color: AppColors.primary, size: 17),
+          const SizedBox(width: 7),
+          Text(
+            label,
+            style: const TextStyle(
+              color: AppColors.primary,
+              fontSize: 12,
+              fontWeight: FontWeight.w700,
             ),
           ),
         ],
@@ -861,30 +1172,47 @@ class _TripDetailsScreenState extends State<TripDetailsScreen> {
     return FutureBuilder<Map<String, int>>(
       future: _progressFuture,
       builder: (context, snapshot) {
+        // Show loading state while retrieving checklist progress.
         if (snapshot.connectionState == ConnectionState.waiting) {
           return Container(
-            height: 180,
+            height: 185,
+            alignment: Alignment.center,
             decoration: BoxDecoration(
               color: Colors.white,
-              borderRadius: BorderRadius.circular(18),
-              border: Border.all(color: _borderColor),
+              borderRadius: BorderRadius.circular(20),
+              border: Border.all(color: AppColors.border),
             ),
-            child: const Center(child: CircularProgressIndicator()),
+            child: const CircularProgressIndicator(),
           );
         }
 
+        // Show error state without affecting other trip features.
         if (snapshot.hasError) {
           return Container(
             width: double.infinity,
-            padding: const EdgeInsets.all(18),
+            padding: const EdgeInsets.all(20),
             decoration: BoxDecoration(
               color: Colors.white,
-              borderRadius: BorderRadius.circular(18),
-              border: Border.all(color: _borderColor),
+              borderRadius: BorderRadius.circular(20),
+              border: Border.all(color: AppColors.border),
             ),
-            child: const Text(
-              'Unable to calculate travel readiness.',
-              textAlign: TextAlign.center,
+            child: const Column(
+              children: [
+                Icon(
+                  Icons.error_outline_rounded,
+                  color: AppColors.danger,
+                  size: 30,
+                ),
+                SizedBox(height: 12),
+                Text(
+                  'Unable to load travel readiness.',
+                  textAlign: TextAlign.center,
+                  style: TextStyle(
+                    color: AppColors.navy,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+              ],
             ),
           );
         }
@@ -892,129 +1220,239 @@ class _TripDetailsScreenState extends State<TripDetailsScreen> {
         final Map<String, int> progress = snapshot.data ?? {};
 
         final int completed = progress['completed'] ?? 0;
-
         final int total = progress['total'] ?? 0;
 
-        final double value = total == 0 ? 0 : completed / total;
+        // Preserve the existing readiness calculation.
+        final double value = total == 0
+            ? 0
+            : (completed / total).clamp(0.0, 1.0).toDouble();
 
         final int percentage = (value * 100).round();
 
+        final int remaining = total > completed ? total - completed : 0;
+
+        final bool reduceMotion = MediaQuery.disableAnimationsOf(context);
+
         return Container(
           width: double.infinity,
-          padding: const EdgeInsets.all(18),
+          padding: const EdgeInsets.all(19),
           decoration: BoxDecoration(
             color: Colors.white,
-            borderRadius: BorderRadius.circular(18),
-            border: Border.all(color: _borderColor),
+            borderRadius: BorderRadius.circular(20),
+            border: Border.all(color: AppColors.border),
+            boxShadow: const [
+              BoxShadow(
+                color: Color(0x08000000),
+                blurRadius: 12,
+                offset: Offset(0, 4),
+              ),
+            ],
           ),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              const Row(
+              // -------------------------------------------------
+              // SECTION HEADING
+              // -------------------------------------------------
+              Row(
                 children: [
-                  Icon(Icons.speed_outlined, color: _primaryColor, size: 23),
+                  Container(
+                    width: 42,
+                    height: 42,
+                    decoration: BoxDecoration(
+                      color: AppColors.primaryLight,
+                      borderRadius: BorderRadius.circular(13),
+                    ),
+                    child: const Icon(
+                      Icons.speed_outlined,
+                      color: AppColors.primary,
+                      size: 23,
+                    ),
+                  ),
 
-                  SizedBox(width: 9),
+                  const SizedBox(width: 12),
 
-                  Text(
-                    'Travel Readiness Score',
-                    style: TextStyle(
-                      fontSize: 15,
-                      fontWeight: FontWeight.w700,
-                      color: _darkTextColor,
+                  const Expanded(
+                    child: Text(
+                      'Travel Readiness Score',
+                      style: TextStyle(
+                        color: AppColors.navy,
+                        fontSize: 16,
+                        fontWeight: FontWeight.w800,
+                      ),
                     ),
                   ),
                 ],
               ),
 
-              const SizedBox(height: 18),
+              const SizedBox(height: 23),
 
-              Row(
-                children: [
-                  SizedBox(
-                    width: 82,
-                    height: 82,
+              // -------------------------------------------------
+              // ANIMATED READINESS DISPLAY
+              // -------------------------------------------------
+              TweenAnimationBuilder<double>(
+                tween: Tween<double>(begin: 0, end: value),
+                duration: reduceMotion
+                    ? Duration.zero
+                    : const Duration(milliseconds: 550),
+                curve: Curves.easeOutCubic,
+                builder: (context, animatedValue, child) {
+                  final Widget progressCircle = SizedBox(
+                    width: 96,
+                    height: 96,
                     child: Stack(
                       alignment: Alignment.center,
                       children: [
                         SizedBox(
-                          width: 82,
-                          height: 82,
+                          width: 96,
+                          height: 96,
                           child: CircularProgressIndicator(
-                            value: value,
-                            strokeWidth: 8,
+                            value: animatedValue,
+                            strokeWidth: 9,
+                            strokeCap: StrokeCap.round,
                             backgroundColor: const Color(0xFFE5EEF0),
-                            valueColor: const AlwaysStoppedAnimation<Color>(
-                              _primaryColor,
+                            color: AppColors.primary,
+                          ),
+                        ),
+
+                        Column(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            Text(
+                              total == 0 ? '--' : '$percentage%',
+                              style: const TextStyle(
+                                color: AppColors.primary,
+                                fontSize: 23,
+                                fontWeight: FontWeight.w800,
+                              ),
                             ),
-                          ),
-                        ),
 
-                        Text(
-                          '$percentage%',
-                          style: const TextStyle(
-                            fontSize: 21,
-                            fontWeight: FontWeight.w800,
-                            color: _primaryColor,
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-
-                  const SizedBox(width: 18),
-
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          total == 0
-                              ? 'No requirements available'
-                              : '$completed of $total requirements completed',
-                          style: const TextStyle(
-                            fontSize: 14,
-                            fontWeight: FontWeight.w700,
-                            color: _darkTextColor,
-                          ),
-                        ),
-
-                        const SizedBox(height: 6),
-
-                        Text(
-                          total == 0
-                              ? 'The readiness score will be calculated when applicable travel requirements are available.'
-                              : 'The score is calculated from your completed applicable travel requirements.',
-                          style: const TextStyle(
-                            fontSize: 12,
-                            height: 1.4,
-                            color: Colors.black54,
-                          ),
+                            const Text(
+                              'COMPLETE',
+                              style: TextStyle(
+                                color: AppColors.secondaryText,
+                                fontSize: 8,
+                                fontWeight: FontWeight.w700,
+                                letterSpacing: 0.7,
+                              ),
+                            ),
+                          ],
                         ),
                       ],
                     ),
-                  ),
-                ],
+                  );
+
+                  final Widget progressDetails = Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        total == 0
+                            ? 'No requirements available'
+                            : remaining == 0
+                            ? 'All requirements completed'
+                            : '$remaining requirements remaining',
+                        style: const TextStyle(
+                          color: AppColors.navy,
+                          fontSize: 15,
+                          fontWeight: FontWeight.w800,
+                        ),
+                      ),
+
+                      const SizedBox(height: 7),
+
+                      Text(
+                        total == 0
+                            ? 'Your readiness score will appear '
+                                  'when applicable requirements '
+                                  'are available.'
+                            : '$completed of $total applicable '
+                                  'requirements completed.',
+                        style: const TextStyle(
+                          color: AppColors.secondaryText,
+                          fontSize: 13,
+                          height: 1.45,
+                        ),
+                      ),
+                    ],
+                  );
+
+                  return Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      // Stack vertically on narrow physical phones.
+                      LayoutBuilder(
+                        builder: (context, constraints) {
+                          if (constraints.maxWidth < 300) {
+                            return Column(
+                              children: [
+                                progressCircle,
+                                const SizedBox(height: 18),
+                                Align(
+                                  alignment: Alignment.centerLeft,
+                                  child: progressDetails,
+                                ),
+                              ],
+                            );
+                          }
+
+                          return Row(
+                            crossAxisAlignment: CrossAxisAlignment.center,
+                            children: [
+                              progressCircle,
+                              const SizedBox(width: 19),
+                              Expanded(child: progressDetails),
+                            ],
+                          );
+                        },
+                      ),
+
+                      if (total > 0) ...[
+                        const SizedBox(height: 23),
+
+                        ClipRRect(
+                          borderRadius: BorderRadius.circular(20),
+                          child: LinearProgressIndicator(
+                            value: animatedValue,
+                            minHeight: 9,
+                            backgroundColor: const Color(0xFFE5EEF0),
+                            color: AppColors.primary,
+                          ),
+                        ),
+
+                        const SizedBox(height: 9),
+
+                        Row(
+                          children: [
+                            Expanded(
+                              child: Text(
+                                '$completed completed',
+                                style: const TextStyle(
+                                  color: AppColors.secondaryText,
+                                  fontSize: 12,
+                                ),
+                              ),
+                            ),
+
+                            Text(
+                              '$total total',
+                              style: const TextStyle(
+                                color: AppColors.secondaryText,
+                                fontSize: 12,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ],
+                    ],
+                  );
+                },
               ),
 
-              if (total > 0) ...[
-                const SizedBox(height: 18),
+              const SizedBox(height: 22),
 
-                ClipRRect(
-                  borderRadius: BorderRadius.circular(20),
-                  child: LinearProgressIndicator(
-                    value: value,
-                    minHeight: 8,
-                    backgroundColor: const Color(0xFFE5EEF0),
-                    valueColor: const AlwaysStoppedAnimation<Color>(
-                      _primaryColor,
-                    ),
-                  ),
-                ),
-              ],
-
-              const SizedBox(height: 16),
-
+              // -------------------------------------------------
+              // READINESS DISCLAIMER
+              // -------------------------------------------------
               Container(
                 width: double.infinity,
                 padding: const EdgeInsets.all(13),
@@ -1028,20 +1466,21 @@ class _TripDetailsScreenState extends State<TripDetailsScreen> {
                     Icon(
                       Icons.info_outline_rounded,
                       color: Color(0xFF0A5B83),
-                      size: 18,
+                      size: 19,
                     ),
 
-                    SizedBox(width: 9),
+                    SizedBox(width: 10),
 
                     Expanded(
                       child: Text(
-                        'This score reflects checklist completion only. '
-                        'It does not guarantee entry, visa approval or '
-                        'travel eligibility.',
+                        'Your readiness score reflects '
+                        'checklist completion only. '
+                        'It does not guarantee visa approval, '
+                        'entry permission or travel eligibility.',
                         style: TextStyle(
-                          fontSize: 10.5,
-                          height: 1.4,
-                          color: Color(0xFF486581),
+                          color: AppColors.secondaryText,
+                          fontSize: 11.5,
+                          height: 1.5,
                         ),
                       ),
                     ),
@@ -1063,63 +1502,99 @@ class _TripDetailsScreenState extends State<TripDetailsScreen> {
     required VoidCallback onTap,
   }) {
     return Material(
-      color: Colors.transparent,
-      child: InkWell(
-        onTap: onTap,
+      color: Colors.white,
+      shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.circular(18),
-        child: Ink(
-          padding: const EdgeInsets.all(18),
-          decoration: BoxDecoration(
-            color: Colors.white,
-            borderRadius: BorderRadius.circular(18),
-            border: Border.all(color: _borderColor),
-          ),
-          child: Row(
+        side: const BorderSide(color: AppColors.border),
+      ),
+      clipBehavior: Clip.antiAlias,
+      child: InkWell(
+        onTap: _isDeleting ? null : onTap,
+        child: Padding(
+          padding: const EdgeInsets.all(17),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Container(
-                width: 50,
-                height: 50,
-                decoration: BoxDecoration(
-                  color: const Color(0xFFE8F6F7),
-                  borderRadius: BorderRadius.circular(15),
-                ),
-                child: Icon(icon, color: _primaryColor, size: 25),
+              // Feature icon and information.
+              Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Container(
+                    width: 48,
+                    height: 48,
+                    decoration: BoxDecoration(
+                      color: AppColors.primaryLight,
+                      borderRadius: BorderRadius.circular(14),
+                    ),
+                    child: Icon(icon, size: 25, color: AppColors.primary),
+                  ),
+
+                  const SizedBox(width: 14),
+
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          title,
+                          style: const TextStyle(
+                            color: AppColors.navy,
+                            fontSize: 16,
+                            fontWeight: FontWeight.w800,
+                          ),
+                        ),
+
+                        const SizedBox(height: 6),
+
+                        Text(
+                          description,
+                          style: const TextStyle(
+                            color: AppColors.secondaryText,
+                            fontSize: 12.5,
+                            height: 1.5,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
               ),
-              const SizedBox(width: 15),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      title,
-                      style: const TextStyle(
-                        fontSize: 16,
-                        fontWeight: FontWeight.w700,
-                        color: _darkTextColor,
-                      ),
-                    ),
-                    const SizedBox(height: 5),
-                    Text(
-                      description,
-                      style: const TextStyle(
-                        fontSize: 12.5,
-                        height: 1.4,
-                        color: Colors.black54,
-                      ),
-                    ),
-                    const SizedBox(height: 10),
-                    Text(
+
+              const SizedBox(height: 16),
+
+              const Divider(height: 1, color: AppColors.border),
+
+              const SizedBox(height: 13),
+
+              // Entire card remains tappable.
+              Row(
+                children: [
+                  Expanded(
+                    child: Text(
                       actionText,
                       style: const TextStyle(
+                        color: AppColors.primary,
                         fontSize: 13,
-                        fontWeight: FontWeight.w700,
-                        color: _primaryColor,
+                        fontWeight: FontWeight.w800,
                       ),
                     ),
-                  ],
-                ),
+                  ),
+
+                  Container(
+                    width: 30,
+                    height: 30,
+                    decoration: BoxDecoration(
+                      color: AppColors.primaryLight,
+                      borderRadius: BorderRadius.circular(9),
+                    ),
+                    child: const Icon(
+                      Icons.arrow_forward_rounded,
+                      size: 18,
+                      color: AppColors.primary,
+                    ),
+                  ),
+                ],
               ),
-              const Icon(Icons.chevron_right_rounded, color: Colors.black38),
             ],
           ),
         ),
@@ -1129,58 +1604,65 @@ class _TripDetailsScreenState extends State<TripDetailsScreen> {
 
   Widget _buildManageTripCard() {
     return Container(
-      padding: const EdgeInsets.all(16),
+      width: double.infinity,
+      padding: const EdgeInsets.all(17),
       decoration: BoxDecoration(
         color: Colors.white,
         borderRadius: BorderRadius.circular(18),
-        border: Border.all(color: _borderColor),
+        border: Border.all(color: AppColors.border),
       ),
       child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
+          // -----------------------------------------------------
+          // EDIT TRIP
+          // -----------------------------------------------------
           SizedBox(
             width: double.infinity,
-            height: 46,
             child: OutlinedButton.icon(
-              style: OutlinedButton.styleFrom(
-                foregroundColor: _primaryColor,
-                side: const BorderSide(color: Color(0xFF9BD2D7)),
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(12),
-                ),
-              ),
               onPressed: _isDeleting ? null : _editTrip,
-              icon: const Icon(Icons.edit_outlined),
-              label: const Text(
-                'Edit Trip',
-                style: TextStyle(fontWeight: FontWeight.w700),
-              ),
+              icon: const Icon(Icons.edit_outlined, size: 20),
+              label: const Text('Edit Trip'),
             ),
           ),
 
+          const SizedBox(height: 14),
+
+          const Divider(height: 1, color: AppColors.border),
+
           const SizedBox(height: 10),
 
+          // -----------------------------------------------------
+          // DELETE TRIP
+          // -----------------------------------------------------
           SizedBox(
             width: double.infinity,
-            height: 46,
             child: OutlinedButton.icon(
+              onPressed: _isDeleting ? null : _deleteTrip,
               style: OutlinedButton.styleFrom(
-                foregroundColor: const Color(0xFFC62828),
-                side: const BorderSide(color: Color(0xFFE7B8B8)),
+                foregroundColor: AppColors.danger,
+                minimumSize: const Size(0, 48),
+                side: const BorderSide(color: Color(0xFFE7B8B8), width: 1.2),
                 shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(12),
+                  borderRadius: BorderRadius.circular(13),
                 ),
               ),
-              onPressed: _isDeleting ? null : _deleteTrip,
               icon: _isDeleting
                   ? const SizedBox(
-                      width: 18,
-                      height: 18,
-                      child: CircularProgressIndicator(strokeWidth: 2),
+                      width: 19,
+                      height: 19,
+                      child: CircularProgressIndicator(
+                        strokeWidth: 2,
+                        color: AppColors.danger,
+                      ),
                     )
-                  : const Icon(Icons.delete_outline_rounded),
+                  : const Icon(Icons.delete_outline_rounded, size: 20),
               label: Text(
                 _isDeleting ? 'Deleting Trip...' : 'Delete Trip',
-                style: const TextStyle(fontWeight: FontWeight.w700),
+                style: const TextStyle(
+                  fontSize: 14,
+                  fontWeight: FontWeight.w700,
+                ),
               ),
             ),
           ),

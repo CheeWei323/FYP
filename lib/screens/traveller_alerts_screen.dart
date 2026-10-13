@@ -8,6 +8,7 @@ import '../services/trip_service.dart';
 import 'checklist_screen.dart';
 import 'trip_details_screen.dart';
 import '../services/notification_service.dart';
+import '../theme/app_theme.dart';
 
 class TravellerAlertsScreen extends StatefulWidget {
   const TravellerAlertsScreen({super.key});
@@ -29,13 +30,9 @@ class _TravellerAlertsScreenState extends State<TravellerAlertsScreen> {
 
   static const int _preparationAlertWindowDays = 30;
 
-  static const Color _primaryColor = Color(0xFF087F8C);
-
   static const Color _darkTextColor = Color(0xFF102A43);
 
   static const Color _backgroundColor = Color(0xFFF7F9FB);
-
-  static const Color _borderColor = Color(0xFFE1E7EC);
 
   @override
   void initState() {
@@ -246,6 +243,56 @@ class _TravellerAlertsScreenState extends State<TravellerAlertsScreen> {
   // REMINDER ACTIONS
   // ---------------------------------------------------------------------------
 
+  Future<void> _showReminderFeedback({
+    required String title,
+    required String message,
+    required IconData icon,
+    Color iconColor = AppColors.primary,
+  }) async {
+    if (!mounted) return;
+
+    await showDialog<void>(
+      context: context,
+      builder: (dialogContext) {
+        return AlertDialog(
+          icon: Container(
+            width: 54,
+            height: 54,
+            decoration: BoxDecoration(
+              color: iconColor == AppColors.danger
+                  ? const Color(0xFFFFECEB)
+                  : const Color(0xFFFFF4DC),
+              borderRadius: BorderRadius.circular(17),
+            ),
+            child: Icon(icon, color: iconColor, size: 29),
+          ),
+          title: Text(title, textAlign: TextAlign.center),
+          content: Text(
+            message,
+            textAlign: TextAlign.center,
+            style: const TextStyle(
+              color: AppColors.secondaryText,
+              fontSize: 13,
+              height: 1.5,
+            ),
+          ),
+          actionsAlignment: MainAxisAlignment.center,
+          actions: [
+            SizedBox(
+              width: double.infinity,
+              child: FilledButton(
+                onPressed: () {
+                  Navigator.pop(dialogContext);
+                },
+                child: const Text('OK'),
+              ),
+            ),
+          ],
+        );
+      },
+    );
+  }
+
   Future<void> _completeReminder(_ReminderAlert alert) async {
     final Reminder reminder = alert.reminder;
 
@@ -288,29 +335,38 @@ class _TravellerAlertsScreenState extends State<TravellerAlertsScreen> {
 
       if (!mounted) return;
 
-      messenger.showSnackBar(
-        SnackBar(
-          content: Text(
-            notificationCancelled
-                ? 'Reminder completed and phone notification cancelled.'
-                : 'Reminder completed, but the phone notification '
-                      'could not be cancelled.',
-          ),
-        ),
-      );
+      if (notificationCancelled) {
+        messenger.showSnackBar(
+          const SnackBar(content: Text('Reminder completed successfully.')),
+        );
+      } else {
+        await _showReminderFeedback(
+          title: 'Reminder Completed',
+          message:
+              'The reminder was completed, but its scheduled '
+              'phone notification could not be cancelled. '
+              'Please review your notification settings.',
+          icon: Icons.warning_amber_rounded,
+          iconColor: const Color(0xFFA86300),
+        );
+      }
     } catch (error) {
-      debugPrint('COMPLETE REMINDER ERROR: $error');
-
-      if (!mounted) return;
-
-      messenger.showSnackBar(
-        SnackBar(
-          content: Text(
-            reminderCompleted
-                ? 'Reminder completed, but the list could not refresh.'
-                : 'Unable to complete reminder.',
-          ),
-        ),
+      await _showReminderFeedback(
+        title: reminderCompleted
+            ? 'Reminder Completed'
+            : 'Unable to Complete Reminder',
+        message: reminderCompleted
+            ? 'The reminder was completed, but the alerts '
+                  'list could not refresh. Please try refreshing '
+                  'the screen.'
+            : 'The reminder could not be completed. '
+                  'Please check your connection and try again.',
+        icon: reminderCompleted
+            ? Icons.warning_amber_rounded
+            : Icons.error_outline_rounded,
+        iconColor: reminderCompleted
+            ? const Color(0xFFA86300)
+            : AppColors.danger,
       );
     } finally {
       if (mounted) {
@@ -332,15 +388,38 @@ class _TravellerAlertsScreenState extends State<TravellerAlertsScreen> {
       context: context,
       builder: (dialogContext) {
         return AlertDialog(
-          icon: const Icon(
-            Icons.delete_outline_rounded,
-            color: Color(0xFFC62828),
-            size: 32,
+          icon: Container(
+            width: 54,
+            height: 54,
+            decoration: BoxDecoration(
+              color: const Color(0xFFFFECEB),
+              borderRadius: BorderRadius.circular(17),
+            ),
+            child: const Icon(
+              Icons.delete_outline_rounded,
+              color: AppColors.danger,
+              size: 29,
+            ),
           ),
-          title: const Text('Delete Reminder?'),
-          content: const Text(
-            'This personal reminder will be permanently deleted.',
+
+          title: const Text('Delete Reminder?', textAlign: TextAlign.center),
+
+          content: Text(
+            'Are you sure you want to delete '
+            '"${reminder.title}"?\n\n'
+            'This reminder will be permanently removed. '
+            'Its scheduled phone notification will also '
+            'be cancelled.',
+            textAlign: TextAlign.center,
+            style: const TextStyle(
+              color: AppColors.secondaryText,
+              fontSize: 13,
+              height: 1.5,
+            ),
           ),
+
+          actionsAlignment: MainAxisAlignment.center,
+
           actions: [
             TextButton(
               onPressed: () {
@@ -348,15 +427,17 @@ class _TravellerAlertsScreenState extends State<TravellerAlertsScreen> {
               },
               child: const Text('Cancel'),
             ),
-            FilledButton(
+
+            FilledButton.icon(
               style: FilledButton.styleFrom(
-                backgroundColor: const Color(0xFFC62828),
+                backgroundColor: AppColors.danger,
                 foregroundColor: Colors.white,
               ),
               onPressed: () {
                 Navigator.pop(dialogContext, true);
               },
-              child: const Text('Delete'),
+              icon: const Icon(Icons.delete_outline_rounded, size: 18),
+              label: const Text('Delete'),
             ),
           ],
         );
@@ -399,29 +480,36 @@ class _TravellerAlertsScreenState extends State<TravellerAlertsScreen> {
 
       if (!mounted) return;
 
-      messenger.showSnackBar(
-        SnackBar(
-          content: Text(
-            notificationCancelled
-                ? 'Reminder deleted and phone notification cancelled.'
-                : 'Reminder deleted, but the phone notification '
-                      'could not be cancelled.',
-          ),
-        ),
-      );
+      if (notificationCancelled) {
+        messenger.showSnackBar(
+          const SnackBar(content: Text('Reminder deleted successfully.')),
+        );
+      } else {
+        await _showReminderFeedback(
+          title: 'Reminder Deleted',
+          message:
+              'The reminder was deleted, but its scheduled '
+              'phone notification could not be cancelled. '
+              'Please review your notification settings.',
+          icon: Icons.warning_amber_rounded,
+          iconColor: const Color(0xFFA86300),
+        );
+      }
     } catch (error) {
-      debugPrint('DELETE REMINDER ERROR: $error');
-
-      if (!mounted) return;
-
-      messenger.showSnackBar(
-        SnackBar(
-          content: Text(
-            reminderDeleted
-                ? 'Reminder deleted, but the list could not refresh.'
-                : 'Unable to delete reminder.',
-          ),
-        ),
+      await _showReminderFeedback(
+        title: reminderDeleted
+            ? 'Reminder Deleted'
+            : 'Unable to Delete Reminder',
+        message: reminderDeleted
+            ? 'The reminder was deleted, but the alerts '
+                  'list could not refresh. Please try refreshing '
+                  'the screen.'
+            : 'The reminder could not be deleted. '
+                  'Please check your connection and try again.',
+        icon: reminderDeleted
+            ? Icons.warning_amber_rounded
+            : Icons.error_outline_rounded,
+        iconColor: reminderDeleted ? const Color(0xFFA86300) : AppColors.danger,
       );
     } finally {
       if (mounted) {
@@ -502,9 +590,8 @@ class _TravellerAlertsScreenState extends State<TravellerAlertsScreen> {
           future: _alertsFuture,
           builder: (context, snapshot) {
             if (snapshot.connectionState == ConnectionState.waiting) {
-              return const Center(child: CircularProgressIndicator());
+              return _buildLoadingState();
             }
-
             if (snapshot.hasError) {
               debugPrint(
                 'TRAVELLER ALERTS ERROR: '
@@ -557,50 +644,99 @@ class _TravellerAlertsScreenState extends State<TravellerAlertsScreen> {
       width: double.infinity,
       padding: const EdgeInsets.all(20),
       decoration: BoxDecoration(
-        gradient: const LinearGradient(
-          colors: [Color(0xFFE7F7F8), Color(0xFFF1F8FB)],
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-        ),
+        color: Colors.white,
         borderRadius: BorderRadius.circular(20),
-        border: Border.all(color: const Color(0xFFCBE8EB)),
+        border: Border.all(color: AppColors.border),
+        boxShadow: const [
+          BoxShadow(
+            color: Color(0x08000000),
+            blurRadius: 12,
+            offset: Offset(0, 4),
+          ),
+        ],
       ),
-      child: const Row(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Icon(
-            Icons.notifications_active_outlined,
-            color: _primaryColor,
-            size: 32,
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Container(
+                width: 50,
+                height: 50,
+                decoration: BoxDecoration(
+                  color: AppColors.primaryLight,
+                  borderRadius: BorderRadius.circular(15),
+                ),
+                child: const Icon(
+                  Icons.notifications_active_outlined,
+                  color: AppColors.primary,
+                  size: 27,
+                ),
+              ),
+
+              const SizedBox(width: 14),
+
+              const Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Travel Alerts',
+                      style: TextStyle(
+                        color: AppColors.navy,
+                        fontSize: 21,
+                        fontWeight: FontWeight.w800,
+                      ),
+                    ),
+
+                    SizedBox(height: 6),
+
+                    Text(
+                      'Stay informed about your trip preparation '
+                      'and personal reminders.',
+                      style: TextStyle(
+                        color: AppColors.secondaryText,
+                        fontSize: 12.5,
+                        height: 1.5,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
           ),
 
-          SizedBox(width: 14),
+          const SizedBox(height: 18),
 
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  'Travel Alerts',
+          const Divider(height: 1, color: AppColors.border),
+
+          const SizedBox(height: 15),
+
+          const Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Icon(
+                Icons.info_outline_rounded,
+                color: AppColors.primary,
+                size: 18,
+              ),
+
+              SizedBox(width: 10),
+
+              Expanded(
+                child: Text(
+                  'Preparation alerts appear for trips departing '
+                  'within the next 30 days when travel '
+                  'requirements remain incomplete.',
                   style: TextStyle(
-                    fontSize: 20,
-                    fontWeight: FontWeight.w800,
-                    color: _darkTextColor,
+                    color: AppColors.secondaryText,
+                    fontSize: 12,
+                    height: 1.5,
                   ),
                 ),
-
-                SizedBox(height: 5),
-
-                Text(
-                  'Review preparation alerts and '
-                  'personal trip reminders.',
-                  style: TextStyle(
-                    fontSize: 12.5,
-                    height: 1.4,
-                    color: Colors.black54,
-                  ),
-                ),
-              ],
-            ),
+              ),
+            ],
           ),
         ],
       ),
@@ -645,19 +781,25 @@ class _TravellerAlertsScreenState extends State<TravellerAlertsScreen> {
   }) {
     final bool selected = _selectedTab == value;
 
+    final bool reduceMotion = MediaQuery.disableAnimationsOf(context);
+
     return InkWell(
       borderRadius: BorderRadius.circular(14),
       onTap: () async {
         await _changeTab(value);
       },
-      child: Container(
-        height: 48,
-        padding: const EdgeInsets.symmetric(horizontal: 12),
+      child: AnimatedContainer(
+        duration: reduceMotion
+            ? Duration.zero
+            : const Duration(milliseconds: 200),
+        curve: Curves.easeOutCubic,
+        height: 54,
+        padding: const EdgeInsets.symmetric(horizontal: 10),
         decoration: BoxDecoration(
-          color: selected ? const Color(0xFFDFF3F5) : Colors.white,
+          color: selected ? AppColors.primaryLight : Colors.white,
           borderRadius: BorderRadius.circular(14),
           border: Border.all(
-            color: selected ? _primaryColor : _borderColor,
+            color: selected ? AppColors.primary : AppColors.border,
             width: selected ? 1.5 : 1,
           ),
         ),
@@ -670,26 +812,29 @@ class _TravellerAlertsScreenState extends State<TravellerAlertsScreen> {
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
                 style: TextStyle(
-                  fontWeight: FontWeight.w700,
-                  color: selected ? _primaryColor : const Color(0xFF486581),
+                  color: selected ? AppColors.primary : AppColors.secondaryText,
+                  fontSize: 13,
+                  fontWeight: FontWeight.w800,
                 ),
               ),
             ),
 
-            const SizedBox(width: 7),
+            const SizedBox(width: 8),
 
             Container(
-              padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
+              constraints: const BoxConstraints(minWidth: 24),
+              padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 4),
               decoration: BoxDecoration(
-                color: selected ? Colors.white : const Color(0xFFF0F4F6),
+                color: selected ? Colors.white : AppColors.background,
                 borderRadius: BorderRadius.circular(20),
               ),
               child: Text(
                 '$count',
+                textAlign: TextAlign.center,
                 style: TextStyle(
-                  fontSize: 10,
-                  fontWeight: FontWeight.w700,
-                  color: selected ? _primaryColor : Colors.black54,
+                  color: selected ? AppColors.primary : AppColors.secondaryText,
+                  fontSize: 11,
+                  fontWeight: FontWeight.w800,
                 ),
               ),
             ),
@@ -746,21 +891,65 @@ class _TravellerAlertsScreenState extends State<TravellerAlertsScreen> {
   }
 
   Widget _buildPreparationCard(_PreparationAlert alert) {
-    final int incomplete = alert.total - alert.completed;
-
     final String destination = _formatText(alert.trip.destinationCountryId);
+
+    final int remaining = alert.total - alert.completed;
+
+    final double progress = alert.total == 0
+        ? 0
+        : (alert.completed / alert.total).clamp(0.0, 1.0);
+
+    final int percentage = (progress * 100).round();
+
+    // ---------------------------------------------------------
+    // DEPARTURE COUNTDOWN
+    // ---------------------------------------------------------
+
+    final DateTime now = DateTime.now();
+
+    final DateTime today = DateTime(now.year, now.month, now.day);
+
+    final DateTime departure = DateTime(
+      alert.trip.departureDate.year,
+      alert.trip.departureDate.month,
+      alert.trip.departureDate.day,
+    );
+
+    final int daysRemaining = departure.difference(today).inDays;
+
+    final bool isUrgent = daysRemaining <= 7;
+
+    final String departureStatus = daysRemaining == 0
+        ? 'Departs Today'
+        : daysRemaining == 1
+        ? '1 Day Left'
+        : '$daysRemaining Days Left';
+
+    final bool reduceMotion = MediaQuery.disableAnimationsOf(context);
 
     return Container(
       width: double.infinity,
-      padding: const EdgeInsets.all(17),
+      padding: const EdgeInsets.all(18),
       decoration: BoxDecoration(
         color: Colors.white,
-        borderRadius: BorderRadius.circular(18),
-        border: Border.all(color: const Color(0xFFF0D8A8)),
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(
+          color: isUrgent ? const Color(0xFFF0D8A8) : AppColors.border,
+        ),
+        boxShadow: const [
+          BoxShadow(
+            color: Color(0x08000000),
+            blurRadius: 12,
+            offset: Offset(0, 4),
+          ),
+        ],
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
+          // ---------------------------------------------------
+          // DESTINATION AND ALERT TITLE
+          // ---------------------------------------------------
           Row(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
@@ -768,12 +957,15 @@ class _TravellerAlertsScreenState extends State<TravellerAlertsScreen> {
                 width: 46,
                 height: 46,
                 decoration: BoxDecoration(
-                  color: const Color(0xFFFFF4DC),
-                  borderRadius: BorderRadius.circular(13),
+                  color: isUrgent
+                      ? const Color(0xFFFFF4DC)
+                      : AppColors.primaryLight,
+                  borderRadius: BorderRadius.circular(14),
                 ),
-                child: const Icon(
+                child: Icon(
                   Icons.fact_check_outlined,
-                  color: Color(0xFFA86300),
+                  color: isUrgent ? const Color(0xFFA86300) : AppColors.primary,
+                  size: 24,
                 ),
               ),
 
@@ -784,24 +976,23 @@ class _TravellerAlertsScreenState extends State<TravellerAlertsScreen> {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
-                      '$destination preparation incomplete',
+                      destination,
                       style: const TextStyle(
-                        fontSize: 16,
+                        color: AppColors.navy,
+                        fontSize: 17,
                         fontWeight: FontWeight.w800,
-                        color: _darkTextColor,
+                        height: 1.3,
                       ),
                     ),
 
                     const SizedBox(height: 5),
 
-                    Text(
-                      incomplete == 1
-                          ? '1 travel requirement is still incomplete.'
-                          : '$incomplete travel requirements are still incomplete.',
-                      style: const TextStyle(
-                        fontSize: 12,
+                    const Text(
+                      'Travel preparation incomplete',
+                      style: TextStyle(
+                        color: AppColors.secondaryText,
+                        fontSize: 12.5,
                         height: 1.4,
-                        color: Colors.black54,
                       ),
                     ),
                   ],
@@ -810,53 +1001,181 @@ class _TravellerAlertsScreenState extends State<TravellerAlertsScreen> {
             ],
           ),
 
-          const SizedBox(height: 15),
+          const SizedBox(height: 16),
 
-          Row(
+          // ---------------------------------------------------
+          // DEPARTURE STATUS
+          // ---------------------------------------------------
+          Wrap(
+            spacing: 8,
+            runSpacing: 8,
             children: [
-              const Icon(
-                Icons.calendar_today_outlined,
-                size: 16,
-                color: Colors.black45,
-              ),
+              Container(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 11,
+                  vertical: 7,
+                ),
+                decoration: BoxDecoration(
+                  color: isUrgent
+                      ? const Color(0xFFFFF4DC)
+                      : AppColors.primaryLight,
+                  borderRadius: BorderRadius.circular(20),
+                ),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(
+                      Icons.schedule_outlined,
+                      size: 15,
+                      color: isUrgent
+                          ? const Color(0xFFA86300)
+                          : AppColors.primary,
+                    ),
 
-              const SizedBox(width: 7),
+                    const SizedBox(width: 6),
 
-              Expanded(
-                child: Text(
-                  'Departure '
-                  '${_formatDate(alert.trip.departureDate)}',
-                  style: const TextStyle(
-                    fontSize: 12.5,
-                    color: Color(0xFF486581),
-                  ),
+                    Text(
+                      departureStatus,
+                      style: TextStyle(
+                        color: isUrgent
+                            ? const Color(0xFFA86300)
+                            : AppColors.primary,
+                        fontSize: 11.5,
+                        fontWeight: FontWeight.w800,
+                      ),
+                    ),
+                  ],
                 ),
               ),
 
-              Text(
-                '${alert.completed}/${alert.total}',
-                style: const TextStyle(
-                  fontSize: 12,
-                  fontWeight: FontWeight.w700,
-                  color: _primaryColor,
+              Container(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 11,
+                  vertical: 7,
+                ),
+                decoration: BoxDecoration(
+                  color: AppColors.background,
+                  borderRadius: BorderRadius.circular(20),
+                ),
+                child: Text(
+                  remaining == 1
+                      ? '1 requirement left'
+                      : '$remaining requirements left',
+                  style: const TextStyle(
+                    color: AppColors.secondaryText,
+                    fontSize: 11.5,
+                    fontWeight: FontWeight.w700,
+                  ),
                 ),
               ),
             ],
           ),
 
-          const SizedBox(height: 14),
+          const SizedBox(height: 18),
 
+          const Divider(height: 1, color: AppColors.border),
+
+          const SizedBox(height: 17),
+
+          // ---------------------------------------------------
+          // CHECKLIST PROGRESS
+          // ---------------------------------------------------
+          Row(
+            children: [
+              const Expanded(
+                child: Text(
+                  'Checklist Progress',
+                  style: TextStyle(
+                    color: AppColors.navy,
+                    fontSize: 13,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+              ),
+
+              Text(
+                '$percentage%',
+                style: const TextStyle(
+                  color: AppColors.primary,
+                  fontSize: 16,
+                  fontWeight: FontWeight.w800,
+                ),
+              ),
+            ],
+          ),
+
+          const SizedBox(height: 11),
+
+          TweenAnimationBuilder<double>(
+            tween: Tween<double>(begin: 0, end: progress),
+            duration: reduceMotion
+                ? Duration.zero
+                : const Duration(milliseconds: 450),
+            curve: Curves.easeOutCubic,
+            builder: (context, animatedProgress, child) {
+              return ClipRRect(
+                borderRadius: BorderRadius.circular(20),
+                child: LinearProgressIndicator(
+                  value: animatedProgress,
+                  minHeight: 9,
+                  backgroundColor: const Color(0xFFE5EEF0),
+                  color: AppColors.primary,
+                ),
+              );
+            },
+          ),
+
+          const SizedBox(height: 10),
+
+          Text(
+            '${alert.completed} of ${alert.total} requirements completed',
+            style: const TextStyle(
+              color: AppColors.secondaryText,
+              fontSize: 12,
+            ),
+          ),
+
+          const SizedBox(height: 18),
+
+          // ---------------------------------------------------
+          // DEPARTURE DATE
+          // ---------------------------------------------------
+          Row(
+            children: [
+              const Icon(
+                Icons.calendar_month_outlined,
+                color: AppColors.primary,
+                size: 18,
+              ),
+
+              const SizedBox(width: 9),
+
+              Expanded(
+                child: Text(
+                  'Departure: ${_formatDate(alert.trip.departureDate)}',
+                  style: const TextStyle(
+                    color: AppColors.secondaryText,
+                    fontSize: 12.5,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ),
+            ],
+          ),
+
+          const SizedBox(height: 17),
+
+          // ---------------------------------------------------
+          // VIEW CHECKLIST BUTTON
+          // ---------------------------------------------------
           SizedBox(
             width: double.infinity,
             child: OutlinedButton.icon(
               onPressed: () {
                 _openChecklist(alert);
               },
-              icon: const Icon(Icons.checklist_rounded),
-              label: const Text(
-                'View Checklist',
-                style: TextStyle(fontWeight: FontWeight.w700),
-              ),
+              icon: const Icon(Icons.checklist_rounded, size: 19),
+              label: const Text('View Checklist'),
             ),
           ),
         ],
@@ -914,24 +1233,33 @@ class _TravellerAlertsScreenState extends State<TravellerAlertsScreen> {
     final Reminder reminder = alert.reminder;
 
     final bool overdue = _isReminderOverdue(reminder);
-
     final bool busy = _busyReminderIds.contains(reminder.id);
 
     final String destination = _formatText(alert.trip.destinationCountryId);
 
     return Container(
       width: double.infinity,
-      padding: const EdgeInsets.all(17),
+      padding: const EdgeInsets.all(18),
       decoration: BoxDecoration(
         color: Colors.white,
-        borderRadius: BorderRadius.circular(18),
+        borderRadius: BorderRadius.circular(20),
         border: Border.all(
-          color: overdue ? const Color(0xFFE7B8B8) : _borderColor,
+          color: overdue ? const Color(0xFFE7B8B8) : AppColors.border,
         ),
+        boxShadow: const [
+          BoxShadow(
+            color: Color(0x08000000),
+            blurRadius: 12,
+            offset: Offset(0, 4),
+          ),
+        ],
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
+          // -----------------------------------------------------
+          // REMINDER HEADER
+          // -----------------------------------------------------
           Row(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
@@ -941,14 +1269,15 @@ class _TravellerAlertsScreenState extends State<TravellerAlertsScreen> {
                 decoration: BoxDecoration(
                   color: overdue
                       ? const Color(0xFFFDECEC)
-                      : const Color(0xFFE8F6F7),
-                  borderRadius: BorderRadius.circular(13),
+                      : AppColors.primaryLight,
+                  borderRadius: BorderRadius.circular(14),
                 ),
                 child: Icon(
                   overdue
                       ? Icons.notification_important_outlined
                       : Icons.notifications_none_rounded,
-                  color: overdue ? const Color(0xFFC62828) : _primaryColor,
+                  color: overdue ? AppColors.danger : AppColors.primary,
+                  size: 24,
                 ),
               ),
 
@@ -961,44 +1290,23 @@ class _TravellerAlertsScreenState extends State<TravellerAlertsScreen> {
                     Text(
                       reminder.title,
                       style: const TextStyle(
+                        color: AppColors.navy,
                         fontSize: 16,
                         fontWeight: FontWeight.w800,
-                        color: _darkTextColor,
+                        height: 1.35,
                       ),
                     ),
 
-                    const SizedBox(height: 5),
+                    const SizedBox(height: 7),
 
                     Text(
                       destination,
                       style: const TextStyle(
+                        color: AppColors.secondaryText,
                         fontSize: 12.5,
-                        color: Colors.black54,
                       ),
                     ),
                   ],
-                ),
-              ),
-
-              const SizedBox(width: 8),
-
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 5),
-                decoration: BoxDecoration(
-                  color: overdue
-                      ? const Color(0xFFFDE7E7)
-                      : const Color(0xFFDFF5EA),
-                  borderRadius: BorderRadius.circular(20),
-                ),
-                child: Text(
-                  overdue ? 'Overdue' : 'Upcoming',
-                  style: TextStyle(
-                    fontSize: 9.5,
-                    fontWeight: FontWeight.w700,
-                    color: overdue
-                        ? const Color(0xFFC62828)
-                        : const Color(0xFF177245),
-                  ),
                 ),
               ),
             ],
@@ -1006,99 +1314,201 @@ class _TravellerAlertsScreenState extends State<TravellerAlertsScreen> {
 
           const SizedBox(height: 15),
 
+          // -----------------------------------------------------
+          // REMINDER STATUS
+          // -----------------------------------------------------
+          Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            children: [
+              Container(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 11,
+                  vertical: 7,
+                ),
+                decoration: BoxDecoration(
+                  color: overdue
+                      ? const Color(0xFFFDECEC)
+                      : const Color(0xFFEAF7F1),
+                  borderRadius: BorderRadius.circular(20),
+                ),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(
+                      overdue
+                          ? Icons.warning_amber_rounded
+                          : Icons.schedule_outlined,
+                      color: overdue ? AppColors.danger : AppColors.success,
+                      size: 16,
+                    ),
+
+                    const SizedBox(width: 6),
+
+                    Text(
+                      overdue ? 'Overdue' : 'Upcoming',
+                      style: TextStyle(
+                        color: overdue ? AppColors.danger : AppColors.success,
+                        fontSize: 11.5,
+                        fontWeight: FontWeight.w800,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+
+          const SizedBox(height: 17),
+
+          // -----------------------------------------------------
+          // REMINDER DATE AND TIME
+          // -----------------------------------------------------
           Container(
             width: double.infinity,
-            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 11),
+            padding: const EdgeInsets.all(14),
             decoration: BoxDecoration(
-              color: const Color(0xFFF7F9FB),
-              borderRadius: BorderRadius.circular(12),
+              color: AppColors.background,
+              borderRadius: BorderRadius.circular(13),
+              border: Border.all(color: AppColors.border),
             ),
-            child: Row(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                const Icon(
-                  Icons.calendar_today_outlined,
-                  size: 16,
-                  color: Colors.black45,
+                const Text(
+                  'REMINDER SCHEDULE',
+                  style: TextStyle(
+                    color: AppColors.secondaryText,
+                    fontSize: 10,
+                    fontWeight: FontWeight.w800,
+                    letterSpacing: 0.8,
+                  ),
                 ),
 
-                const SizedBox(width: 7),
+                const SizedBox(height: 12),
 
-                Expanded(
-                  child: Text(
-                    _formatDate(reminder.reminderAt),
-                    style: const TextStyle(
-                      fontSize: 12.5,
-                      color: Color(0xFF486581),
+                Wrap(
+                  spacing: 18,
+                  runSpacing: 10,
+                  children: [
+                    Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        const Icon(
+                          Icons.calendar_month_outlined,
+                          color: AppColors.primary,
+                          size: 18,
+                        ),
+
+                        const SizedBox(width: 8),
+
+                        Text(
+                          _formatDate(reminder.reminderAt),
+                          style: const TextStyle(
+                            color: AppColors.navy,
+                            fontSize: 12.5,
+                            fontWeight: FontWeight.w700,
+                          ),
+                        ),
+                      ],
                     ),
-                  ),
-                ),
 
-                const Icon(
-                  Icons.access_time_rounded,
-                  size: 16,
-                  color: Colors.black45,
-                ),
+                    Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        const Icon(
+                          Icons.access_time_rounded,
+                          color: AppColors.primary,
+                          size: 18,
+                        ),
 
-                const SizedBox(width: 6),
+                        const SizedBox(width: 8),
 
-                Text(
-                  _formatTime(reminder.reminderAt),
-                  style: const TextStyle(
-                    fontSize: 12.5,
-                    color: Color(0xFF486581),
-                  ),
+                        Text(
+                          _formatTime(reminder.reminderAt),
+                          style: const TextStyle(
+                            color: AppColors.navy,
+                            fontSize: 12.5,
+                            fontWeight: FontWeight.w700,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ],
                 ),
               ],
             ),
           ),
 
-          const SizedBox(height: 13),
+          const SizedBox(height: 17),
 
+          // -----------------------------------------------------
+          // COMPLETE REMINDER
+          // -----------------------------------------------------
+          SizedBox(
+            width: double.infinity,
+            child: FilledButton.icon(
+              onPressed: busy
+                  ? null
+                  : () {
+                      _completeReminder(alert);
+                    },
+              icon: busy
+                  ? const SizedBox(
+                      width: 18,
+                      height: 18,
+                      child: CircularProgressIndicator(
+                        strokeWidth: 2,
+                        color: AppColors.primary,
+                      ),
+                    )
+                  : const Icon(Icons.check_circle_outline_rounded, size: 19),
+              label: Text(busy ? 'Updating Reminder...' : 'Mark as Complete'),
+            ),
+          ),
+
+          const SizedBox(height: 10),
+
+          // -----------------------------------------------------
+          // VIEW TRIP AND DELETE ACTIONS
+          // -----------------------------------------------------
           Row(
             children: [
               Expanded(
-                child: OutlinedButton.icon(
-                  onPressed: busy
-                      ? null
-                      : () {
-                          _openTrip(alert);
-                        },
-                  icon: const Icon(Icons.open_in_new_rounded, size: 18),
-                  label: const Text('View Trip', maxLines: 1),
+                child: SizedBox(
+                  height: 48,
+                  child: OutlinedButton.icon(
+                    onPressed: busy
+                        ? null
+                        : () {
+                            _openTrip(alert);
+                          },
+                    icon: const Icon(Icons.open_in_new_rounded, size: 18),
+                    label: const Text('View Trip'),
+                  ),
                 ),
               ),
 
-              const SizedBox(width: 8),
+              const SizedBox(width: 10),
 
-              IconButton.outlined(
-                tooltip: 'Complete reminder',
-                onPressed: busy
-                    ? null
-                    : () {
-                        _completeReminder(alert);
-                      },
-                icon: busy
-                    ? const SizedBox(
-                        width: 18,
-                        height: 18,
-                        child: CircularProgressIndicator(strokeWidth: 2),
-                      )
-                    : const Icon(Icons.check_rounded, size: 19),
-              ),
-
-              const SizedBox(width: 8),
-
-              IconButton.outlined(
-                tooltip: 'Delete reminder',
-                onPressed: busy
-                    ? null
-                    : () {
-                        _deleteReminder(alert);
-                      },
-                icon: const Icon(
-                  Icons.delete_outline_rounded,
-                  size: 19,
-                  color: Color(0xFFC62828),
+              SizedBox(
+                width: 48,
+                height: 48,
+                child: IconButton.outlined(
+                  tooltip: 'Delete reminder',
+                  onPressed: busy
+                      ? null
+                      : () {
+                          _deleteReminder(alert);
+                        },
+                  style: IconButton.styleFrom(
+                    foregroundColor: AppColors.danger,
+                    side: const BorderSide(color: AppColors.border),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                  ),
+                  icon: const Icon(Icons.delete_outline_rounded, size: 20),
                 ),
               ),
             ],
@@ -1112,6 +1522,64 @@ class _TravellerAlertsScreenState extends State<TravellerAlertsScreen> {
   // EMPTY / ERROR
   // ---------------------------------------------------------------------------
 
+  Widget _buildLoadingState() {
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.all(24),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Container(
+              width: 74,
+              height: 74,
+              decoration: BoxDecoration(
+                color: AppColors.primaryLight,
+                borderRadius: BorderRadius.circular(22),
+              ),
+              child: const Icon(
+                Icons.notifications_active_outlined,
+                color: AppColors.primary,
+                size: 34,
+              ),
+            ),
+
+            const SizedBox(height: 23),
+
+            const CircularProgressIndicator(
+              color: AppColors.primary,
+              strokeWidth: 3,
+            ),
+
+            const SizedBox(height: 19),
+
+            const Text(
+              'Loading Travel Alerts',
+              textAlign: TextAlign.center,
+              style: TextStyle(
+                color: AppColors.navy,
+                fontSize: 17,
+                fontWeight: FontWeight.w800,
+              ),
+            ),
+
+            const SizedBox(height: 8),
+
+            const Text(
+              'Checking your preparation alerts '
+              'and personal reminders...',
+              textAlign: TextAlign.center,
+              style: TextStyle(
+                color: AppColors.secondaryText,
+                fontSize: 12.5,
+                height: 1.5,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
   Widget _buildEmptyState({
     required IconData icon,
     required String title,
@@ -1119,46 +1587,73 @@ class _TravellerAlertsScreenState extends State<TravellerAlertsScreen> {
   }) {
     return Container(
       width: double.infinity,
-      padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 42),
+      padding: const EdgeInsets.symmetric(horizontal: 22, vertical: 36),
       decoration: BoxDecoration(
         color: Colors.white,
-        borderRadius: BorderRadius.circular(18),
-        border: Border.all(color: _borderColor),
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(color: AppColors.border),
       ),
       child: Column(
+        mainAxisSize: MainAxisSize.min,
         children: [
           Container(
-            width: 68,
-            height: 68,
+            width: 76,
+            height: 76,
             decoration: BoxDecoration(
-              color: const Color(0xFFE8F6F7),
-              borderRadius: BorderRadius.circular(20),
+              color: AppColors.primaryLight,
+              borderRadius: BorderRadius.circular(23),
             ),
-            child: Icon(icon, size: 34, color: _primaryColor),
+            child: Icon(icon, color: AppColors.primary, size: 35),
           ),
 
-          const SizedBox(height: 18),
+          const SizedBox(height: 19),
 
           Text(
             title,
             textAlign: TextAlign.center,
             style: const TextStyle(
-              fontSize: 17,
+              color: AppColors.navy,
+              fontSize: 18,
               fontWeight: FontWeight.w800,
-              color: _darkTextColor,
             ),
           ),
 
-          const SizedBox(height: 7),
+          const SizedBox(height: 9),
 
           Text(
             message,
             textAlign: TextAlign.center,
             style: const TextStyle(
-              fontSize: 13,
-              height: 1.5,
-              color: Colors.black54,
+              color: AppColors.secondaryText,
+              fontSize: 12.5,
+              height: 1.55,
             ),
+          ),
+
+          const SizedBox(height: 20),
+
+          const Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Icon(
+                Icons.swipe_down_alt_rounded,
+                color: AppColors.primary,
+                size: 18,
+              ),
+
+              SizedBox(width: 7),
+
+              Flexible(
+                child: Text(
+                  'Pull down to refresh',
+                  style: TextStyle(
+                    color: AppColors.primary,
+                    fontSize: 12,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ),
+            ],
           ),
         ],
       ),
@@ -1168,32 +1663,73 @@ class _TravellerAlertsScreenState extends State<TravellerAlertsScreen> {
   Widget _buildErrorState() {
     return RefreshIndicator(
       onRefresh: _refresh,
-      child: ListView(
+      child: CustomScrollView(
         physics: const AlwaysScrollableScrollPhysics(),
-        padding: const EdgeInsets.all(24),
-        children: const [
-          SizedBox(height: 130),
+        slivers: [
+          SliverFillRemaining(
+            hasScrollBody: false,
+            child: Center(
+              child: Padding(
+                padding: const EdgeInsets.all(24),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Container(
+                      width: 78,
+                      height: 78,
+                      decoration: BoxDecoration(
+                        color: AppColors.primaryLight,
+                        borderRadius: BorderRadius.circular(24),
+                      ),
+                      child: const Icon(
+                        Icons.cloud_off_outlined,
+                        color: AppColors.primary,
+                        size: 36,
+                      ),
+                    ),
 
-          Icon(Icons.cloud_off_outlined, size: 56, color: Colors.black38),
+                    const SizedBox(height: 21),
 
-          SizedBox(height: 18),
+                    const Text(
+                      'Unable to Load Alerts',
+                      textAlign: TextAlign.center,
+                      style: TextStyle(
+                        color: AppColors.navy,
+                        fontSize: 20,
+                        fontWeight: FontWeight.w800,
+                      ),
+                    ),
 
-          Text(
-            'Unable to load alerts',
-            textAlign: TextAlign.center,
-            style: TextStyle(
-              fontSize: 19,
-              fontWeight: FontWeight.w700,
-              color: _darkTextColor,
+                    const SizedBox(height: 10),
+
+                    const Text(
+                      'Your travel alerts could not be retrieved. '
+                      'Please check your internet connection '
+                      'and try again.',
+                      textAlign: TextAlign.center,
+                      style: TextStyle(
+                        color: AppColors.secondaryText,
+                        fontSize: 13,
+                        height: 1.5,
+                      ),
+                    ),
+
+                    const SizedBox(height: 23),
+
+                    SizedBox(
+                      width: 180,
+                      child: OutlinedButton.icon(
+                        onPressed: () {
+                          _refresh();
+                        },
+                        icon: const Icon(Icons.refresh_rounded, size: 19),
+                        label: const Text('Try Again'),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
             ),
-          ),
-
-          SizedBox(height: 8),
-
-          Text(
-            'Pull down to try again.',
-            textAlign: TextAlign.center,
-            style: TextStyle(color: Colors.black54),
           ),
         ],
       ),
