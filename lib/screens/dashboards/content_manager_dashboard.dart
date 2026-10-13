@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../../models/rule_activity_log.dart';
 import '../../services/content_manager_service.dart';
+import '../../theme/app_theme.dart';
 import '../content_manager/activity_history_screen.dart';
 import '../content_manager/content_manager_profile_screen.dart';
 import '../content_manager/manage_travel_rules_screen.dart';
@@ -17,27 +18,83 @@ class ContentManagerDashboard extends StatefulWidget {
 class _ContentManagerDashboardState extends State<ContentManagerDashboard> {
   final ContentManagerService _contentManagerService = ContentManagerService();
 
-  static const Color _primaryColor = Color(0xFF087F8C);
-
-  static const Color _darkTextColor = Color(0xFF102A43);
-
-  static const Color _backgroundColor = Color(0xFFF7F9FB);
-
-  static const Color _borderColor = Color(0xFFE1E7EC);
-
   int _selectedIndex = 0;
 
-  late Future<Map<String, int>> _overviewFuture;
+  // Cached Firestore data.
+  Map<String, int>? _overview;
+  List<RuleActivityLog>? _recentActivity;
 
-  late Future<List<RuleActivityLog>> _recentActivityFuture;
+  bool _hasLoadedOnce = false;
+  bool _overviewFailed = false;
+  bool _activityFailed = false;
+
+  // Prevents older requests from replacing newer dashboard data.
+  int _requestVersion = 0;
 
   @override
   void initState() {
     super.initState();
+    _loadDashboard();
+  }
 
-    _overviewFuture = _contentManagerService.getOverview();
+  // ---------------------------------------------------------------------------
+  // DASHBOARD DATA
+  // ---------------------------------------------------------------------------
 
-    _recentActivityFuture = _contentManagerService.getRecentActivity(limit: 4);
+  Future<void> _loadDashboard() async {
+    final int requestVersion = ++_requestVersion;
+
+    Map<String, int>? updatedOverview;
+    List<RuleActivityLog>? updatedActivity;
+
+    Object? overviewError;
+    Object? activityError;
+
+    // Fetch overview statistics.
+    Future<void> fetchOverview() async {
+      try {
+        updatedOverview = await _contentManagerService.getOverview();
+      } catch (error) {
+        overviewError = error;
+        debugPrint('CONTENT MANAGER OVERVIEW ERROR: $error');
+      }
+    }
+
+    // Fetch recent regulatory activity.
+    Future<void> fetchActivity() async {
+      try {
+        updatedActivity = await _contentManagerService.getRecentActivity(
+          limit: 4,
+        );
+      } catch (error) {
+        activityError = error;
+        debugPrint('CONTENT MANAGER ACTIVITY ERROR: $error');
+      }
+    }
+
+    // Run both Firestore requests concurrently.
+    await Future.wait<void>([fetchOverview(), fetchActivity()]);
+
+    if (!mounted || requestVersion != _requestVersion) {
+      return;
+    }
+
+    // Update cached data only after both requests finish.
+    // This keeps dashboard dimensions stable during refresh.
+    setState(() {
+      if (updatedOverview != null) {
+        _overview = updatedOverview;
+      }
+
+      if (updatedActivity != null) {
+        _recentActivity = updatedActivity;
+      }
+
+      _overviewFailed = overviewError != null;
+      _activityFailed = activityError != null;
+
+      _hasLoadedOnce = true;
+    });
   }
 
   // ---------------------------------------------------------------------------
@@ -45,19 +102,7 @@ class _ContentManagerDashboardState extends State<ContentManagerDashboard> {
   // ---------------------------------------------------------------------------
 
   Future<void> _refresh() async {
-    final Future<Map<String, int>> overviewFuture = _contentManagerService
-        .getOverview();
-
-    final Future<List<RuleActivityLog>> activityFuture = _contentManagerService
-        .getRecentActivity(limit: 4);
-
-    setState(() {
-      _overviewFuture = overviewFuture;
-
-      _recentActivityFuture = activityFuture;
-    });
-
-    await Future.wait([overviewFuture, activityFuture]);
+    await _loadDashboard();
   }
 
   // ---------------------------------------------------------------------------
@@ -70,9 +115,7 @@ class _ContentManagerDashboardState extends State<ContentManagerDashboard> {
       MaterialPageRoute(builder: (context) => const ManageTravelRulesScreen()),
     );
 
-    if (!mounted) {
-      return;
-    }
+    if (!mounted) return;
 
     await _refresh();
   }
@@ -83,15 +126,32 @@ class _ContentManagerDashboardState extends State<ContentManagerDashboard> {
       MaterialPageRoute(builder: (context) => const ActivityHistoryScreen()),
     );
 
-    if (!mounted) {
-      return;
-    }
+    if (!mounted) return;
 
     await _refresh();
   }
 
   // ---------------------------------------------------------------------------
-  // DATE FORMATTING
+  // SHARED CARD DECORATION
+  // ---------------------------------------------------------------------------
+
+  BoxDecoration _cardDecoration({Color color = Colors.white}) {
+    return BoxDecoration(
+      color: color,
+      borderRadius: BorderRadius.circular(20),
+      border: Border.all(color: AppColors.border),
+      boxShadow: const [
+        BoxShadow(
+          color: Color(0x08000000),
+          blurRadius: 12,
+          offset: Offset(0, 4),
+        ),
+      ],
+    );
+  }
+
+  // ---------------------------------------------------------------------------
+  // ACTIVITY FORMATTING
   // ---------------------------------------------------------------------------
 
   String _formatActivityDate(DateTime? date) {
@@ -99,7 +159,7 @@ class _ContentManagerDashboardState extends State<ContentManagerDashboard> {
       return 'Just now';
     }
 
-    final DateTime localDate = date.toLocal();
+    final DateTime local = date.toLocal();
 
     const List<String> months = [
       'Jan',
@@ -116,26 +176,84 @@ class _ContentManagerDashboardState extends State<ContentManagerDashboard> {
       'Dec',
     ];
 
-    final int hour = localDate.hour;
+    final int hour = local.hour % 12 == 0 ? 12 : local.hour % 12;
 
-    final int displayHour = hour == 0
-        ? 12
-        : hour > 12
-        ? hour - 12
-        : hour;
+    final String minute = local.minute.toString().padLeft(2, '0');
 
-    final String period = hour >= 12 ? 'PM' : 'AM';
+    final String period = local.hour >= 12 ? 'PM' : 'AM';
 
-    final String minute = localDate.minute.toString().padLeft(2, '0');
+    return '${local.day} '
+        '${months[local.month - 1]} '
+        '${local.year}, '
+        '$hour:$minute $period';
+  }
 
-    return '${localDate.day} '
-        '${months[localDate.month - 1]} '
-        '${localDate.year}, '
-        '$displayHour:$minute $period';
+  String _activityLabel(String action) {
+    switch (action) {
+      case 'created':
+        return 'RULE CREATED';
+
+      case 'updated':
+        return 'RULE UPDATED';
+
+      case 'enabled':
+        return 'RULE ENABLED';
+
+      case 'disabled':
+        return 'RULE DISABLED';
+
+      default:
+        return 'RULE ACTIVITY';
+    }
+  }
+
+  IconData _activityIcon(String action) {
+    switch (action) {
+      case 'created':
+        return Icons.add_circle_outline_rounded;
+
+      case 'updated':
+        return Icons.edit_outlined;
+
+      case 'enabled':
+        return Icons.check_circle_outline_rounded;
+
+      case 'disabled':
+        return Icons.pause_circle_outline_rounded;
+
+      default:
+        return Icons.history_rounded;
+    }
+  }
+
+  Color _activityColor(String action) {
+    switch (action) {
+      case 'enabled':
+        return AppColors.success;
+
+      case 'disabled':
+        return const Color(0xFFA86300);
+
+      default:
+        return AppColors.primary;
+    }
+  }
+
+  Color _activityBackground(String action) {
+    switch (action) {
+      case 'enabled':
+        return const Color(0xFFEAF7F1);
+
+      case 'disabled':
+        return const Color(0xFFFFF4DC);
+
+      default:
+        return AppColors.primaryLight;
+    }
   }
 
   // ---------------------------------------------------------------------------
-  // SCREEN
+  // MAIN SCREEN
   // ---------------------------------------------------------------------------
 
   @override
@@ -143,18 +261,20 @@ class _ContentManagerDashboardState extends State<ContentManagerDashboard> {
     final bool dashboardSelected = _selectedIndex == 0;
 
     return Scaffold(
-      backgroundColor: _backgroundColor,
+      backgroundColor: AppColors.background,
 
       appBar: AppBar(
         automaticallyImplyLeading: false,
         backgroundColor: Colors.white,
         surfaceTintColor: Colors.white,
         elevation: 0,
+        foregroundColor: AppColors.navy,
+
         title: Text(
           dashboardSelected ? 'Content Manager' : 'Profile',
           style: const TextStyle(
-            color: _darkTextColor,
-            fontWeight: FontWeight.w700,
+            color: AppColors.navy,
+            fontWeight: FontWeight.w800,
           ),
         ),
       ),
@@ -164,7 +284,6 @@ class _ContentManagerDashboardState extends State<ContentManagerDashboard> {
           index: _selectedIndex,
           children: [
             _buildDashboardPage(),
-
             const ContentManagerProfileScreen(),
           ],
         ),
@@ -173,21 +292,27 @@ class _ContentManagerDashboardState extends State<ContentManagerDashboard> {
       bottomNavigationBar: NavigationBar(
         selectedIndex: _selectedIndex,
         backgroundColor: Colors.white,
-        indicatorColor: const Color(0xFFDFF3F5),
+        indicatorColor: AppColors.primaryLight,
+
         onDestinationSelected: (index) {
           setState(() {
             _selectedIndex = index;
           });
         },
+
         destinations: const [
           NavigationDestination(
             icon: Icon(Icons.dashboard_outlined),
-            selectedIcon: Icon(Icons.dashboard_rounded, color: _primaryColor),
+            selectedIcon: Icon(
+              Icons.dashboard_rounded,
+              color: AppColors.primary,
+            ),
             label: 'Dashboard',
           ),
+
           NavigationDestination(
             icon: Icon(Icons.person_outline_rounded),
-            selectedIcon: Icon(Icons.person_rounded, color: _primaryColor),
+            selectedIcon: Icon(Icons.person_rounded, color: AppColors.primary),
             label: 'Profile',
           ),
         ],
@@ -201,53 +326,38 @@ class _ContentManagerDashboardState extends State<ContentManagerDashboard> {
 
   Widget _buildDashboardPage() {
     return RefreshIndicator(
+      color: AppColors.primary,
       onRefresh: _refresh,
+
       child: ListView(
-        physics: const AlwaysScrollableScrollPhysics(),
+        physics: const AlwaysScrollableScrollPhysics(
+          parent: ClampingScrollPhysics(),
+        ),
+
         padding: const EdgeInsets.fromLTRB(18, 18, 18, 36),
+
         children: [
           _buildWelcomeCard(),
 
           const SizedBox(height: 26),
 
-          const Text(
-            'System Overview',
-            style: TextStyle(
-              fontSize: 18,
-              fontWeight: FontWeight.w800,
-              color: _darkTextColor,
-            ),
-          ),
+          _buildSectionTitle('System Overview'),
 
           const SizedBox(height: 12),
 
           _buildOverview(),
 
-          const SizedBox(height: 28),
+          const SizedBox(height: 26),
 
-          const Text(
-            'Review Status',
-            style: TextStyle(
-              fontSize: 18,
-              fontWeight: FontWeight.w800,
-              color: _darkTextColor,
-            ),
-          ),
+          _buildSectionTitle('Review Status'),
 
           const SizedBox(height: 12),
 
           _buildReviewStatus(),
 
-          const SizedBox(height: 28),
+          const SizedBox(height: 26),
 
-          const Text(
-            'Content Management',
-            style: TextStyle(
-              fontSize: 18,
-              fontWeight: FontWeight.w800,
-              color: _darkTextColor,
-            ),
-          ),
+          _buildSectionTitle('Content Management'),
 
           const SizedBox(height: 12),
 
@@ -256,54 +366,25 @@ class _ContentManagerDashboardState extends State<ContentManagerDashboard> {
             title: 'Manage Travel Regulations',
             description:
                 'Review, add, edit, enable and disable '
-                'destination regulatory requirements '
-                'and official authority references.',
+                'travel requirements and official references.',
             actionText: 'Manage Regulations',
             onTap: _openTravelRegulations,
           ),
 
-          const SizedBox(height: 28),
+          const SizedBox(height: 26),
 
-          Row(
-            children: [
-              const Expanded(
-                child: Text(
-                  'Recent Activity',
-                  style: TextStyle(
-                    fontSize: 18,
-                    fontWeight: FontWeight.w800,
-                    color: _darkTextColor,
-                  ),
-                ),
-              ),
-
-              TextButton(
-                onPressed: _openActivityHistory,
-                child: const Text(
-                  'View All',
-                  style: TextStyle(
-                    fontWeight: FontWeight.w700,
-                    color: _primaryColor,
-                  ),
-                ),
-              ),
-            ],
+          _buildSectionTitle(
+            'Recent Activity',
+            onViewAll: _openActivityHistory,
           ),
 
-          const SizedBox(height: 8),
+          const SizedBox(height: 10),
 
           _buildRecentActivity(),
 
-          const SizedBox(height: 28),
+          const SizedBox(height: 26),
 
-          const Text(
-            'Publishing & Traceability',
-            style: TextStyle(
-              fontSize: 18,
-              fontWeight: FontWeight.w800,
-              color: _darkTextColor,
-            ),
-          ),
+          _buildSectionTitle('Publishing & Traceability'),
 
           const SizedBox(height: 12),
 
@@ -314,69 +395,191 @@ class _ContentManagerDashboardState extends State<ContentManagerDashboard> {
   }
 
   // ---------------------------------------------------------------------------
-  // WELCOME
+  // SECTION TITLE
+  // ---------------------------------------------------------------------------
+
+  Widget _buildSectionTitle(String title, {VoidCallback? onViewAll}) {
+    return Row(
+      children: [
+        Expanded(
+          child: Text(
+            title,
+            style: const TextStyle(
+              color: AppColors.navy,
+              fontSize: 18,
+              fontWeight: FontWeight.w800,
+            ),
+          ),
+        ),
+
+        if (onViewAll != null)
+          TextButton(
+            onPressed: onViewAll,
+            child: const Text(
+              'View All',
+              style: TextStyle(
+                color: AppColors.primary,
+                fontSize: 12.5,
+                fontWeight: FontWeight.w800,
+              ),
+            ),
+          ),
+      ],
+    );
+  }
+
+  // ---------------------------------------------------------------------------
+  // WELCOME CARD
   // ---------------------------------------------------------------------------
 
   Widget _buildWelcomeCard() {
     return Container(
       width: double.infinity,
       padding: const EdgeInsets.all(20),
-      decoration: BoxDecoration(
-        gradient: const LinearGradient(
-          colors: [Color(0xFFE7F7F8), Color(0xFFF1F8FB)],
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-        ),
-        borderRadius: BorderRadius.circular(20),
-        border: Border.all(color: const Color(0xFFCBE8EB)),
-      ),
-      child: Row(
+      decoration: _cardDecoration(),
+
+      child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
+
         children: [
-          Container(
-            width: 52,
-            height: 52,
-            decoration: BoxDecoration(
-              color: Colors.white,
-              borderRadius: BorderRadius.circular(15),
-            ),
-            child: const Icon(
-              Icons.admin_panel_settings_outlined,
-              color: _primaryColor,
-              size: 28,
+          const Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+
+            children: [
+              _DashboardIcon(icon: Icons.fact_check_outlined, size: 52),
+
+              SizedBox(width: 14),
+
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+
+                  children: [
+                    Text(
+                      'Content Workspace',
+                      style: TextStyle(
+                        color: AppColors.navy,
+                        fontSize: 19,
+                        fontWeight: FontWeight.w800,
+                      ),
+                    ),
+
+                    SizedBox(height: 7),
+
+                    Text(
+                      'Maintain travel regulations, review '
+                      'requirements and manage official '
+                      'authority references.',
+                      style: TextStyle(
+                        color: AppColors.secondaryText,
+                        fontSize: 12.5,
+                        height: 1.5,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+
+          const SizedBox(height: 18),
+
+          const Divider(height: 1, color: AppColors.border),
+
+          const SizedBox(height: 13),
+
+          const Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+
+            children: [
+              Icon(
+                Icons.verified_user_outlined,
+                color: AppColors.primary,
+                size: 18,
+              ),
+
+              SizedBox(width: 9),
+
+              Expanded(
+                child: Text(
+                  'Regulatory changes are recorded for '
+                  'accountability and review.',
+                  style: TextStyle(
+                    color: AppColors.secondaryText,
+                    fontSize: 12,
+                    height: 1.5,
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  // ---------------------------------------------------------------------------
+  // LOADING / ERROR / EMPTY STATE
+  // ---------------------------------------------------------------------------
+
+  Widget _buildStatusMessage({
+    required IconData icon,
+    required String title,
+    required String message,
+    bool isLoading = false,
+    VoidCallback? onRetry,
+  }) {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 26),
+      decoration: _cardDecoration(),
+
+      child: Column(
+        children: [
+          _DashboardIcon(icon: icon, size: 56),
+
+          const SizedBox(height: 14),
+
+          Text(
+            title,
+            textAlign: TextAlign.center,
+            style: const TextStyle(
+              color: AppColors.navy,
+              fontSize: 15,
+              fontWeight: FontWeight.w800,
             ),
           ),
 
-          const SizedBox(width: 15),
+          const SizedBox(height: 7),
 
-          const Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  'TravelGuard MY',
-                  style: TextStyle(
-                    fontSize: 21,
-                    fontWeight: FontWeight.w800,
-                    color: _darkTextColor,
-                  ),
-                ),
-
-                SizedBox(height: 6),
-
-                Text(
-                  'Maintain validated travel preparation '
-                  'information, review regulatory content '
-                  'and manage official references.',
-                  style: TextStyle(
-                    fontSize: 13.5,
-                    height: 1.45,
-                    color: Colors.black54,
-                  ),
-                ),
-              ],
+          Text(
+            message,
+            textAlign: TextAlign.center,
+            style: const TextStyle(
+              color: AppColors.secondaryText,
+              fontSize: 12,
+              height: 1.5,
             ),
           ),
+
+          if (isLoading) ...[
+            const SizedBox(height: 18),
+
+            const CircularProgressIndicator(
+              color: AppColors.primary,
+              strokeWidth: 3,
+            ),
+          ],
+
+          if (onRetry != null) ...[
+            const SizedBox(height: 14),
+
+            OutlinedButton.icon(
+              onPressed: onRetry,
+              icon: const Icon(Icons.refresh_rounded, size: 18),
+              label: const Text('Try Again'),
+            ),
+          ],
         ],
       ),
     );
@@ -387,78 +590,77 @@ class _ContentManagerDashboardState extends State<ContentManagerDashboard> {
   // ---------------------------------------------------------------------------
 
   Widget _buildOverview() {
-    return FutureBuilder<Map<String, int>>(
-      future: _overviewFuture,
-      builder: (context, snapshot) {
-        if (snapshot.connectionState == ConnectionState.waiting) {
-          return Container(
-            height: 120,
-            decoration: BoxDecoration(
-              color: Colors.white,
-              borderRadius: BorderRadius.circular(18),
-              border: Border.all(color: _borderColor),
-            ),
-            child: const Center(child: CircularProgressIndicator()),
-          );
-        }
+    final Map<String, int>? overview = _overview;
 
-        if (snapshot.hasError) {
-          return Container(
-            padding: const EdgeInsets.all(18),
-            decoration: BoxDecoration(
-              color: Colors.white,
-              borderRadius: BorderRadius.circular(18),
-              border: Border.all(color: _borderColor),
-            ),
-            child: const Text(
-              'Unable to load system overview.',
-              textAlign: TextAlign.center,
-            ),
-          );
-        }
+    // Initial loading state.
+    if (overview == null && !_hasLoadedOnce) {
+      return _buildStatusMessage(
+        icon: Icons.analytics_outlined,
+        title: 'Loading Overview',
+        message: 'Retrieving regulation statistics...',
+        isLoading: true,
+      );
+    }
 
-        final Map<String, int> overview = snapshot.data ?? {};
+    // Initial error state.
+    if (overview == null && _overviewFailed) {
+      return _buildStatusMessage(
+        icon: Icons.cloud_off_outlined,
+        title: 'Unable to Load Overview',
+        message: 'System statistics could not be retrieved.',
+        onRetry: _refresh,
+      );
+    }
 
-        final int countries = overview['enabledCountries'] ?? 0;
+    if (overview == null) {
+      return const SizedBox.shrink();
+    }
 
-        final int rules = overview['rules'] ?? 0;
+    // Real Firestore statistics stored in state.
+    final int destinations = overview['enabledCountries'] ?? 0;
 
-        final int active = overview['activeRules'] ?? 0;
+    final int rules = overview['rules'] ?? 0;
 
-        return Row(
-          children: [
-            Expanded(
-              child: _buildOverviewCard(
-                icon: Icons.public_outlined,
-                value: '$countries',
-                label: 'Destinations',
-              ),
-            ),
+    final int active = overview['activeRules'] ?? 0;
 
-            const SizedBox(width: 10),
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
 
-            Expanded(
-              child: _buildOverviewCard(
-                icon: Icons.list_alt_outlined,
-                value: '$rules',
-                label: 'Travel Rules',
-              ),
-            ),
+      children: [
+        Expanded(
+          child: _buildOverviewCard(
+            icon: Icons.public_outlined,
+            value: '$destinations',
+            label: 'Destinations',
+          ),
+        ),
 
-            const SizedBox(width: 10),
+        const SizedBox(width: 9),
 
-            Expanded(
-              child: _buildOverviewCard(
-                icon: Icons.check_circle_outline_rounded,
-                value: '$active',
-                label: 'Active Rules',
-              ),
-            ),
-          ],
-        );
-      },
+        Expanded(
+          child: _buildOverviewCard(
+            icon: Icons.list_alt_outlined,
+            value: '$rules',
+            label: 'Travel Rules',
+          ),
+        ),
+
+        const SizedBox(width: 9),
+
+        Expanded(
+          child: _buildOverviewCard(
+            icon: Icons.check_circle_outline_rounded,
+            value: '$active',
+            label: 'Active Rules',
+          ),
+        ),
+      ],
     );
   }
+
+  // ---------------------------------------------------------------------------
+  // OVERVIEW STATISTIC CARD
+  // ---------------------------------------------------------------------------
 
   Widget _buildOverviewCard({
     required IconData icon,
@@ -466,33 +668,58 @@ class _ContentManagerDashboardState extends State<ContentManagerDashboard> {
     required String label,
   }) {
     return Container(
-      padding: const EdgeInsets.symmetric(vertical: 16, horizontal: 8),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: _borderColor),
-      ),
-      child: Column(
-        children: [
-          Icon(icon, color: _primaryColor, size: 23),
+      width: double.infinity,
+      height: 145,
 
-          const SizedBox(height: 7),
+      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 12),
+
+      decoration: _cardDecoration(),
+
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+
+        children: [
+          Container(
+            width: 38,
+            height: 38,
+
+            decoration: BoxDecoration(
+              color: AppColors.primaryLight,
+              borderRadius: BorderRadius.circular(11),
+            ),
+
+            child: Icon(icon, color: AppColors.primary, size: 21),
+          ),
+
+          const SizedBox(height: 10),
 
           Text(
             value,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            textAlign: TextAlign.center,
+
             style: const TextStyle(
-              fontSize: 20,
+              color: AppColors.navy,
+              fontSize: 24,
               fontWeight: FontWeight.w800,
-              color: _darkTextColor,
             ),
           ),
 
-          const SizedBox(height: 3),
+          const SizedBox(height: 6),
 
           Text(
             label,
+            maxLines: 2,
+            overflow: TextOverflow.ellipsis,
             textAlign: TextAlign.center,
-            style: const TextStyle(fontSize: 10.5, color: Colors.black54),
+
+            style: const TextStyle(
+              color: AppColors.secondaryText,
+              fontSize: 10.5,
+              fontWeight: FontWeight.w600,
+              height: 1.3,
+            ),
           ),
         ],
       ),
@@ -504,94 +731,93 @@ class _ContentManagerDashboardState extends State<ContentManagerDashboard> {
   // ---------------------------------------------------------------------------
 
   Widget _buildReviewStatus() {
-    return FutureBuilder<Map<String, int>>(
-      future: _overviewFuture,
-      builder: (context, snapshot) {
-        if (snapshot.connectionState == ConnectionState.waiting) {
-          return Container(
-            height: 100,
-            decoration: BoxDecoration(
-              color: Colors.white,
-              borderRadius: BorderRadius.circular(16),
-              border: Border.all(color: _borderColor),
-            ),
-            child: const Center(child: CircularProgressIndicator()),
-          );
-        }
+    final Map<String, int>? overview = _overview;
 
-        if (snapshot.hasError) {
-          return const SizedBox.shrink();
-        }
+    if (overview == null && !_hasLoadedOnce) {
+      return _buildStatusMessage(
+        icon: Icons.fact_check_outlined,
+        title: 'Loading Review Status',
+        message: 'Checking regulatory review information...',
+        isLoading: true,
+      );
+    }
 
-        final Map<String, int> overview = snapshot.data ?? {};
+    if (overview == null && _overviewFailed) {
+      return _buildStatusMessage(
+        icon: Icons.cloud_off_outlined,
+        title: 'Unable to Load Review Status',
+        message: 'Review information could not be retrieved.',
+        onRetry: _refresh,
+      );
+    }
 
-        final int pending = overview['pendingReviewRules'] ?? 0;
+    if (overview == null) {
+      return const SizedBox.shrink();
+    }
 
-        final int disabled = overview['disabledRules'] ?? 0;
+    final int pending = overview['pendingReviewRules'] ?? 0;
 
-        return Row(
-          children: [
-            Expanded(
-              child: _buildStatusCard(
-                icon: Icons.schedule_outlined,
-                value: '$pending',
-                label: 'Pending Review',
-                description: 'Awaiting approval',
-              ),
-            ),
+    final int disabled = overview['disabledRules'] ?? 0;
 
-            const SizedBox(width: 12),
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
 
-            Expanded(
-              child: _buildStatusCard(
-                icon: Icons.pause_circle_outline_rounded,
-                value: '$disabled',
-                label: 'Disabled',
-                description: 'Not used by DSS',
-              ),
-            ),
-          ],
-        );
-      },
+      children: [
+        Expanded(
+          child: _buildReviewCard(
+            icon: Icons.schedule_outlined,
+            value: '$pending',
+            label: 'Pending Review',
+            description: 'Awaiting approval',
+          ),
+        ),
+
+        const SizedBox(width: 12),
+
+        Expanded(
+          child: _buildReviewCard(
+            icon: Icons.pause_circle_outline_rounded,
+            value: '$disabled',
+            label: 'Disabled',
+            description: 'Not used by DSS',
+          ),
+        ),
+      ],
     );
   }
 
-  Widget _buildStatusCard({
+  // ---------------------------------------------------------------------------
+  // REVIEW CARD
+  // ---------------------------------------------------------------------------
+
+  Widget _buildReviewCard({
     required IconData icon,
     required String value,
     required String label,
     required String description,
   }) {
     return Container(
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: _borderColor),
-      ),
+      width: double.infinity,
+      height: 145,
+      padding: const EdgeInsets.all(14),
+      decoration: _cardDecoration(),
+
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
+
         children: [
           Row(
             children: [
-              Container(
-                width: 38,
-                height: 38,
-                decoration: BoxDecoration(
-                  color: const Color(0xFFE8F6F7),
-                  borderRadius: BorderRadius.circular(11),
-                ),
-                child: Icon(icon, color: _primaryColor, size: 20),
-              ),
+              _DashboardIcon(icon: icon, size: 38),
 
               const Spacer(),
 
               Text(
                 value,
                 style: const TextStyle(
-                  fontSize: 25,
+                  color: AppColors.navy,
+                  fontSize: 24,
                   fontWeight: FontWeight.w800,
-                  color: _darkTextColor,
                 ),
               ),
             ],
@@ -601,18 +827,27 @@ class _ContentManagerDashboardState extends State<ContentManagerDashboard> {
 
           Text(
             label,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
             style: const TextStyle(
-              fontSize: 14,
-              fontWeight: FontWeight.w700,
-              color: _darkTextColor,
+              color: AppColors.navy,
+              fontSize: 13,
+              fontWeight: FontWeight.w800,
             ),
           ),
 
-          const SizedBox(height: 3),
+          const SizedBox(height: 5),
 
           Text(
             description,
-            style: const TextStyle(fontSize: 11.5, color: Colors.black54),
+            maxLines: 2,
+            overflow: TextOverflow.ellipsis,
+
+            style: const TextStyle(
+              color: AppColors.secondaryText,
+              fontSize: 11,
+              height: 1.35,
+            ),
           ),
         ],
       ),
@@ -620,7 +855,7 @@ class _ContentManagerDashboardState extends State<ContentManagerDashboard> {
   }
 
   // ---------------------------------------------------------------------------
-  // CONTENT MANAGEMENT
+  // CONTENT MANAGEMENT CARD
   // ---------------------------------------------------------------------------
 
   Widget _buildManagementCard({
@@ -632,70 +867,84 @@ class _ContentManagerDashboardState extends State<ContentManagerDashboard> {
   }) {
     return Material(
       color: Colors.transparent,
-      child: InkWell(
-        onTap: onTap,
-        borderRadius: BorderRadius.circular(18),
-        child: Ink(
-          padding: const EdgeInsets.all(18),
-          decoration: BoxDecoration(
-            color: Colors.white,
-            borderRadius: BorderRadius.circular(18),
-            border: Border.all(color: _borderColor),
-          ),
-          child: Row(
-            children: [
-              Container(
-                width: 50,
-                height: 50,
-                decoration: BoxDecoration(
-                  color: const Color(0xFFE8F6F7),
-                  borderRadius: BorderRadius.circular(15),
-                ),
-                child: Icon(icon, color: _primaryColor, size: 25),
-              ),
 
-              const SizedBox(width: 15),
+      child: Ink(
+        decoration: _cardDecoration(),
 
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
+        child: InkWell(
+          onTap: onTap,
+          borderRadius: BorderRadius.circular(20),
+
+          child: Padding(
+            padding: const EdgeInsets.all(18),
+
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+
+              children: [
+                Row(
                   children: [
-                    Text(
-                      title,
-                      style: const TextStyle(
-                        fontSize: 16,
-                        fontWeight: FontWeight.w700,
-                        color: _darkTextColor,
+                    _DashboardIcon(icon: icon, size: 49),
+
+                    const SizedBox(width: 13),
+
+                    Expanded(
+                      child: Text(
+                        title,
+                        style: const TextStyle(
+                          color: AppColors.navy,
+                          fontSize: 16,
+                          fontWeight: FontWeight.w800,
+                        ),
                       ),
                     ),
 
-                    const SizedBox(height: 5),
-
-                    Text(
-                      description,
-                      style: const TextStyle(
-                        fontSize: 12.5,
-                        height: 1.4,
-                        color: Colors.black54,
-                      ),
-                    ),
-
-                    const SizedBox(height: 9),
-
-                    Text(
-                      actionText,
-                      style: const TextStyle(
-                        fontSize: 13,
-                        fontWeight: FontWeight.w700,
-                        color: _primaryColor,
-                      ),
+                    const Icon(
+                      Icons.chevron_right_rounded,
+                      color: AppColors.secondaryText,
                     ),
                   ],
                 ),
-              ),
 
-              const Icon(Icons.chevron_right_rounded, color: Colors.black38),
-            ],
+                const SizedBox(height: 14),
+
+                Text(
+                  description,
+                  style: const TextStyle(
+                    color: AppColors.secondaryText,
+                    fontSize: 12.5,
+                    height: 1.5,
+                  ),
+                ),
+
+                const SizedBox(height: 15),
+
+                const Divider(height: 1, color: AppColors.border),
+
+                const SizedBox(height: 12),
+
+                Row(
+                  children: [
+                    Expanded(
+                      child: Text(
+                        actionText,
+                        style: const TextStyle(
+                          color: AppColors.primary,
+                          fontSize: 12.5,
+                          fontWeight: FontWeight.w800,
+                        ),
+                      ),
+                    ),
+
+                    const Icon(
+                      Icons.arrow_forward_rounded,
+                      color: AppColors.primary,
+                      size: 19,
+                    ),
+                  ],
+                ),
+              ],
+            ),
           ),
         ),
       ),
@@ -707,165 +956,190 @@ class _ContentManagerDashboardState extends State<ContentManagerDashboard> {
   // ---------------------------------------------------------------------------
 
   Widget _buildRecentActivity() {
-    return FutureBuilder<List<RuleActivityLog>>(
-      future: _recentActivityFuture,
-      builder: (context, snapshot) {
-        if (snapshot.connectionState == ConnectionState.waiting) {
-          return Container(
-            height: 110,
-            decoration: BoxDecoration(
-              color: Colors.white,
-              borderRadius: BorderRadius.circular(18),
-              border: Border.all(color: _borderColor),
-            ),
-            child: const Center(child: CircularProgressIndicator()),
-          );
-        }
+    final List<RuleActivityLog>? logs = _recentActivity;
 
-        if (snapshot.hasError) {
-          return Container(
-            padding: const EdgeInsets.all(18),
-            decoration: BoxDecoration(
-              color: Colors.white,
-              borderRadius: BorderRadius.circular(18),
-              border: Border.all(color: _borderColor),
-            ),
-            child: const Text(
-              'Unable to load recent activity.',
-              textAlign: TextAlign.center,
-            ),
-          );
-        }
+    if (logs == null && !_hasLoadedOnce) {
+      return _buildStatusMessage(
+        icon: Icons.history_rounded,
+        title: 'Loading Recent Activity',
+        message: 'Retrieving the latest regulatory actions...',
+        isLoading: true,
+      );
+    }
 
-        final List<RuleActivityLog> logs = snapshot.data ?? [];
+    if (logs == null && _activityFailed) {
+      return _buildStatusMessage(
+        icon: Icons.cloud_off_outlined,
+        title: 'Unable to Load Activity',
+        message: 'Recent activity could not be retrieved.',
+        onRetry: _refresh,
+      );
+    }
 
-        if (logs.isEmpty) {
-          return Container(
-            width: double.infinity,
-            padding: const EdgeInsets.all(22),
-            decoration: BoxDecoration(
-              color: Colors.white,
-              borderRadius: BorderRadius.circular(18),
-              border: Border.all(color: _borderColor),
-            ),
-            child: const Column(
-              children: [
-                Icon(Icons.history_rounded, color: Colors.black38, size: 32),
+    if (logs == null || logs.isEmpty) {
+      return _buildStatusMessage(
+        icon: Icons.history_rounded,
+        title: 'No Recent Activity',
+        message:
+            'Regulatory changes will appear here '
+            'when activity is recorded.',
+      );
+    }
 
-                SizedBox(height: 8),
-
-                Text(
-                  'No regulatory activity recorded yet.',
-                  textAlign: TextAlign.center,
-                  style: TextStyle(color: Colors.black54),
-                ),
-              ],
-            ),
-          );
-        }
-
-        return Container(
-          decoration: BoxDecoration(
-            color: Colors.white,
-            borderRadius: BorderRadius.circular(18),
-            border: Border.all(color: _borderColor),
-          ),
-          child: Column(
-            children: [
-              for (int index = 0; index < logs.length; index++) ...[
-                _buildActivityItem(logs[index]),
-
-                if (index != logs.length - 1)
-                  const Divider(height: 1, indent: 62),
-              ],
-            ],
-          ),
-        );
-      },
+    return Column(
+      children: [
+        for (final RuleActivityLog log in logs) _buildActivityItem(log),
+      ],
     );
   }
 
+  // ---------------------------------------------------------------------------
+  // ACTIVITY ITEM
+  // ---------------------------------------------------------------------------
+
   Widget _buildActivityItem(RuleActivityLog log) {
-    IconData icon;
-    String actionLabel;
+    final Color accentColor = _activityColor(log.action);
 
-    switch (log.action) {
-      case 'created':
-        icon = Icons.add_circle_outline_rounded;
-        actionLabel = 'Created rule';
-        break;
+    final Color accentBackground = _activityBackground(log.action);
 
-      case 'updated':
-        icon = Icons.edit_outlined;
-        actionLabel = 'Updated rule';
-        break;
+    final String performedBy = log.performedByName.trim().isNotEmpty
+        ? log.performedByName.trim()
+        : 'Content Manager';
 
-      case 'enabled':
-        icon = Icons.check_circle_outline_rounded;
-        actionLabel = 'Enabled rule';
-        break;
+    final String ruleTitle = log.ruleTitle.trim().isNotEmpty
+        ? log.ruleTitle
+        : 'Untitled Regulation';
 
-      case 'disabled':
-        icon = Icons.pause_circle_outline_rounded;
-        actionLabel = 'Disabled rule';
-        break;
+    return Container(
+      width: double.infinity,
+      margin: const EdgeInsets.only(bottom: 11),
+      padding: const EdgeInsets.all(16),
+      decoration: _cardDecoration(),
 
-      default:
-        icon = Icons.history_rounded;
-        actionLabel = 'Rule activity';
-    }
-
-    return Padding(
-      padding: const EdgeInsets.all(14),
-      child: Row(
+      child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
+
         children: [
-          Container(
-            width: 38,
-            height: 38,
-            decoration: BoxDecoration(
-              color: const Color(0xFFE8F6F7),
-              borderRadius: BorderRadius.circular(11),
-            ),
-            child: Icon(icon, color: _primaryColor, size: 20),
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+
+            children: [
+              Container(
+                width: 43,
+                height: 43,
+
+                decoration: BoxDecoration(
+                  color: accentBackground,
+                  borderRadius: BorderRadius.circular(12),
+                ),
+
+                child: Icon(
+                  _activityIcon(log.action),
+                  color: accentColor,
+                  size: 22,
+                ),
+              ),
+
+              const SizedBox(width: 12),
+
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+
+                  children: [
+                    Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 9,
+                        vertical: 5,
+                      ),
+
+                      decoration: BoxDecoration(
+                        color: accentBackground,
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+
+                      child: Text(
+                        _activityLabel(log.action),
+                        style: TextStyle(
+                          color: accentColor,
+                          fontSize: 10,
+                          fontWeight: FontWeight.w800,
+                          letterSpacing: 0.3,
+                        ),
+                      ),
+                    ),
+
+                    const SizedBox(height: 8),
+
+                    Text(
+                      ruleTitle,
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+
+                      style: const TextStyle(
+                        color: AppColors.navy,
+                        fontSize: 14,
+                        fontWeight: FontWeight.w800,
+                        height: 1.35,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
           ),
 
-          const SizedBox(width: 11),
+          const SizedBox(height: 14),
 
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  actionLabel,
+          const Divider(height: 1, color: AppColors.border),
+
+          const SizedBox(height: 12),
+
+          Row(
+            children: [
+              const Icon(
+                Icons.person_outline_rounded,
+                color: AppColors.secondaryText,
+                size: 17,
+              ),
+
+              const SizedBox(width: 8),
+
+              Expanded(
+                child: Text(
+                  'By $performedBy',
                   style: const TextStyle(
-                    fontSize: 13.5,
-                    fontWeight: FontWeight.w700,
-                    color: _darkTextColor,
+                    color: AppColors.secondaryText,
+                    fontSize: 11.5,
+                    fontWeight: FontWeight.w600,
                   ),
                 ),
+              ),
+            ],
+          ),
 
-                const SizedBox(height: 3),
+          const SizedBox(height: 9),
 
-                Text(
-                  log.ruleTitle,
-                  maxLines: 2,
-                  overflow: TextOverflow.ellipsis,
+          Row(
+            children: [
+              const Icon(
+                Icons.schedule_outlined,
+                color: AppColors.secondaryText,
+                size: 17,
+              ),
+
+              const SizedBox(width: 8),
+
+              Expanded(
+                child: Text(
+                  _formatActivityDate(log.timestamp),
                   style: const TextStyle(
-                    fontSize: 12.5,
-                    color: Color(0xFF486581),
+                    color: AppColors.secondaryText,
+                    fontSize: 11.5,
                   ),
                 ),
-
-                const SizedBox(height: 5),
-
-                Text(
-                  '${log.performedByName} • '
-                  '${_formatActivityDate(log.timestamp)}',
-                  style: const TextStyle(fontSize: 10.5, color: Colors.black45),
-                ),
-              ],
-            ),
+              ),
+            ],
           ),
         ],
       ),
@@ -873,38 +1147,123 @@ class _ContentManagerDashboardState extends State<ContentManagerDashboard> {
   }
 
   // ---------------------------------------------------------------------------
-  // TRACEABILITY
+  // PUBLISHING & TRACEABILITY
   // ---------------------------------------------------------------------------
 
   Widget _buildTraceabilityCard() {
     return Container(
-      padding: const EdgeInsets.all(18),
+      width: double.infinity,
+      padding: const EdgeInsets.all(17),
+
       decoration: BoxDecoration(
         color: const Color(0xFFF1F6FA),
         borderRadius: BorderRadius.circular(18),
         border: Border.all(color: const Color(0xFFD8E6EE)),
       ),
-      child: const Row(
+
+      child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
+
         children: [
-          Icon(Icons.verified_user_outlined, color: _primaryColor, size: 25),
+          const Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
 
-          SizedBox(width: 13),
-
-          Expanded(
-            child: Text(
-              'New regulations remain pending review until enabled. '
-              'Create, update, enable and disable actions are recorded '
-              'with the responsible Content Manager and timestamp.',
-              style: TextStyle(
-                fontSize: 12.5,
-                height: 1.5,
-                color: Color(0xFF334E68),
+            children: [
+              Icon(
+                Icons.verified_user_outlined,
+                color: AppColors.primary,
+                size: 25,
               ),
-            ),
+
+              SizedBox(width: 12),
+
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+
+                  children: [
+                    Text(
+                      'Regulatory Traceability',
+                      style: TextStyle(
+                        color: AppColors.navy,
+                        fontSize: 14,
+                        fontWeight: FontWeight.w800,
+                      ),
+                    ),
+
+                    SizedBox(height: 7),
+
+                    Text(
+                      'New regulations remain pending '
+                      'review until enabled.',
+                      style: TextStyle(
+                        color: AppColors.secondaryText,
+                        fontSize: 12.5,
+                        height: 1.5,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+
+          const SizedBox(height: 14),
+
+          const Divider(height: 1, color: Color(0xFFD8E6EE)),
+
+          const SizedBox(height: 12),
+
+          const Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+
+            children: [
+              Icon(Icons.history_rounded, color: AppColors.primary, size: 18),
+
+              SizedBox(width: 9),
+
+              Expanded(
+                child: Text(
+                  'Create, update, enable and disable actions '
+                  'are recorded with the responsible Content '
+                  'Manager and timestamp.',
+                  style: TextStyle(
+                    color: AppColors.secondaryText,
+                    fontSize: 12,
+                    height: 1.5,
+                  ),
+                ),
+              ),
+            ],
           ),
         ],
       ),
+    );
+  }
+}
+
+// -----------------------------------------------------------------------------
+// REUSABLE DASHBOARD ICON
+// -----------------------------------------------------------------------------
+
+class _DashboardIcon extends StatelessWidget {
+  final IconData icon;
+  final double size;
+
+  const _DashboardIcon({required this.icon, required this.size});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: size,
+      height: size,
+
+      decoration: BoxDecoration(
+        color: AppColors.primaryLight,
+        borderRadius: BorderRadius.circular(13),
+      ),
+
+      child: Icon(icon, color: AppColors.primary, size: size * 0.51),
     );
   }
 }

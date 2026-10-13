@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../../models/rule_activity_log.dart';
 import '../../services/content_manager_service.dart';
+import '../../theme/app_theme.dart';
 
 class ActivityHistoryScreen extends StatefulWidget {
   const ActivityHistoryScreen({super.key});
@@ -13,29 +14,17 @@ class ActivityHistoryScreen extends StatefulWidget {
 class _ActivityHistoryScreenState extends State<ActivityHistoryScreen> {
   final ContentManagerService _contentManagerService = ContentManagerService();
 
-  static const Color _primaryColor = Color(0xFF087F8C);
-
-  static const Color _darkTextColor = Color(0xFF102A43);
-
-  static const Color _backgroundColor = Color(0xFFF7F9FB);
-
-  static const Color _borderColor = Color(0xFFE1E7EC);
-
   final TextEditingController _searchController = TextEditingController();
 
   late Future<List<RuleActivityLog>> _activityFuture;
 
-  List<RuleActivityLog> _allLogs = [];
-
   String _selectedFilter = 'all';
-
   String _searchQuery = '';
 
   @override
   void initState() {
     super.initState();
-
-    _activityFuture = _loadActivity();
+    _activityFuture = _contentManagerService.getActivityHistory();
   }
 
   @override
@@ -45,20 +34,12 @@ class _ActivityHistoryScreenState extends State<ActivityHistoryScreen> {
   }
 
   // ---------------------------------------------------------------------------
-  // DATA
+  // DATA AND REFRESH
   // ---------------------------------------------------------------------------
 
-  Future<List<RuleActivityLog>> _loadActivity() async {
-    final List<RuleActivityLog> logs = await _contentManagerService
-        .getActivityHistory();
-
-    _allLogs = logs;
-
-    return logs;
-  }
-
   Future<void> _refresh() async {
-    final Future<List<RuleActivityLog>> newFuture = _loadActivity();
+    final Future<List<RuleActivityLog>> newFuture = _contentManagerService
+        .getActivityHistory();
 
     setState(() {
       _activityFuture = newFuture;
@@ -68,23 +49,19 @@ class _ActivityHistoryScreenState extends State<ActivityHistoryScreen> {
   }
 
   // ---------------------------------------------------------------------------
-  // FILTERING
+  // SEARCH AND FILTERING
   // ---------------------------------------------------------------------------
 
   List<RuleActivityLog> _applyFilters(List<RuleActivityLog> logs) {
+    final String search = _searchQuery.trim().toLowerCase();
+
     return logs.where((log) {
       final bool matchesAction =
           _selectedFilter == 'all' || log.action == _selectedFilter;
 
-      if (!matchesAction) {
-        return false;
-      }
+      if (!matchesAction) return false;
 
-      final String search = _searchQuery.trim().toLowerCase();
-
-      if (search.isEmpty) {
-        return true;
-      }
+      if (search.isEmpty) return true;
 
       return log.ruleTitle.toLowerCase().contains(search) ||
           log.performedByName.toLowerCase().contains(search) ||
@@ -94,14 +71,21 @@ class _ActivityHistoryScreenState extends State<ActivityHistoryScreen> {
     }).toList();
   }
 
+  void _clearFilters() {
+    _searchController.clear();
+
+    setState(() {
+      _searchQuery = '';
+      _selectedFilter = 'all';
+    });
+  }
+
   // ---------------------------------------------------------------------------
   // FORMATTING
   // ---------------------------------------------------------------------------
 
   String _formatActivityDate(DateTime? date) {
-    if (date == null) {
-      return 'Timestamp unavailable';
-    }
+    if (date == null) return 'Timestamp unavailable';
 
     final DateTime localDate = date.toLocal();
 
@@ -121,12 +105,7 @@ class _ActivityHistoryScreenState extends State<ActivityHistoryScreen> {
     ];
 
     final int hour = localDate.hour;
-
-    final int displayHour = hour == 0
-        ? 12
-        : hour > 12
-        ? hour - 12
-        : hour;
+    final int displayHour = hour == 0 ? 12 : (hour > 12 ? hour - 12 : hour);
 
     final String minute = localDate.minute.toString().padLeft(2, '0');
 
@@ -142,27 +121,21 @@ class _ActivityHistoryScreenState extends State<ActivityHistoryScreen> {
     switch (countryId) {
       case 'japan':
         return 'Japan';
-
       case 'united_states':
         return 'United States';
-
       case 'australia':
         return 'Australia';
-
       case 'united_kingdom':
         return 'United Kingdom';
-
       case 'south_korea':
         return 'South Korea';
-
       default:
         return countryId
             .split('_')
             .map(
               (word) => word.isEmpty
                   ? word
-                  : '${word[0].toUpperCase()}'
-                        '${word.substring(1)}',
+                  : '${word[0].toUpperCase()}${word.substring(1)}',
             )
             .join(' ');
     }
@@ -172,16 +145,12 @@ class _ActivityHistoryScreenState extends State<ActivityHistoryScreen> {
     switch (action) {
       case 'created':
         return 'Created';
-
       case 'updated':
         return 'Updated';
-
       case 'enabled':
         return 'Enabled';
-
       case 'disabled':
         return 'Disabled';
-
       default:
         return 'Activity';
     }
@@ -191,74 +160,212 @@ class _ActivityHistoryScreenState extends State<ActivityHistoryScreen> {
     switch (action) {
       case 'created':
         return Icons.add_circle_outline_rounded;
-
       case 'updated':
         return Icons.edit_outlined;
-
       case 'enabled':
         return Icons.check_circle_outline_rounded;
-
       case 'disabled':
         return Icons.pause_circle_outline_rounded;
-
       default:
         return Icons.history_rounded;
     }
   }
 
+  Color _actionColor(String action) {
+    switch (action) {
+      case 'enabled':
+        return AppColors.success;
+      case 'disabled':
+        return const Color(0xFFA86300);
+      case 'updated':
+        return const Color(0xFF315FAD);
+      default:
+        return AppColors.primary;
+    }
+  }
+
+  Color _actionBackground(String action) {
+    switch (action) {
+      case 'enabled':
+        return const Color(0xFFEAF7F1);
+      case 'disabled':
+        return const Color(0xFFFFF4DC);
+      case 'updated':
+        return const Color(0xFFEAF1FF);
+      default:
+        return AppColors.primaryLight;
+    }
+  }
+
   // ---------------------------------------------------------------------------
-  // SCREEN
+  // SHARED UI HELPERS
+  // ---------------------------------------------------------------------------
+
+  BoxDecoration _cardDecoration() {
+    return BoxDecoration(
+      color: Colors.white,
+      borderRadius: BorderRadius.circular(18),
+      border: Border.all(color: AppColors.border),
+      boxShadow: const [
+        BoxShadow(
+          color: Color(0x08000000),
+          blurRadius: 10,
+          offset: Offset(0, 3),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildStateCard({
+    required IconData icon,
+    required String title,
+    required String message,
+    bool isLoading = false,
+    VoidCallback? onRetry,
+    VoidCallback? onClear,
+  }) {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(24),
+      decoration: _cardDecoration(),
+      child: Column(
+        children: [
+          Container(
+            width: 60,
+            height: 60,
+            decoration: BoxDecoration(
+              color: AppColors.primaryLight,
+              borderRadius: BorderRadius.circular(18),
+            ),
+            child: Icon(icon, color: AppColors.primary, size: 30),
+          ),
+          const SizedBox(height: 15),
+          Text(
+            title,
+            textAlign: TextAlign.center,
+            style: const TextStyle(
+              color: AppColors.navy,
+              fontSize: 15,
+              fontWeight: FontWeight.w800,
+            ),
+          ),
+          const SizedBox(height: 8),
+          Text(
+            message,
+            textAlign: TextAlign.center,
+            style: const TextStyle(
+              color: AppColors.secondaryText,
+              fontSize: 12.5,
+              height: 1.5,
+            ),
+          ),
+          if (isLoading) ...[
+            const SizedBox(height: 18),
+            const CircularProgressIndicator(
+              color: AppColors.primary,
+              strokeWidth: 3,
+            ),
+          ],
+          if (onRetry != null) ...[
+            const SizedBox(height: 16),
+            OutlinedButton.icon(
+              onPressed: onRetry,
+              icon: const Icon(Icons.refresh_rounded, size: 18),
+              label: const Text('Try Again'),
+            ),
+          ],
+          if (onClear != null) ...[
+            const SizedBox(height: 16),
+            OutlinedButton.icon(
+              onPressed: onClear,
+              icon: const Icon(Icons.filter_alt_off_outlined, size: 18),
+              label: const Text('Clear Filters'),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+
+  // ---------------------------------------------------------------------------
+  // MAIN SCREEN
   // ---------------------------------------------------------------------------
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: _backgroundColor,
+      backgroundColor: AppColors.background,
       appBar: AppBar(
         backgroundColor: Colors.white,
         surfaceTintColor: Colors.white,
         elevation: 0,
-        foregroundColor: _darkTextColor,
+        foregroundColor: AppColors.navy,
         title: const Text(
           'Activity History',
-          style: TextStyle(fontWeight: FontWeight.w700),
+          style: TextStyle(color: AppColors.navy, fontWeight: FontWeight.w800),
         ),
       ),
       body: SafeArea(
         child: RefreshIndicator(
+          color: AppColors.primary,
           onRefresh: _refresh,
           child: FutureBuilder<List<RuleActivityLog>>(
             future: _activityFuture,
             builder: (context, snapshot) {
               if (snapshot.connectionState == ConnectionState.waiting) {
-                return const Center(child: CircularProgressIndicator());
+                return ListView(
+                  physics: const AlwaysScrollableScrollPhysics(),
+                  padding: const EdgeInsets.all(18),
+                  children: [
+                    const SizedBox(height: 70),
+                    _buildStateCard(
+                      icon: Icons.history_rounded,
+                      title: 'Loading Activity History',
+                      message: 'Retrieving regulatory activity records...',
+                      isLoading: true,
+                    ),
+                  ],
+                );
               }
 
               if (snapshot.hasError) {
                 return ListView(
                   physics: const AlwaysScrollableScrollPhysics(),
-                  padding: const EdgeInsets.all(24),
-                  children: [const SizedBox(height: 120), _buildErrorState()],
+                  padding: const EdgeInsets.all(18),
+                  children: [
+                    const SizedBox(height: 70),
+                    _buildStateCard(
+                      icon: Icons.cloud_off_outlined,
+                      title: 'Unable to Load Activity',
+                      message:
+                          'Activity records could not be retrieved. '
+                          'Please try again.',
+                      onRetry: _refresh,
+                    ),
+                  ],
                 );
               }
 
-              final List<RuleActivityLog> logs = _applyFilters(_allLogs);
+              final List<RuleActivityLog> allLogs =
+                  snapshot.data ?? <RuleActivityLog>[];
+
+              final List<RuleActivityLog> visibleLogs = _applyFilters(allLogs);
 
               return ListView(
                 physics: const AlwaysScrollableScrollPhysics(),
                 padding: const EdgeInsets.fromLTRB(18, 18, 18, 36),
                 children: [
-                  _buildSummaryCard(),
+                  _buildSummaryCard(allLogs.length),
 
-                  const SizedBox(height: 18),
+                  const SizedBox(height: 20),
 
                   _buildSearchField(),
 
-                  const SizedBox(height: 14),
+                  const SizedBox(height: 13),
 
                   _buildFilters(),
 
-                  const SizedBox(height: 18),
+                  const SizedBox(height: 24),
 
                   Row(
                     children: [
@@ -266,19 +373,18 @@ class _ActivityHistoryScreenState extends State<ActivityHistoryScreen> {
                         child: Text(
                           'Regulatory Activity',
                           style: TextStyle(
-                            fontSize: 17,
+                            color: AppColors.navy,
+                            fontSize: 18,
                             fontWeight: FontWeight.w800,
-                            color: _darkTextColor,
                           ),
                         ),
                       ),
-
                       Text(
-                        '${logs.length} '
-                        '${logs.length == 1 ? 'record' : 'records'}',
+                        '${visibleLogs.length} '
+                        '${visibleLogs.length == 1 ? 'record' : 'records'}',
                         style: const TextStyle(
-                          fontSize: 12,
-                          color: Colors.black54,
+                          color: AppColors.secondaryText,
+                          fontSize: 11.5,
                         ),
                       ),
                     ],
@@ -286,12 +392,27 @@ class _ActivityHistoryScreenState extends State<ActivityHistoryScreen> {
 
                   const SizedBox(height: 12),
 
-                  if (_allLogs.isEmpty)
-                    _buildEmptyState()
-                  else if (logs.isEmpty)
-                    _buildNoResultsState()
+                  if (allLogs.isEmpty)
+                    _buildStateCard(
+                      icon: Icons.history_rounded,
+                      title: 'No Activity Recorded',
+                      message:
+                          'Regulatory activity will appear here '
+                          'after travel rules are created, updated, '
+                          'enabled or disabled.',
+                    )
+                  else if (visibleLogs.isEmpty)
+                    _buildStateCard(
+                      icon: Icons.search_off_rounded,
+                      title: 'No Matching Activity',
+                      message:
+                          'Try another search term or select '
+                          'a different activity filter.',
+                      onClear: _clearFilters,
+                    )
                   else
-                    ...logs.map(_buildActivityCard),
+                    for (final RuleActivityLog log in visibleLogs)
+                      _buildActivityCard(log),
                 ],
               );
             },
@@ -302,63 +423,89 @@ class _ActivityHistoryScreenState extends State<ActivityHistoryScreen> {
   }
 
   // ---------------------------------------------------------------------------
-  // SUMMARY
+  // SUMMARY CARD
   // ---------------------------------------------------------------------------
 
-  Widget _buildSummaryCard() {
+  Widget _buildSummaryCard(int totalRecords) {
     return Container(
       width: double.infinity,
       padding: const EdgeInsets.all(18),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(18),
-        border: Border.all(color: _borderColor),
-      ),
-      child: Row(
+      decoration: _cardDecoration(),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Container(
-            width: 46,
-            height: 46,
-            decoration: BoxDecoration(
-              color: const Color(0xFFE8F6F7),
-              borderRadius: BorderRadius.circular(14),
-            ),
-            child: const Icon(
-              Icons.history_rounded,
-              color: _primaryColor,
-              size: 24,
-            ),
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Container(
+                width: 49,
+                height: 49,
+                decoration: BoxDecoration(
+                  color: AppColors.primaryLight,
+                  borderRadius: BorderRadius.circular(14),
+                ),
+                child: const Icon(
+                  Icons.history_rounded,
+                  color: AppColors.primary,
+                  size: 26,
+                ),
+              ),
+              const SizedBox(width: 13),
+              const Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Regulation Traceability',
+                      style: TextStyle(
+                        color: AppColors.navy,
+                        fontSize: 17,
+                        fontWeight: FontWeight.w800,
+                      ),
+                    ),
+                    SizedBox(height: 7),
+                    Text(
+                      'Review regulatory changes made '
+                      'by Content Managers.',
+                      style: TextStyle(
+                        color: AppColors.secondaryText,
+                        fontSize: 12.5,
+                        height: 1.45,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
           ),
 
-          const SizedBox(width: 14),
+          const SizedBox(height: 16),
 
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                const Text(
-                  'Regulation Traceability',
-                  style: TextStyle(
-                    fontSize: 16,
-                    fontWeight: FontWeight.w700,
-                    color: _darkTextColor,
-                  ),
-                ),
+          const Divider(height: 1, color: AppColors.border),
 
-                const SizedBox(height: 4),
+          const SizedBox(height: 14),
 
-                Text(
-                  '${_allLogs.length} '
-                  '${_allLogs.length == 1 ? 'activity record' : 'activity records'} '
-                  'stored for regulatory management.',
+          Row(
+            children: [
+              const Icon(
+                Icons.fact_check_outlined,
+                color: AppColors.primary,
+                size: 20,
+              ),
+              const SizedBox(width: 9),
+              Expanded(
+                child: Text(
+                  '$totalRecords '
+                  '${totalRecords == 1 ? 'activity record' : 'activity records'} '
+                  'retrieved',
                   style: const TextStyle(
+                    color: AppColors.navy,
                     fontSize: 12.5,
-                    height: 1.4,
-                    color: Colors.black54,
+                    fontWeight: FontWeight.w700,
                   ),
                 ),
-              ],
-            ),
+              ),
+            ],
           ),
         ],
       ),
@@ -366,23 +513,30 @@ class _ActivityHistoryScreenState extends State<ActivityHistoryScreen> {
   }
 
   // ---------------------------------------------------------------------------
-  // SEARCH
+  // SEARCH FIELD
   // ---------------------------------------------------------------------------
 
   Widget _buildSearchField() {
     return TextField(
       controller: _searchController,
+      textInputAction: TextInputAction.search,
       onChanged: (value) {
         setState(() {
           _searchQuery = value;
         });
       },
+      style: const TextStyle(color: AppColors.navy, fontSize: 13.5),
       decoration: InputDecoration(
         hintText: 'Search rule, country or manager',
-        prefixIcon: const Icon(Icons.search_rounded),
+        hintStyle: const TextStyle(
+          color: AppColors.secondaryText,
+          fontSize: 13,
+        ),
+        prefixIcon: const Icon(Icons.search_rounded, color: AppColors.primary),
         suffixIcon: _searchQuery.isEmpty
             ? null
             : IconButton(
+                tooltip: 'Clear search',
                 onPressed: () {
                   _searchController.clear();
 
@@ -390,25 +544,36 @@ class _ActivityHistoryScreenState extends State<ActivityHistoryScreen> {
                     _searchQuery = '';
                   });
                 },
-                icon: const Icon(Icons.close_rounded),
+                icon: const Icon(
+                  Icons.close_rounded,
+                  color: AppColors.secondaryText,
+                  size: 20,
+                ),
               ),
         filled: true,
         fillColor: Colors.white,
-        contentPadding: const EdgeInsets.symmetric(vertical: 14),
+        contentPadding: const EdgeInsets.symmetric(
+          horizontal: 15,
+          vertical: 16,
+        ),
+        border: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(15),
+          borderSide: const BorderSide(color: AppColors.border),
+        ),
         enabledBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(14),
-          borderSide: const BorderSide(color: _borderColor),
+          borderRadius: BorderRadius.circular(15),
+          borderSide: const BorderSide(color: AppColors.border),
         ),
         focusedBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(14),
-          borderSide: const BorderSide(color: _primaryColor, width: 1.4),
+          borderRadius: BorderRadius.circular(15),
+          borderSide: const BorderSide(color: AppColors.primary, width: 1.5),
         ),
       ),
     );
   }
 
   // ---------------------------------------------------------------------------
-  // FILTERS
+  // ACTIVITY FILTERS
   // ---------------------------------------------------------------------------
 
   Widget _buildFilters() {
@@ -425,30 +590,35 @@ class _ActivityHistoryScreenState extends State<ActivityHistoryScreen> {
       child: Row(
         children: filters.map((filter) {
           final String value = filter['value']!;
-
           final bool selected = _selectedFilter == value;
 
           return Padding(
             padding: const EdgeInsets.only(right: 8),
             child: FilterChip(
-              label: Text(filter['label']!),
+              label: Text(
+                filter['label']!,
+                style: TextStyle(
+                  color: selected ? AppColors.primary : AppColors.secondaryText,
+                  fontSize: 12,
+                  fontWeight: selected ? FontWeight.w800 : FontWeight.w600,
+                ),
+              ),
               selected: selected,
+              showCheckmark: false,
               onSelected: (_) {
                 setState(() {
                   _selectedFilter = value;
                 });
               },
-              showCheckmark: false,
-              selectedColor: const Color(0xFFDFF3F5),
+              selectedColor: AppColors.primaryLight,
               backgroundColor: Colors.white,
-              side: BorderSide(color: selected ? _primaryColor : _borderColor),
-              labelStyle: TextStyle(
-                color: selected ? _primaryColor : const Color(0xFF486581),
-                fontWeight: selected ? FontWeight.w700 : FontWeight.w500,
+              side: BorderSide(
+                color: selected ? AppColors.primary : AppColors.border,
               ),
               shape: RoundedRectangleBorder(
                 borderRadius: BorderRadius.circular(20),
               ),
+              visualDensity: const VisualDensity(horizontal: -1, vertical: -1),
             ),
           );
         }).toList(),
@@ -461,152 +631,105 @@ class _ActivityHistoryScreenState extends State<ActivityHistoryScreen> {
   // ---------------------------------------------------------------------------
 
   Widget _buildActivityCard(RuleActivityLog log) {
+    final Color accentColor = _actionColor(log.action);
+    final Color accentBackground = _actionBackground(log.action);
+
+    final String ruleTitle = log.ruleTitle.trim().isNotEmpty
+        ? log.ruleTitle
+        : 'Untitled Regulation';
+
+    final String managerName = log.performedByName.trim().isNotEmpty
+        ? log.performedByName
+        : 'Content Manager';
+
     return Container(
       width: double.infinity,
-      margin: const EdgeInsets.only(bottom: 10),
+      margin: const EdgeInsets.only(bottom: 11),
       padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: _borderColor),
-      ),
-      child: Row(
+      decoration: _cardDecoration(),
+      child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Container(
-            width: 42,
-            height: 42,
-            decoration: BoxDecoration(
-              color: const Color(0xFFE8F6F7),
-              borderRadius: BorderRadius.circular(12),
-            ),
-            child: Icon(
-              _actionIcon(log.action),
-              color: _primaryColor,
-              size: 21,
-            ),
-          ),
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Container(
+                width: 44,
+                height: 44,
+                decoration: BoxDecoration(
+                  color: accentBackground,
+                  borderRadius: BorderRadius.circular(13),
+                ),
+                child: Icon(
+                  _actionIcon(log.action),
+                  color: accentColor,
+                  size: 23,
+                ),
+              ),
 
-          const SizedBox(width: 12),
+              const SizedBox(width: 12),
 
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Row(
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Expanded(
-                      child: Text(
-                        '${_actionLabel(log.action)} rule',
-                        style: const TextStyle(
-                          fontSize: 14,
-                          fontWeight: FontWeight.w700,
-                          color: _darkTextColor,
-                        ),
-                      ),
-                    ),
-
                     _buildActionBadge(log.action),
-                  ],
-                ),
 
-                const SizedBox(height: 6),
-
-                Text(
-                  log.ruleTitle,
-                  style: const TextStyle(
-                    fontSize: 14,
-                    fontWeight: FontWeight.w600,
-                    color: Color(0xFF334E68),
-                  ),
-                ),
-
-                const SizedBox(height: 8),
-
-                Row(
-                  children: [
-                    const Icon(
-                      Icons.public_outlined,
-                      size: 14,
-                      color: Colors.black45,
-                    ),
-
-                    const SizedBox(width: 5),
-
-                    Expanded(
-                      child: Text(
-                        _formatCountry(log.countryId),
-                        style: const TextStyle(
-                          fontSize: 11.5,
-                          color: Colors.black54,
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
-
-                const SizedBox(height: 5),
-
-                Row(
-                  children: [
-                    const Icon(
-                      Icons.person_outline_rounded,
-                      size: 14,
-                      color: Colors.black45,
-                    ),
-
-                    const SizedBox(width: 5),
-
-                    Expanded(
-                      child: Text(
-                        log.performedByName,
-                        style: const TextStyle(
-                          fontSize: 11.5,
-                          color: Colors.black54,
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
-
-                if (log.performedByEmail.isNotEmpty) ...[
-                  const SizedBox(height: 3),
-
-                  Padding(
-                    padding: const EdgeInsets.only(left: 19),
-                    child: Text(
-                      log.performedByEmail,
-                      style: const TextStyle(
-                        fontSize: 10.5,
-                        color: Colors.black45,
-                      ),
-                    ),
-                  ),
-                ],
-
-                const SizedBox(height: 7),
-
-                Row(
-                  children: [
-                    const Icon(
-                      Icons.schedule_outlined,
-                      size: 14,
-                      color: Colors.black45,
-                    ),
-
-                    const SizedBox(width: 5),
+                    const SizedBox(height: 9),
 
                     Text(
-                      _formatActivityDate(log.timestamp),
+                      ruleTitle,
                       style: const TextStyle(
-                        fontSize: 11,
-                        color: Colors.black45,
+                        color: AppColors.navy,
+                        fontSize: 14,
+                        fontWeight: FontWeight.w800,
+                        height: 1.4,
                       ),
                     ),
                   ],
                 ),
-              ],
+              ),
+            ],
+          ),
+
+          const SizedBox(height: 14),
+
+          const Divider(height: 1, color: AppColors.border),
+
+          const SizedBox(height: 12),
+
+          _buildDetailRow(
+            icon: Icons.public_outlined,
+            value: _formatCountry(log.countryId),
+          ),
+
+          const SizedBox(height: 9),
+
+          _buildDetailRow(
+            icon: Icons.person_outline_rounded,
+            value: managerName,
+          ),
+
+          if (log.performedByEmail.trim().isNotEmpty) ...[
+            const SizedBox(height: 7),
+            Padding(
+              padding: const EdgeInsets.only(left: 25),
+              child: Text(
+                log.performedByEmail,
+                style: const TextStyle(
+                  color: AppColors.secondaryText,
+                  fontSize: 11,
+                  height: 1.4,
+                ),
+              ),
             ),
+          ],
+
+          const SizedBox(height: 9),
+
+          _buildDetailRow(
+            icon: Icons.schedule_outlined,
+            value: _formatActivityDate(log.timestamp),
           ),
         ],
       ),
@@ -614,130 +737,44 @@ class _ActivityHistoryScreenState extends State<ActivityHistoryScreen> {
   }
 
   Widget _buildActionBadge(String action) {
+    final Color color = _actionColor(action);
+    final Color background = _actionBackground(action);
+
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 4),
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
       decoration: BoxDecoration(
-        color: const Color(0xFFF1F6FA),
-        borderRadius: BorderRadius.circular(20),
+        color: background,
+        borderRadius: BorderRadius.circular(9),
       ),
       child: Text(
-        _actionLabel(action),
-        style: const TextStyle(
+        _actionLabel(action).toUpperCase(),
+        style: TextStyle(
+          color: color,
           fontSize: 10,
-          fontWeight: FontWeight.w700,
-          color: _primaryColor,
+          fontWeight: FontWeight.w800,
+          letterSpacing: 0.4,
         ),
       ),
     );
   }
 
-  // ---------------------------------------------------------------------------
-  // STATES
-  // ---------------------------------------------------------------------------
-
-  Widget _buildEmptyState() {
-    return Container(
-      width: double.infinity,
-      padding: const EdgeInsets.symmetric(vertical: 36, horizontal: 20),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(18),
-        border: Border.all(color: _borderColor),
-      ),
-      child: const Column(
-        children: [
-          Icon(Icons.history_rounded, size: 38, color: Colors.black38),
-
-          SizedBox(height: 10),
-
-          Text(
-            'No activity recorded yet',
-            style: TextStyle(
-              fontSize: 15,
-              fontWeight: FontWeight.w700,
-              color: _darkTextColor,
+  Widget _buildDetailRow({required IconData icon, required String value}) {
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Icon(icon, color: AppColors.secondaryText, size: 17),
+        const SizedBox(width: 8),
+        Expanded(
+          child: Text(
+            value,
+            style: const TextStyle(
+              color: AppColors.secondaryText,
+              fontSize: 11.5,
+              height: 1.4,
             ),
           ),
-
-          SizedBox(height: 5),
-
-          Text(
-            'Regulatory management activity will appear here.',
-            textAlign: TextAlign.center,
-            style: TextStyle(fontSize: 12.5, color: Colors.black54),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildNoResultsState() {
-    return Container(
-      width: double.infinity,
-      padding: const EdgeInsets.symmetric(vertical: 32, horizontal: 20),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(18),
-        border: Border.all(color: _borderColor),
-      ),
-      child: const Column(
-        children: [
-          Icon(Icons.search_off_rounded, size: 36, color: Colors.black38),
-
-          SizedBox(height: 9),
-
-          Text(
-            'No matching activity',
-            style: TextStyle(
-              fontWeight: FontWeight.w700,
-              color: _darkTextColor,
-            ),
-          ),
-
-          SizedBox(height: 4),
-
-          Text(
-            'Try another search term or activity filter.',
-            textAlign: TextAlign.center,
-            style: TextStyle(fontSize: 12.5, color: Colors.black54),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildErrorState() {
-    return Container(
-      padding: const EdgeInsets.all(24),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(18),
-        border: Border.all(color: _borderColor),
-      ),
-      child: Column(
-        children: [
-          const Icon(
-            Icons.error_outline_rounded,
-            size: 38,
-            color: Colors.black45,
-          ),
-
-          const SizedBox(height: 10),
-
-          const Text(
-            'Unable to load activity history.',
-            textAlign: TextAlign.center,
-            style: TextStyle(
-              fontWeight: FontWeight.w700,
-              color: _darkTextColor,
-            ),
-          ),
-
-          const SizedBox(height: 12),
-
-          OutlinedButton(onPressed: _refresh, child: const Text('Try Again')),
-        ],
-      ),
+        ),
+      ],
     );
   }
 }
