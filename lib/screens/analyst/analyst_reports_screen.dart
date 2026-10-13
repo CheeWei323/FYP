@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 
 import '../../services/analyst_report_service.dart';
 import '../../services/analyst_service.dart';
+import '../../theme/app_theme.dart';
 import '../../widgets/analyst/analytics_filter_card.dart';
 import 'analyst_report_details_screen.dart';
 
@@ -18,14 +19,6 @@ class _AnalystReportsScreenState extends State<AnalystReportsScreen> {
 
   final AnalystService _analystService = AnalystService();
 
-  static const Color _primaryColor = Color(0xFF087F8C);
-
-  static const Color _darkTextColor = Color(0xFF102A43);
-
-  static const Color _backgroundColor = Color(0xFFF7F9FB);
-
-  static const Color _borderColor = Color(0xFFE1E7EC);
-
   String _selectedReportType = AnalystReportService.destinationTrends;
 
   String? _selectedDestinationId;
@@ -33,18 +26,28 @@ class _AnalystReportsScreenState extends State<AnalystReportsScreen> {
 
   bool _isGenerating = false;
 
-  late Future<List<Map<String, String>>> _countriesFuture;
+  // Cached Firestore data.
+  List<Map<String, String>>? _countries;
+  List<Map<String, dynamic>>? _reportHistory;
 
-  late Future<List<Map<String, dynamic>>> _historyFuture;
+  bool _countriesError = false;
+  bool _historyError = false;
+
+  // Prevent outdated requests from replacing newer data.
+  int _countriesRequestVersion = 0;
+  int _historyRequestVersion = 0;
 
   @override
   void initState() {
     super.initState();
 
-    _countriesFuture = _analystService.getAnalyticsFilterCountries();
-
-    _historyFuture = _reportService.getReportHistory();
+    _loadCountries();
+    _loadHistory();
   }
+
+  // ---------------------------------------------------------------------------
+  // REPORT FILTER RULES
+  // ---------------------------------------------------------------------------
 
   bool get _showDestinationFilter {
     return _selectedReportType == AnalystReportService.purposeDistribution ||
@@ -58,33 +61,113 @@ class _AnalystReportsScreenState extends State<AnalystReportsScreen> {
         _selectedReportType == AnalystReportService.requirementPatterns;
   }
 
-  Future<void> _refresh() async {
-    final Future<List<Map<String, String>>> countries = _analystService
-        .getAnalyticsFilterCountries();
+  // ---------------------------------------------------------------------------
+  // LOAD FILTER COUNTRIES
+  // ---------------------------------------------------------------------------
 
-    final Future<List<Map<String, dynamic>>> history = _reportService
-        .getReportHistory();
+  Future<void> _loadCountries() async {
+    final int requestVersion = ++_countriesRequestVersion;
 
-    setState(() {
-      _countriesFuture = countries;
+    try {
+      final List<Map<String, String>> countries = await _analystService
+          .getAnalyticsFilterCountries();
 
-      _historyFuture = history;
-    });
+      if (!mounted || requestVersion != _countriesRequestVersion) {
+        return;
+      }
 
-    await countries;
-    await history;
+      setState(() {
+        _countries = countries;
+        _countriesError = false;
+      });
+    } catch (error) {
+      debugPrint('ANALYST REPORT FILTER ERROR: $error');
+
+      if (!mounted || requestVersion != _countriesRequestVersion) {
+        return;
+      }
+
+      setState(() {
+        _countriesError = true;
+      });
+    }
   }
 
+  // ---------------------------------------------------------------------------
+  // LOAD REPORT HISTORY
+  // ---------------------------------------------------------------------------
+
+  Future<void> _loadHistory() async {
+    final int requestVersion = ++_historyRequestVersion;
+
+    try {
+      final List<Map<String, dynamic>> reports = await _reportService
+          .getReportHistory();
+
+      if (!mounted || requestVersion != _historyRequestVersion) {
+        return;
+      }
+
+      setState(() {
+        _reportHistory = reports;
+        _historyError = false;
+      });
+    } catch (error) {
+      debugPrint('ANALYST REPORT HISTORY ERROR: $error');
+
+      if (!mounted || requestVersion != _historyRequestVersion) {
+        return;
+      }
+
+      setState(() {
+        _historyError = true;
+      });
+    }
+  }
+
+  // ---------------------------------------------------------------------------
+  // REFRESH
+  // ---------------------------------------------------------------------------
+
+  Future<void> _refresh() async {
+    // Keep existing data visible while refreshing.
+    await Future.wait<void>([_loadCountries(), _loadHistory()]);
+  }
+
+  // ---------------------------------------------------------------------------
+  // RETRY HELPERS
+  // ---------------------------------------------------------------------------
+
+  void _retryCountries() {
+    setState(() {
+      _countriesError = false;
+    });
+
+    _loadCountries();
+  }
+
+  void _retryHistory() {
+    setState(() {
+      _historyError = false;
+    });
+
+    _loadHistory();
+  }
+
+  // ---------------------------------------------------------------------------
+  // REPORT TYPE SELECTION
+  // ---------------------------------------------------------------------------
+
   void _changeReportType(String? value) {
-    if (value == null) {
+    if (value == null || value == _selectedReportType) {
       return;
     }
 
     setState(() {
       _selectedReportType = value;
 
-      // Clear filters that are not applicable
-      // to the newly selected report type.
+      // Clear filters that do not apply to the selected
+      // report type, preserving the existing report rules.
       if (!_showDestinationFilter) {
         _selectedDestinationId = null;
       }
@@ -95,37 +178,87 @@ class _AnalystReportsScreenState extends State<AnalystReportsScreen> {
     });
   }
 
+  void _changeDestination(String? value) {
+    setState(() {
+      _selectedDestinationId = value;
+    });
+  }
+
+  void _changePurpose(String? value) {
+    setState(() {
+      _selectedPurpose = value;
+    });
+  }
+
+  void _clearFilters() {
+    setState(() {
+      _selectedDestinationId = null;
+      _selectedPurpose = null;
+    });
+  }
+
+  // ---------------------------------------------------------------------------
+  // GENERATE AND EXPORT REPORT
+  // ---------------------------------------------------------------------------
+
   Future<void> _generateReport() async {
     if (_isGenerating) {
       return;
     }
+
+    // Capture the selected options for this generation.
+    final String reportType = _selectedReportType;
+
+    final String? destinationId = _showDestinationFilter
+        ? _selectedDestinationId
+        : null;
+
+    final String? purpose = _showPurposeFilter ? _selectedPurpose : null;
 
     setState(() {
       _isGenerating = true;
     });
 
     try {
+      // Preserve the existing report generation service.
       final Map<String, dynamic> report = await _reportService.generateReport(
-        reportType: _selectedReportType,
-        destinationId: _showDestinationFilter ? _selectedDestinationId : null,
-        purpose: _showPurposeFilter ? _selectedPurpose : null,
+        reportType: reportType,
+        destinationId: destinationId,
+        purpose: purpose,
       );
 
       if (!mounted) {
         return;
       }
 
-      setState(() {
-        _historyFuture = _reportService.getReportHistory();
-      });
+      // Refresh saved report history after generation.
+      await _loadHistory();
 
-      ScaffoldMessenger.of(context)
-        ..hideCurrentSnackBar()
-        ..showSnackBar(
-          const SnackBar(content: Text('Report generated successfully.')),
+      if (!mounted) {
+        return;
+      }
+
+      // Automatically export the generated Excel report.
+      try {
+        await _reportService.exportReport(report);
+
+        if (!mounted) {
+          return;
+        }
+
+        _showMessage('Report generated successfully.');
+      } catch (error) {
+        debugPrint('ANALYST REPORT EXPORT ERROR: $error');
+
+        if (!mounted) {
+          return;
+        }
+
+        _showMessage(
+          'Report generated, but Excel export failed. '
+          'You can try exporting it from Report History.',
         );
-
-      await _reportService.exportReport(report);
+      }
     } catch (error) {
       debugPrint('GENERATE ANALYST REPORT ERROR: $error');
 
@@ -133,13 +266,7 @@ class _AnalystReportsScreenState extends State<AnalystReportsScreen> {
         return;
       }
 
-      ScaffoldMessenger.of(context)
-        ..hideCurrentSnackBar()
-        ..showSnackBar(
-          const SnackBar(
-            content: Text('Unable to generate report. Please try again.'),
-          ),
-        );
+      _showMessage('Unable to generate report. Please try again.');
     } finally {
       if (mounted) {
         setState(() {
@@ -148,6 +275,10 @@ class _AnalystReportsScreenState extends State<AnalystReportsScreen> {
       }
     }
   }
+
+  // ---------------------------------------------------------------------------
+  // EXPORT EXISTING REPORT
+  // ---------------------------------------------------------------------------
 
   Future<void> _exportExcel(Map<String, dynamic> report) async {
     try {
@@ -159,15 +290,40 @@ class _AnalystReportsScreenState extends State<AnalystReportsScreen> {
         return;
       }
 
-      ScaffoldMessenger.of(context)
-        ..hideCurrentSnackBar()
-        ..showSnackBar(
-          const SnackBar(
-            content: Text('Unable to export report. Please try again.'),
-          ),
-        );
+      _showMessage('Unable to export report. Please try again.');
     }
   }
+
+  // ---------------------------------------------------------------------------
+  // VIEW REPORT DETAILS
+  // ---------------------------------------------------------------------------
+
+  Future<void> _viewReport(Map<String, dynamic> report) async {
+    await Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (context) => AnalystReportDetailsScreen(report: report),
+      ),
+    );
+  }
+
+  // ---------------------------------------------------------------------------
+  // SNACKBAR
+  // ---------------------------------------------------------------------------
+
+  void _showMessage(String message) {
+    if (!mounted) {
+      return;
+    }
+
+    ScaffoldMessenger.of(context)
+      ..hideCurrentSnackBar()
+      ..showSnackBar(SnackBar(content: Text(message)));
+  }
+
+  // ---------------------------------------------------------------------------
+  // FORMATTING HELPERS
+  // ---------------------------------------------------------------------------
 
   String _reportTypeLabel(String value) {
     switch (value) {
@@ -189,11 +345,17 @@ class _AnalystReportsScreenState extends State<AnalystReportsScreen> {
   }
 
   String _formatDate(dynamic raw) {
-    if (raw is! Timestamp) {
-      return 'Recently generated';
+    DateTime? date;
+
+    if (raw is Timestamp) {
+      date = raw.toDate().toLocal();
+    } else if (raw is DateTime) {
+      date = raw.toLocal();
     }
 
-    final DateTime date = raw.toDate();
+    if (date == null) {
+      return 'Recently generated';
+    }
 
     String twoDigits(int value) {
       return value.toString().padLeft(2, '0');
@@ -206,62 +368,76 @@ class _AnalystReportsScreenState extends State<AnalystReportsScreen> {
         '${twoDigits(date.minute)}';
   }
 
+  // ---------------------------------------------------------------------------
+  // SHARED CARD DECORATION
+  // ---------------------------------------------------------------------------
+
+  BoxDecoration _cardDecoration({Color color = Colors.white}) {
+    return BoxDecoration(
+      color: color,
+      borderRadius: BorderRadius.circular(20),
+      border: Border.all(color: AppColors.border),
+      boxShadow: const [
+        BoxShadow(
+          color: Color(0x08000000),
+          blurRadius: 12,
+          offset: Offset(0, 4),
+        ),
+      ],
+    );
+  }
+
+  // ---------------------------------------------------------------------------
+  // MAIN SCREEN
+  // ---------------------------------------------------------------------------
+
   @override
   Widget build(BuildContext context) {
+    // This screen is displayed inside AnalystDashboard,
+    // which already provides its AppBar and bottom navigation.
     return ColoredBox(
-      color: _backgroundColor,
+      color: AppColors.background,
+
       child: SafeArea(
         child: RefreshIndicator(
+          color: AppColors.primary,
           onRefresh: _refresh,
+
           child: ListView(
-            physics: const AlwaysScrollableScrollPhysics(),
+            physics: const AlwaysScrollableScrollPhysics(
+              parent: ClampingScrollPhysics(),
+            ),
+
             padding: const EdgeInsets.fromLTRB(18, 18, 18, 36),
+
             children: [
               _buildHeader(),
 
-              const SizedBox(height: 26),
+              const SizedBox(height: 27),
 
-              const Text(
+              _buildSectionTitle(
                 'Generate Report',
-                style: TextStyle(
-                  fontSize: 18,
-                  fontWeight: FontWeight.w800,
-                  color: _darkTextColor,
-                ),
-              ),
-
-              const SizedBox(height: 5),
-
-              const Text(
                 'Export aggregated analytics as an Excel report.',
-                style: TextStyle(fontSize: 12.5, color: Colors.black54),
               ),
 
               const SizedBox(height: 14),
 
               _buildGenerator(),
 
-              const SizedBox(height: 30),
+              const SizedBox(height: 28),
 
-              const Text(
+              _buildSectionTitle(
                 'Report History',
-                style: TextStyle(
-                  fontSize: 18,
-                  fontWeight: FontWeight.w800,
-                  color: _darkTextColor,
-                ),
-              ),
-
-              const SizedBox(height: 5),
-
-              const Text(
                 'Previously generated report snapshots.',
-                style: TextStyle(fontSize: 12.5, color: Colors.black54),
               ),
 
               const SizedBox(height: 14),
 
               _buildHistory(),
+
+              const SizedBox(height: 25),
+
+              _buildInformationCard(),
             ],
           ),
         ),
@@ -269,75 +445,213 @@ class _AnalystReportsScreenState extends State<AnalystReportsScreen> {
     );
   }
 
+  // ---------------------------------------------------------------------------
+  // SECTION TITLE
+  // ---------------------------------------------------------------------------
+
+  Widget _buildSectionTitle(String title, String description) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+
+      children: [
+        Text(
+          title,
+          style: const TextStyle(
+            color: AppColors.navy,
+            fontSize: 18,
+            fontWeight: FontWeight.w800,
+          ),
+        ),
+
+        const SizedBox(height: 6),
+
+        Text(
+          description,
+          style: const TextStyle(
+            color: AppColors.secondaryText,
+            fontSize: 12.5,
+            height: 1.45,
+          ),
+        ),
+      ],
+    );
+  }
+
+  // ---------------------------------------------------------------------------
+  // HEADER
+  // ---------------------------------------------------------------------------
+
   Widget _buildHeader() {
     return Container(
       width: double.infinity,
       padding: const EdgeInsets.all(20),
-      decoration: BoxDecoration(
-        gradient: const LinearGradient(
-          colors: [Color(0xFFE7F7F8), Color(0xFFF1F8FB)],
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-        ),
-        borderRadius: BorderRadius.circular(20),
-        border: Border.all(color: const Color(0xFFCBE8EB)),
-      ),
-      child: const Row(
+      decoration: _cardDecoration(),
+
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+
         children: [
-          Icon(Icons.description_outlined, color: _primaryColor, size: 32),
-          SizedBox(width: 14),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  'Analytics Reports',
+          const Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+
+            children: [
+              _ReportIcon(icon: Icons.description_outlined, size: 52),
+
+              SizedBox(width: 14),
+
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+
+                  children: [
+                    Text(
+                      'Analytics Reports',
+                      style: TextStyle(
+                        color: AppColors.navy,
+                        fontSize: 19,
+                        fontWeight: FontWeight.w800,
+                      ),
+                    ),
+
+                    SizedBox(height: 7),
+
+                    Text(
+                      'Generate, export and review '
+                      'historical aggregated analytics '
+                      'reports.',
+                      style: TextStyle(
+                        color: AppColors.secondaryText,
+                        fontSize: 12.5,
+                        height: 1.5,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+
+          const SizedBox(height: 18),
+
+          const Divider(height: 1, color: AppColors.border),
+
+          const SizedBox(height: 13),
+
+          const Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+
+            children: [
+              Icon(
+                Icons.table_chart_outlined,
+                color: AppColors.primary,
+                size: 18,
+              ),
+
+              SizedBox(width: 9),
+
+              Expanded(
+                child: Text(
+                  'Choose an analytics category and '
+                  'apply relevant filters before '
+                  'generating an Excel report.',
                   style: TextStyle(
-                    fontSize: 20,
-                    fontWeight: FontWeight.w800,
-                    color: _darkTextColor,
+                    color: AppColors.secondaryText,
+                    fontSize: 12,
+                    height: 1.5,
                   ),
                 ),
-                SizedBox(height: 5),
-                Text(
-                  'Generate and access historical '
-                  'aggregated analytics reports.',
-                  style: TextStyle(
-                    fontSize: 12.5,
-                    height: 1.4,
-                    color: Colors.black54,
-                  ),
-                ),
-              ],
-            ),
+              ),
+            ],
           ),
         ],
       ),
     );
   }
 
+  // ---------------------------------------------------------------------------
+  // GENERATE REPORT CARD
+  // ---------------------------------------------------------------------------
+
   Widget _buildGenerator() {
     return Container(
       width: double.infinity,
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(18),
-        border: Border.all(color: _borderColor),
-      ),
+      padding: const EdgeInsets.all(18),
+      decoration: _cardDecoration(),
+
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
+
         children: [
+          const Row(
+            children: [
+              _ReportIcon(icon: Icons.analytics_outlined, size: 43),
+
+              SizedBox(width: 12),
+
+              Expanded(
+                child: Text(
+                  'Report Configuration',
+                  style: TextStyle(
+                    color: AppColors.navy,
+                    fontSize: 15,
+                    fontWeight: FontWeight.w800,
+                  ),
+                ),
+              ),
+            ],
+          ),
+
+          const SizedBox(height: 18),
+
+          const Text(
+            'Report Type',
+            style: TextStyle(
+              color: AppColors.navy,
+              fontSize: 12.5,
+              fontWeight: FontWeight.w700,
+            ),
+          ),
+
+          const SizedBox(height: 9),
+
           DropdownButtonFormField<String>(
+            key: ValueKey(_selectedReportType),
             initialValue: _selectedReportType,
             isExpanded: true,
+
             decoration: InputDecoration(
-              labelText: 'Report Type',
-              prefixIcon: const Icon(Icons.analytics_outlined),
-              border: OutlineInputBorder(
+              prefixIcon: const Icon(
+                Icons.analytics_outlined,
+                color: AppColors.primary,
+              ),
+
+              filled: true,
+              fillColor: AppColors.background,
+
+              contentPadding: const EdgeInsets.symmetric(
+                horizontal: 13,
+                vertical: 15,
+              ),
+
+              enabledBorder: OutlineInputBorder(
                 borderRadius: BorderRadius.circular(13),
+                borderSide: const BorderSide(color: AppColors.border),
+              ),
+
+              focusedBorder: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(13),
+                borderSide: const BorderSide(
+                  color: AppColors.primary,
+                  width: 1.5,
+                ),
+              ),
+
+              disabledBorder: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(13),
+                borderSide: const BorderSide(color: AppColors.border),
               ),
             ),
+
             items:
                 [
                   AnalystReportService.destinationTrends,
@@ -354,75 +668,82 @@ class _AnalystReportsScreenState extends State<AnalystReportsScreen> {
                     ),
                   );
                 }).toList(),
-            onChanged: _changeReportType,
+
+            onChanged: _isGenerating ? null : _changeReportType,
           ),
 
           if (_showDestinationFilter || _showPurposeFilter) ...[
-            const SizedBox(height: 14),
+            const SizedBox(height: 19),
 
-            FutureBuilder<List<Map<String, String>>>(
-              future: _countriesFuture,
-              builder: (context, snapshot) {
-                if (snapshot.connectionState == ConnectionState.waiting) {
-                  return const Center(
-                    child: Padding(
-                      padding: EdgeInsets.all(12),
-                      child: CircularProgressIndicator(),
-                    ),
-                  );
-                }
+            const Divider(height: 1, color: AppColors.border),
 
-                return AnalyticsFilterCard(
-                  countries: snapshot.data ?? [],
-                  selectedDestinationId: _selectedDestinationId,
-                  selectedPurpose: _selectedPurpose,
-                  showDestination: _showDestinationFilter,
-                  showPurpose: _showPurposeFilter,
-                  onDestinationChanged: (value) {
-                    setState(() {
-                      _selectedDestinationId = value;
-                    });
-                  },
-                  onPurposeChanged: (value) {
-                    setState(() {
-                      _selectedPurpose = value;
-                    });
-                  },
-                  onClear: () {
-                    setState(() {
-                      _selectedDestinationId = null;
+            const SizedBox(height: 18),
 
-                      _selectedPurpose = null;
-                    });
-                  },
-                );
-              },
+            const Text(
+              'Report Filters',
+              style: TextStyle(
+                color: AppColors.navy,
+                fontSize: 13.5,
+                fontWeight: FontWeight.w800,
+              ),
             ),
+
+            const SizedBox(height: 6),
+
+            const Text(
+              'Filters are optional and depend on '
+              'the selected report type.',
+              style: TextStyle(
+                color: AppColors.secondaryText,
+                fontSize: 11.5,
+                height: 1.4,
+              ),
+            ),
+
+            const SizedBox(height: 13),
+
+            _buildFilters(),
           ],
 
-          const SizedBox(height: 18),
+          const SizedBox(height: 20),
 
           SizedBox(
             width: double.infinity,
             height: 50,
+
             child: FilledButton.icon(
+              style: FilledButton.styleFrom(
+                backgroundColor: AppColors.primary,
+                foregroundColor: Colors.white,
+
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(13),
+                ),
+              ),
+
               onPressed: _isGenerating ? null : _generateReport,
+
               icon: _isGenerating
                   ? const SizedBox(
                       width: 18,
                       height: 18,
+
                       child: CircularProgressIndicator(
                         strokeWidth: 2,
                         color: Colors.white,
                       ),
                     )
-                  : const Icon(Icons.file_download_outlined),
-              label: FittedBox(
-                fit: BoxFit.scaleDown,
-                child: Text(
-                  _isGenerating ? 'Generating...' : 'Generate & Export Excel',
-                  maxLines: 1,
-                  softWrap: false,
+                  : const Icon(Icons.file_download_outlined, size: 20),
+
+              label: Text(
+                _isGenerating
+                    ? 'Generating Report...'
+                    : 'Generate & Export Excel',
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: const TextStyle(
+                  fontWeight: FontWeight.w800,
+                  fontSize: 13,
                 ),
               ),
             ),
@@ -432,50 +753,98 @@ class _AnalystReportsScreenState extends State<AnalystReportsScreen> {
     );
   }
 
+  // ---------------------------------------------------------------------------
+  // REPORT FILTERS
+  // ---------------------------------------------------------------------------
+
+  Widget _buildFilters() {
+    if (_countries == null && !_countriesError) {
+      return _buildStatusCard(
+        icon: Icons.filter_alt_outlined,
+        title: 'Loading Report Filters',
+        message: 'Retrieving supported destination options...',
+        isLoading: true,
+        minimumHeight: 155,
+      );
+    }
+
+    if (_countries == null && _countriesError) {
+      return _buildStatusCard(
+        icon: Icons.cloud_off_outlined,
+        title: 'Unable to Load Filters',
+        message: 'Report filter options could not be retrieved.',
+        minimumHeight: 155,
+        onRetry: _retryCountries,
+      );
+    }
+
+    // Preserve the existing reusable AnalyticsFilterCard.
+    return AnalyticsFilterCard(
+      countries: _countries ?? [],
+      selectedDestinationId: _selectedDestinationId,
+      selectedPurpose: _selectedPurpose,
+      showDestination: _showDestinationFilter,
+      showPurpose: _showPurposeFilter,
+      onDestinationChanged: _changeDestination,
+      onPurposeChanged: _changePurpose,
+      onClear: _clearFilters,
+    );
+  }
+
+  // ---------------------------------------------------------------------------
+  // REPORT HISTORY
+  // ---------------------------------------------------------------------------
+
   Widget _buildHistory() {
-    return FutureBuilder<List<Map<String, dynamic>>>(
-      future: _historyFuture,
-      builder: (context, snapshot) {
-        if (snapshot.connectionState == ConnectionState.waiting) {
-          return const Padding(
-            padding: EdgeInsets.all(28),
-            child: Center(child: CircularProgressIndicator()),
-          );
-        }
+    final List<Map<String, dynamic>>? reports = _reportHistory;
 
-        if (snapshot.hasError) {
-          return _buildHistoryError();
-        }
+    if (reports == null && _historyError) {
+      return _buildStatusCard(
+        icon: Icons.cloud_off_outlined,
+        title: 'Unable to Load Report History',
+        message: 'Saved reports could not be retrieved.',
+        minimumHeight: 205,
+        onRetry: _retryHistory,
+      );
+    }
 
-        final List<Map<String, dynamic>> reports = snapshot.data ?? [];
+    if (reports == null) {
+      return _buildStatusCard(
+        icon: Icons.history_rounded,
+        title: 'Loading Report History',
+        message: 'Retrieving previously generated reports...',
+        minimumHeight: 205,
+        isLoading: true,
+      );
+    }
 
-        if (reports.isEmpty) {
-          return _buildEmptyHistory();
-        }
+    if (reports.isEmpty) {
+      return _buildStatusCard(
+        icon: Icons.insert_drive_file_outlined,
+        title: 'No Reports Generated Yet',
+        message: 'Generated analytics reports will appear here.',
+        minimumHeight: 205,
+      );
+    }
 
-        return Column(
-          children: [
-            for (int index = 0; index < reports.length; index++) ...[
-              _buildReportCard(reports[index]),
+    return Column(
+      children: [
+        for (int index = 0; index < reports.length; index++) ...[
+          _buildReportCard(reports[index]),
 
-              if (index != reports.length - 1) const SizedBox(height: 10),
-            ],
-          ],
-        );
-      },
+          if (index != reports.length - 1) const SizedBox(height: 11),
+        ],
+      ],
     );
   }
 
-  void _viewReport(Map<String, dynamic> report) {
-    Navigator.push(
-      context,
-      MaterialPageRoute(
-        builder: (context) => AnalystReportDetailsScreen(report: report),
-      ),
-    );
-  }
+  // ---------------------------------------------------------------------------
+  // INDIVIDUAL REPORT CARD
+  // ---------------------------------------------------------------------------
 
   Widget _buildReportCard(Map<String, dynamic> report) {
+    final String title = report['reportTitle'] as String? ?? 'Analytics Report';
+
     final String destination =
         report['destinationName'] as String? ?? 'All Destinations';
 
@@ -483,55 +852,58 @@ class _AnalystReportsScreenState extends State<AnalystReportsScreen> {
 
     return Container(
       width: double.infinity,
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: _borderColor),
-      ),
+      padding: const EdgeInsets.all(17),
+      decoration: _cardDecoration(),
+
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
+
         children: [
           Row(
             crossAxisAlignment: CrossAxisAlignment.start,
+
             children: [
-              Container(
-                width: 42,
-                height: 42,
-                decoration: BoxDecoration(
-                  color: const Color(0xFFE8F6F7),
-                  borderRadius: BorderRadius.circular(12),
-                ),
-                child: const Icon(
-                  Icons.table_chart_outlined,
-                  color: _primaryColor,
-                  size: 21,
-                ),
-              ),
+              const _ReportIcon(icon: Icons.table_chart_outlined, size: 46),
 
               const SizedBox(width: 12),
 
               Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
+
                   children: [
                     Text(
-                      report['reportTitle'] as String? ?? 'Analytics Report',
+                      title,
                       style: const TextStyle(
-                        fontSize: 13.5,
-                        fontWeight: FontWeight.w700,
-                        color: _darkTextColor,
+                        color: AppColors.navy,
+                        fontSize: 14,
+                        fontWeight: FontWeight.w800,
+                        height: 1.35,
                       ),
                     ),
 
-                    const SizedBox(height: 4),
+                    const SizedBox(height: 6),
 
-                    Text(
-                      _formatDate(report['generatedAt']),
-                      style: const TextStyle(
-                        fontSize: 10.5,
-                        color: Colors.black54,
-                      ),
+                    Row(
+                      children: [
+                        const Icon(
+                          Icons.schedule_outlined,
+                          color: AppColors.secondaryText,
+                          size: 14,
+                        ),
+
+                        const SizedBox(width: 5),
+
+                        Expanded(
+                          child: Text(
+                            _formatDate(report['generatedAt']),
+                            style: const TextStyle(
+                              color: AppColors.secondaryText,
+                              fontSize: 10.5,
+                            ),
+                          ),
+                        ),
+                      ],
                     ),
                   ],
                 ),
@@ -539,17 +911,24 @@ class _AnalystReportsScreenState extends State<AnalystReportsScreen> {
             ],
           ),
 
-          const SizedBox(height: 13),
+          const SizedBox(height: 15),
 
           Wrap(
-            spacing: 6,
-            runSpacing: 6,
+            spacing: 7,
+            runSpacing: 7,
+
             children: [
-              _buildChip(destination),
-              _buildChip(purpose),
-              _buildChip('Excel'),
+              _buildChip(destination, Icons.public_outlined),
+
+              _buildChip(purpose, Icons.work_outline_rounded),
+
+              _buildChip('Excel', Icons.table_chart_outlined),
             ],
           ),
+
+          const SizedBox(height: 16),
+
+          const Divider(height: 1, color: AppColors.border),
 
           const SizedBox(height: 14),
 
@@ -558,18 +937,35 @@ class _AnalystReportsScreenState extends State<AnalystReportsScreen> {
               Expanded(
                 child: OutlinedButton.icon(
                   style: OutlinedButton.styleFrom(
+                    foregroundColor: AppColors.primary,
+
+                    side: const BorderSide(color: AppColors.border),
+
                     padding: const EdgeInsets.symmetric(
-                      horizontal: 8,
+                      horizontal: 7,
                       vertical: 12,
                     ),
+
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(12),
+                    ),
                   ),
+
                   onPressed: () {
                     _viewReport(report);
                   },
-                  icon: const Icon(Icons.visibility_outlined, size: 18),
-                  label: const FittedBox(
-                    fit: BoxFit.scaleDown,
-                    child: Text('View Report', maxLines: 1, softWrap: false),
+
+                  icon: const Icon(Icons.visibility_outlined, size: 17),
+
+                  label: const Text(
+                    'View Report',
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+
+                    style: TextStyle(
+                      fontSize: 11.5,
+                      fontWeight: FontWeight.w800,
+                    ),
                   ),
                 ),
               ),
@@ -579,18 +975,34 @@ class _AnalystReportsScreenState extends State<AnalystReportsScreen> {
               Expanded(
                 child: FilledButton.icon(
                   style: FilledButton.styleFrom(
+                    backgroundColor: AppColors.primary,
+                    foregroundColor: Colors.white,
+
                     padding: const EdgeInsets.symmetric(
-                      horizontal: 8,
+                      horizontal: 7,
                       vertical: 12,
                     ),
+
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(12),
+                    ),
                   ),
+
                   onPressed: () {
                     _exportExcel(report);
                   },
-                  icon: const Icon(Icons.file_download_outlined, size: 18),
-                  label: const FittedBox(
-                    fit: BoxFit.scaleDown,
-                    child: Text('Export Excel', maxLines: 1, softWrap: false),
+
+                  icon: const Icon(Icons.file_download_outlined, size: 17),
+
+                  label: const Text(
+                    'Export Excel',
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+
+                    style: TextStyle(
+                      fontSize: 11.5,
+                      fontWeight: FontWeight.w800,
+                    ),
                   ),
                 ),
               ),
@@ -601,91 +1013,216 @@ class _AnalystReportsScreenState extends State<AnalystReportsScreen> {
     );
   }
 
-  Widget _buildChip(String label) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 5),
-      decoration: BoxDecoration(
-        color: const Color(0xFFF3F7F9),
-        borderRadius: BorderRadius.circular(20),
-        border: Border.all(color: _borderColor),
-      ),
-      child: Text(
-        label,
-        style: const TextStyle(
-          fontSize: 9.5,
-          color: Color(0xFF486581),
-          fontWeight: FontWeight.w600,
-        ),
-      ),
-    );
-  }
+  // ---------------------------------------------------------------------------
+  // REPORT INFORMATION CHIP
+  // ---------------------------------------------------------------------------
 
-  Widget _buildEmptyHistory() {
+  Widget _buildChip(String label, IconData icon) {
     return Container(
-      width: double.infinity,
-      padding: const EdgeInsets.symmetric(vertical: 38, horizontal: 24),
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
+
       decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(18),
-        border: Border.all(color: _borderColor),
+        color: AppColors.background,
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(color: AppColors.border),
       ),
-      child: const Column(
+
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+
         children: [
-          Icon(
-            Icons.insert_drive_file_outlined,
-            size: 42,
-            color: Colors.black38,
-          ),
-          SizedBox(height: 12),
-          Text(
-            'No reports generated yet',
-            style: TextStyle(
-              fontSize: 14,
-              fontWeight: FontWeight.w700,
-              color: _darkTextColor,
+          Icon(icon, color: AppColors.primary, size: 13),
+
+          const SizedBox(width: 5),
+
+          Flexible(
+            child: Text(
+              label,
+              style: const TextStyle(
+                color: AppColors.secondaryText,
+                fontSize: 10,
+                fontWeight: FontWeight.w600,
+              ),
             ),
           ),
-          SizedBox(height: 6),
-          Text(
-            'Generated analytics reports will '
-            'appear here.',
-            textAlign: TextAlign.center,
-            style: TextStyle(fontSize: 11.5, color: Colors.black54),
+        ],
+      ),
+    );
+  }
+
+  // ---------------------------------------------------------------------------
+  // REPORT INFORMATION CARD
+  // ---------------------------------------------------------------------------
+
+  Widget _buildInformationCard() {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(17),
+
+      decoration: BoxDecoration(
+        color: const Color(0xFFF1F6FA),
+        borderRadius: BorderRadius.circular(18),
+
+        border: Border.all(color: const Color(0xFFD8E6EE)),
+      ),
+
+      child: const Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+
+        children: [
+          Icon(Icons.info_outline_rounded, color: AppColors.primary, size: 24),
+
+          SizedBox(width: 12),
+
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+
+              children: [
+                Text(
+                  'About Analytics Reports',
+                  style: TextStyle(
+                    color: AppColors.navy,
+                    fontSize: 13.5,
+                    fontWeight: FontWeight.w800,
+                  ),
+                ),
+
+                SizedBox(height: 7),
+
+                Text(
+                  'Reports provide a snapshot of aggregated '
+                  'travel activity at the time of generation.',
+                  style: TextStyle(
+                    color: AppColors.secondaryText,
+                    fontSize: 12,
+                    height: 1.5,
+                  ),
+                ),
+
+                SizedBox(height: 9),
+
+                Text(
+                  'Previously generated reports can be viewed '
+                  'or exported again from Report History.',
+                  style: TextStyle(
+                    color: AppColors.secondaryText,
+                    fontSize: 11.5,
+                    height: 1.5,
+                  ),
+                ),
+              ],
+            ),
           ),
         ],
       ),
     );
   }
 
-  Widget _buildHistoryError() {
+  // ---------------------------------------------------------------------------
+  // LOADING / ERROR / EMPTY STATE
+  // ---------------------------------------------------------------------------
+
+  Widget _buildStatusCard({
+    required IconData icon,
+    required String title,
+    required String message,
+    bool isLoading = false,
+    double minimumHeight = 180,
+    VoidCallback? onRetry,
+  }) {
     return Container(
       width: double.infinity,
-      padding: const EdgeInsets.all(24),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(18),
-        border: Border.all(color: _borderColor),
-      ),
+
+      constraints: BoxConstraints(minHeight: minimumHeight),
+
+      padding: const EdgeInsets.all(20),
+      decoration: _cardDecoration(),
+
       child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+
         children: [
-          const Icon(
-            Icons.error_outline_rounded,
-            color: Colors.black45,
-            size: 36,
+          _ReportIcon(icon: icon, size: 52),
+
+          const SizedBox(height: 13),
+
+          Text(
+            title,
+            textAlign: TextAlign.center,
+
+            style: const TextStyle(
+              color: AppColors.navy,
+              fontSize: 14.5,
+              fontWeight: FontWeight.w800,
+            ),
           ),
-          const SizedBox(height: 8),
-          const Text('Unable to load report history.'),
-          const SizedBox(height: 10),
-          OutlinedButton(
-            onPressed: () {
-              setState(() {
-                _historyFuture = _reportService.getReportHistory();
-              });
-            },
-            child: const Text('Try Again'),
+
+          const SizedBox(height: 7),
+
+          Text(
+            message,
+            textAlign: TextAlign.center,
+
+            style: const TextStyle(
+              color: AppColors.secondaryText,
+              fontSize: 12,
+              height: 1.5,
+            ),
           ),
+
+          if (isLoading) ...[
+            const SizedBox(height: 17),
+
+            const CircularProgressIndicator(
+              color: AppColors.primary,
+              strokeWidth: 3,
+            ),
+          ],
+
+          if (onRetry != null) ...[
+            const SizedBox(height: 15),
+
+            OutlinedButton.icon(
+              onPressed: onRetry,
+
+              icon: const Icon(Icons.refresh_rounded, size: 18),
+
+              label: const Text('Try Again'),
+
+              style: OutlinedButton.styleFrom(
+                foregroundColor: AppColors.primary,
+              ),
+            ),
+          ],
         ],
       ),
+    );
+  }
+}
+
+// -----------------------------------------------------------------------------
+// REUSABLE REPORT ICON
+// -----------------------------------------------------------------------------
+
+class _ReportIcon extends StatelessWidget {
+  final IconData icon;
+  final double size;
+
+  const _ReportIcon({required this.icon, required this.size});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: size,
+      height: size,
+
+      decoration: BoxDecoration(
+        color: AppColors.primaryLight,
+        borderRadius: BorderRadius.circular(13),
+      ),
+
+      child: Icon(icon, color: AppColors.primary, size: size * 0.51),
     );
   }
 }

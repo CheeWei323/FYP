@@ -1,6 +1,8 @@
+
 import 'package:flutter/material.dart';
 
 import '../../services/analyst_service.dart';
+import '../../theme/app_theme.dart';
 import '../analyst/destination_trends_screen.dart';
 import '../analyst/purpose_distribution_screen.dart';
 import '../analyst/checklist_completion_screen.dart';
@@ -18,27 +20,65 @@ class AnalystDashboard extends StatefulWidget {
 class _AnalystDashboardState extends State<AnalystDashboard> {
   final AnalystService _analystService = AnalystService();
 
-  static const Color _primaryColor = Color(0xFF087F8C);
-
-  static const Color _darkTextColor = Color(0xFF102A43);
-
-  static const Color _backgroundColor = Color(0xFFF7F9FB);
-
-  static const Color _borderColor = Color(0xFFE1E7EC);
-
-  late Future<Map<String, dynamic>> _overviewFuture;
-
   int _selectedIndex = 0;
 
-  // ---------------------------------------------------------------------------
-  // LIFECYCLE
-  // ---------------------------------------------------------------------------
+  // Cache Firestore analytics to prevent unnecessary
+  // loading-state changes during scrolling.
+  Map<String, dynamic>? _overviewData;
+
+  bool _overviewError = false;
+
+  // Prevent older Firestore requests from replacing newer data.
+  int _requestVersion = 0;
 
   @override
   void initState() {
     super.initState();
+    _loadOverview();
+  }
 
-    _overviewFuture = _analystService.getOverview();
+  // ---------------------------------------------------------------------------
+  // LOAD ANALYTICS OVERVIEW
+  // ---------------------------------------------------------------------------
+
+  Future<void> _loadOverview() async {
+    final int requestVersion = ++_requestVersion;
+
+    try {
+      final Map<String, dynamic> overview =
+      await _analystService.getOverview();
+
+      if (!mounted || requestVersion != _requestVersion) {
+        return;
+      }
+
+      setState(() {
+        _overviewData = overview;
+        _overviewError = false;
+      });
+    } catch (error) {
+      debugPrint('ANALYST OVERVIEW ERROR: $error');
+
+      if (!mounted || requestVersion != _requestVersion) {
+        return;
+      }
+
+      setState(() {
+        _overviewError = true;
+      });
+
+      // Preserve previously loaded statistics if refresh fails.
+      if (_overviewData != null && _selectedIndex == 0) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text(
+              'Unable to refresh analytics. '
+                  'Showing the last loaded data.',
+            ),
+          ),
+        );
+      }
+    }
   }
 
   // ---------------------------------------------------------------------------
@@ -46,35 +86,72 @@ class _AnalystDashboardState extends State<AnalystDashboard> {
   // ---------------------------------------------------------------------------
 
   Future<void> _refresh() async {
-    final Future<Map<String, dynamic>> future = _analystService.getOverview();
-
-    setState(() {
-      _overviewFuture = future;
-    });
-
-    await future;
+    await _loadOverview();
   }
 
   // ---------------------------------------------------------------------------
-  // SCREEN
+  // NAVIGATION
+  // ---------------------------------------------------------------------------
+
+  Future<void> _openAnalyticsScreen(Widget screen) async {
+    await Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (context) => screen,
+      ),
+    );
+  }
+
+  // ---------------------------------------------------------------------------
+  // SHARED CARD DECORATION
+  // ---------------------------------------------------------------------------
+
+  BoxDecoration _cardDecoration({
+    Color color = Colors.white,
+  }) {
+    return BoxDecoration(
+      color: color,
+      borderRadius: BorderRadius.circular(20),
+      border: Border.all(
+        color: AppColors.border,
+      ),
+      boxShadow: const [
+        BoxShadow(
+          color: Color(0x08000000),
+          blurRadius: 12,
+          offset: Offset(0, 4),
+        ),
+      ],
+    );
+  }
+
+  // ---------------------------------------------------------------------------
+  // MAIN SCREEN
   // ---------------------------------------------------------------------------
 
   @override
   Widget build(BuildContext context) {
-    const List<String> titles = ['Tourism Data Analyst', 'Reports', 'Profile'];
+    const List<String> titles = [
+      'Tourism Data Analyst',
+      'Reports',
+      'Profile',
+    ];
 
     return Scaffold(
-      backgroundColor: _backgroundColor,
+      backgroundColor: AppColors.background,
+
       appBar: AppBar(
         automaticallyImplyLeading: false,
         backgroundColor: Colors.white,
         surfaceTintColor: Colors.white,
         elevation: 0,
+        foregroundColor: AppColors.navy,
+
         title: Text(
           titles[_selectedIndex],
           style: const TextStyle(
-            color: _darkTextColor,
-            fontWeight: FontWeight.w700,
+            color: AppColors.navy,
+            fontWeight: FontWeight.w800,
           ),
         ),
       ),
@@ -91,28 +168,45 @@ class _AnalystDashboardState extends State<AnalystDashboard> {
       bottomNavigationBar: NavigationBar(
         selectedIndex: _selectedIndex,
         backgroundColor: Colors.white,
-        indicatorColor: const Color(0xFFDDF3F4),
+        indicatorColor: AppColors.primaryLight,
+
         onDestinationSelected: (index) {
           setState(() {
             _selectedIndex = index;
           });
         },
+
         destinations: const [
           NavigationDestination(
-            icon: Icon(Icons.dashboard_outlined),
-            selectedIcon: Icon(Icons.dashboard_rounded),
+            icon: Icon(
+              Icons.dashboard_outlined,
+            ),
+            selectedIcon: Icon(
+              Icons.dashboard_rounded,
+              color: AppColors.primary,
+            ),
             label: 'Dashboard',
           ),
 
           NavigationDestination(
-            icon: Icon(Icons.description_outlined),
-            selectedIcon: Icon(Icons.description_rounded),
+            icon: Icon(
+              Icons.description_outlined,
+            ),
+            selectedIcon: Icon(
+              Icons.description_rounded,
+              color: AppColors.primary,
+            ),
             label: 'Reports',
           ),
 
           NavigationDestination(
-            icon: Icon(Icons.person_outline_rounded),
-            selectedIcon: Icon(Icons.person_rounded),
+            icon: Icon(
+              Icons.person_outline_rounded,
+            ),
+            selectedIcon: Icon(
+              Icons.person_rounded,
+              color: AppColors.primary,
+            ),
             label: 'Profile',
           ),
         ],
@@ -120,127 +214,136 @@ class _AnalystDashboardState extends State<AnalystDashboard> {
     );
   }
 
+  // ---------------------------------------------------------------------------
+  // DASHBOARD TAB
+  // ---------------------------------------------------------------------------
+
   Widget _buildDashboardTab() {
     return SafeArea(
       child: RefreshIndicator(
+        color: AppColors.primary,
         onRefresh: _refresh,
+
         child: ListView(
-          physics: const AlwaysScrollableScrollPhysics(),
-          padding: const EdgeInsets.fromLTRB(18, 18, 18, 36),
+          physics: const AlwaysScrollableScrollPhysics(
+            parent: ClampingScrollPhysics(),
+          ),
+
+          padding: const EdgeInsets.fromLTRB(
+            18,
+            18,
+            18,
+            36,
+          ),
+
           children: [
             _buildWelcomeCard(),
 
             const SizedBox(height: 26),
 
-            const Text(
+            _buildSectionTitle(
               'Analytics Overview',
-              style: TextStyle(
-                fontSize: 18,
-                fontWeight: FontWeight.w800,
-                color: _darkTextColor,
-              ),
             ),
 
             const SizedBox(height: 5),
 
             const Text(
-              'Aggregated travel activity '
-              'across supported destinations.',
-              style: TextStyle(fontSize: 12.5, color: Colors.black54),
+              'Aggregated travel activity across '
+                  'supported destinations.',
+              style: TextStyle(
+                color: AppColors.secondaryText,
+                fontSize: 12.5,
+                height: 1.4,
+              ),
             ),
 
             const SizedBox(height: 14),
 
             _buildOverview(),
 
-            const SizedBox(height: 28),
+            const SizedBox(height: 27),
+
+            _buildSectionTitle(
+              'Analytics Modules',
+            ),
+
+            const SizedBox(height: 5),
 
             const Text(
-              'Analytics Modules',
+              'Explore travel trends and preparation insights.',
               style: TextStyle(
-                fontSize: 18,
-                fontWeight: FontWeight.w800,
-                color: _darkTextColor,
+                color: AppColors.secondaryText,
+                fontSize: 12.5,
               ),
             ),
 
-            const SizedBox(height: 12),
+            const SizedBox(height: 14),
 
             _buildAnalyticsModuleCard(
               icon: Icons.public_outlined,
               title: 'Destination Trends',
               description:
-                  'Analyse popular destinations and '
+              'Analyse popular destinations and '
                   'monthly departure activity.',
-              available: true,
               onTap: () {
-                Navigator.push(
-                  context,
-                  MaterialPageRoute(
-                    builder: (context) => const DestinationTrendsScreen(),
-                  ),
+                _openAnalyticsScreen(
+                  const DestinationTrendsScreen(),
                 );
               },
             ),
 
-            const SizedBox(height: 10),
+            const SizedBox(height: 11),
 
             _buildAnalyticsModuleCard(
               icon: Icons.donut_large_outlined,
               title: 'Travel Purpose Distribution',
               description:
-                  'Compare tourism, business and '
+              'Compare tourism, business and '
                   'study travel patterns.',
-              available: true,
               onTap: () {
-                Navigator.push(
-                  context,
-                  MaterialPageRoute(
-                    builder: (context) => const PurposeDistributionScreen(),
-                  ),
+                _openAnalyticsScreen(
+                  const PurposeDistributionScreen(),
                 );
               },
             ),
 
-            const SizedBox(height: 10),
+            const SizedBox(height: 11),
 
             _buildAnalyticsModuleCard(
               icon: Icons.task_alt_outlined,
               title: 'Checklist Completion',
               description:
-                  'Analyse aggregated checklist completion '
+              'Analyse aggregated checklist completion '
                   'and lower-completion requirements.',
-              available: true,
               onTap: () {
-                Navigator.push(
-                  context,
-                  MaterialPageRoute(
-                    builder: (context) => const ChecklistCompletionScreen(),
-                  ),
+                _openAnalyticsScreen(
+                  const ChecklistCompletionScreen(),
                 );
               },
             ),
 
-            const SizedBox(height: 10),
+            const SizedBox(height: 11),
 
             _buildAnalyticsModuleCard(
               icon: Icons.insights_outlined,
               title: 'Requirement Patterns',
               description:
-                  'Explore commonly generated requirements '
+              'Explore commonly generated requirements '
                   'by traveller segment.',
-              available: true,
               onTap: () {
-                Navigator.push(
-                  context,
-                  MaterialPageRoute(
-                    builder: (context) => const PreparationRequirementsScreen(),
-                  ),
+                _openAnalyticsScreen(
+                  const PreparationRequirementsScreen(),
                 );
               },
             ),
 
-            const SizedBox(height: 28),
+            const SizedBox(height: 27),
+
+            _buildSectionTitle(
+              'Data Privacy',
+            ),
+
+            const SizedBox(height: 12),
 
             _buildInformationCard(),
           ],
@@ -250,56 +353,110 @@ class _AnalystDashboardState extends State<AnalystDashboard> {
   }
 
   // ---------------------------------------------------------------------------
-  // WELCOME
+  // SECTION TITLE
+  // ---------------------------------------------------------------------------
+
+  Widget _buildSectionTitle(String title) {
+    return Text(
+      title,
+      style: const TextStyle(
+        color: AppColors.navy,
+        fontSize: 18,
+        fontWeight: FontWeight.w800,
+      ),
+    );
+  }
+
+  // ---------------------------------------------------------------------------
+  // WELCOME CARD
   // ---------------------------------------------------------------------------
 
   Widget _buildWelcomeCard() {
     return Container(
       width: double.infinity,
       padding: const EdgeInsets.all(20),
-      decoration: BoxDecoration(
-        gradient: const LinearGradient(
-          colors: [Color(0xFFE7F7F8), Color(0xFFF1F8FB)],
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-        ),
-        borderRadius: BorderRadius.circular(20),
-        border: Border.all(color: const Color(0xFFCBE8EB)),
-      ),
-      child: const Row(
+      decoration: _cardDecoration(),
+
+      child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
+
         children: [
-          Icon(Icons.analytics_outlined, color: _primaryColor, size: 32),
+          const Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
 
-          SizedBox(width: 14),
+            children: [
+              _AnalystDashboardIcon(
+                icon: Icons.analytics_outlined,
+                size: 52,
+              ),
 
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  'TravelGuard MY Analytics',
+              SizedBox(width: 14),
+
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+
+                  children: [
+                    Text(
+                      'Analytics Workspace',
+                      style: TextStyle(
+                        color: AppColors.navy,
+                        fontSize: 19,
+                        fontWeight: FontWeight.w800,
+                      ),
+                    ),
+
+                    SizedBox(height: 7),
+
+                    Text(
+                      'Explore travel preparation trends, '
+                          'compare traveller patterns and '
+                          'review aggregated insights.',
+                      style: TextStyle(
+                        color: AppColors.secondaryText,
+                        fontSize: 12.5,
+                        height: 1.5,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+
+          const SizedBox(height: 18),
+
+          const Divider(
+            height: 1,
+            color: AppColors.border,
+          ),
+
+          const SizedBox(height: 13),
+
+          const Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+
+            children: [
+              Icon(
+                Icons.shield_outlined,
+                color: AppColors.primary,
+                size: 18,
+              ),
+
+              SizedBox(width: 9),
+
+              Expanded(
+                child: Text(
+                  'Analytics are read-only and focus on '
+                      'aggregated travel preparation data.',
                   style: TextStyle(
-                    fontSize: 21,
-                    fontWeight: FontWeight.w800,
-                    color: _darkTextColor,
+                    color: AppColors.secondaryText,
+                    fontSize: 12,
+                    height: 1.5,
                   ),
                 ),
-
-                SizedBox(height: 6),
-
-                Text(
-                  'Explore aggregated travel preparation '
-                  'patterns without displaying individual '
-                  'traveller information.',
-                  style: TextStyle(
-                    fontSize: 13.5,
-                    height: 1.45,
-                    color: Colors.black54,
-                  ),
-                ),
-              ],
-            ),
+              ),
+            ],
           ),
         ],
       ),
@@ -307,97 +464,89 @@ class _AnalystDashboardState extends State<AnalystDashboard> {
   }
 
   // ---------------------------------------------------------------------------
-  // OVERVIEW
+  // ANALYTICS OVERVIEW
   // ---------------------------------------------------------------------------
 
   Widget _buildOverview() {
-    return FutureBuilder<Map<String, dynamic>>(
-      future: _overviewFuture,
-      builder: (context, snapshot) {
-        if (snapshot.connectionState == ConnectionState.waiting) {
-          return Container(
-            height: 230,
-            decoration: BoxDecoration(
-              color: Colors.white,
-              borderRadius: BorderRadius.circular(18),
-              border: Border.all(color: _borderColor),
-            ),
-            child: const Center(child: CircularProgressIndicator()),
-          );
-        }
+    // Show a retry option when the initial Firestore request fails.
+    if (_overviewData == null && _overviewError) {
+      return _buildOverviewErrorCard();
+    }
 
-        if (snapshot.hasError) {
-          return Container(
-            width: double.infinity,
-            padding: const EdgeInsets.all(20),
-            decoration: BoxDecoration(
-              color: Colors.white,
-              borderRadius: BorderRadius.circular(18),
-              border: Border.all(color: _borderColor),
-            ),
-            child: const Text(
-              'Unable to load analytics overview.',
-              textAlign: TextAlign.center,
-              style: TextStyle(color: Colors.black54),
-            ),
-          );
-        }
+    final Map<String, dynamic>? data = _overviewData;
 
-        final Map<String, dynamic> data = snapshot.data ?? {};
+    // Display placeholders while the first request loads.
+    // The statistics grid keeps the same dimensions before
+    // and after data arrives.
+    final String totalTrips =
+    data == null ? '—' : '${data['totalTrips'] ?? 0}';
 
-        return Column(
+    final String uniqueTravellers =
+    data == null ? '—' : '${data['uniqueTravellers'] ?? 0}';
+
+    final String topDestination = data == null
+        ? '—'
+        : '${data['topDestination'] ?? 'No trip data'}';
+
+    final String supportedDestinations = data == null
+        ? '—'
+        : '${data['supportedDestinations'] ?? 0}';
+
+    return Column(
+      children: [
+        Row(
           children: [
-            Row(
-              children: [
-                Expanded(
-                  child: _buildOverviewCard(
-                    icon: Icons.flight_takeoff_outlined,
-                    value: '${data['totalTrips'] ?? 0}',
-                    label: 'Total Trips',
-                  ),
-                ),
-
-                const SizedBox(width: 10),
-
-                Expanded(
-                  child: _buildOverviewCard(
-                    icon: Icons.groups_outlined,
-                    value: '${data['uniqueTravellers'] ?? 0}',
-                    label: 'Travellers',
-                  ),
-                ),
-              ],
+            Expanded(
+              child: _buildOverviewCard(
+                icon: Icons.flight_takeoff_outlined,
+                value: totalTrips,
+                label: 'Total Trips',
+              ),
             ),
 
-            const SizedBox(height: 10),
+            const SizedBox(width: 11),
 
-            Row(
-              children: [
-                Expanded(
-                  child: _buildOverviewCard(
-                    icon: Icons.location_on_outlined,
-                    value: '${data['topDestination'] ?? 'No trip data'}',
-                    label: 'Top Destination',
-                    compactValue: true,
-                  ),
-                ),
-
-                const SizedBox(width: 10),
-
-                Expanded(
-                  child: _buildOverviewCard(
-                    icon: Icons.public_outlined,
-                    value: '${data['supportedDestinations'] ?? 0}',
-                    label: 'Destinations',
-                  ),
-                ),
-              ],
+            Expanded(
+              child: _buildOverviewCard(
+                icon: Icons.groups_outlined,
+                value: uniqueTravellers,
+                label: 'Travellers',
+              ),
             ),
           ],
-        );
-      },
+        ),
+
+        const SizedBox(height: 11),
+
+        Row(
+          children: [
+            Expanded(
+              child: _buildOverviewCard(
+                icon: Icons.location_on_outlined,
+                value: topDestination,
+                label: 'Top Destination',
+                compactValue: true,
+              ),
+            ),
+
+            const SizedBox(width: 11),
+
+            Expanded(
+              child: _buildOverviewCard(
+                icon: Icons.public_outlined,
+                value: supportedDestinations,
+                label: 'Destinations',
+              ),
+            ),
+          ],
+        ),
+      ],
     );
   }
+
+  // ---------------------------------------------------------------------------
+  // OVERVIEW STATISTIC CARD
+  // ---------------------------------------------------------------------------
 
   Widget _buildOverviewCard({
     required IconData icon,
@@ -406,39 +555,66 @@ class _AnalystDashboardState extends State<AnalystDashboard> {
     bool compactValue = false,
   }) {
     return Container(
-      constraints: const BoxConstraints(minHeight: 118),
-      padding: const EdgeInsets.all(14),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: _borderColor),
+      width: double.infinity,
+      height: 144,
+
+      padding: const EdgeInsets.symmetric(
+        horizontal: 10,
+        vertical: 13,
       ),
+
+      decoration: _cardDecoration(),
+
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          Icon(icon, color: _primaryColor, size: 23),
 
-          const SizedBox(height: 7),
+        children: [
+          Container(
+            width: 39,
+            height: 39,
+
+            decoration: BoxDecoration(
+              color: AppColors.primaryLight,
+              borderRadius: BorderRadius.circular(12),
+            ),
+
+            child: Icon(
+              icon,
+              color: AppColors.primary,
+              size: 21,
+            ),
+          ),
+
+          const SizedBox(height: 11),
 
           Text(
             value,
             maxLines: compactValue ? 2 : 1,
             overflow: TextOverflow.ellipsis,
             textAlign: TextAlign.center,
+
             style: TextStyle(
-              fontSize: compactValue ? 15 : 21,
+              color: AppColors.navy,
+              fontSize: compactValue ? 15 : 24,
               fontWeight: FontWeight.w800,
-              color: _darkTextColor,
-              height: 1.15,
+              height: 1.2,
             ),
           ),
 
-          const SizedBox(height: 4),
+          const SizedBox(height: 6),
 
           Text(
             label,
+            maxLines: 2,
+            overflow: TextOverflow.ellipsis,
             textAlign: TextAlign.center,
-            style: const TextStyle(fontSize: 10.5, color: Colors.black54),
+
+            style: const TextStyle(
+              color: AppColors.secondaryText,
+              fontSize: 11,
+              fontWeight: FontWeight.w600,
+              height: 1.3,
+            ),
           ),
         ],
       ),
@@ -446,92 +622,143 @@ class _AnalystDashboardState extends State<AnalystDashboard> {
   }
 
   // ---------------------------------------------------------------------------
-  // ANALYTICS MODULES
+  // OVERVIEW ERROR
+  // ---------------------------------------------------------------------------
+
+  Widget _buildOverviewErrorCard() {
+    return Container(
+      width: double.infinity,
+      height: 299,
+      padding: const EdgeInsets.all(20),
+      decoration: _cardDecoration(),
+
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+
+        children: [
+          const _AnalystDashboardIcon(
+            icon: Icons.cloud_off_outlined,
+            size: 55,
+          ),
+
+          const SizedBox(height: 14),
+
+          const Text(
+            'Unable to Load Analytics',
+            textAlign: TextAlign.center,
+
+            style: TextStyle(
+              color: AppColors.navy,
+              fontSize: 15,
+              fontWeight: FontWeight.w800,
+            ),
+          ),
+
+          const SizedBox(height: 8),
+
+          const Text(
+            'The analytics overview could not be '
+                'retrieved. Check your connection and try again.',
+            textAlign: TextAlign.center,
+
+            style: TextStyle(
+              color: AppColors.secondaryText,
+              fontSize: 12,
+              height: 1.5,
+            ),
+          ),
+
+          const SizedBox(height: 18),
+
+          OutlinedButton.icon(
+            onPressed: () {
+              _loadOverview();
+            },
+            icon: const Icon(
+              Icons.refresh_rounded,
+              size: 18,
+            ),
+            label: const Text('Try Again'),
+            style: OutlinedButton.styleFrom(
+              foregroundColor: AppColors.primary,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  // ---------------------------------------------------------------------------
+  // ANALYTICS MODULE CARD
   // ---------------------------------------------------------------------------
 
   Widget _buildAnalyticsModuleCard({
     required IconData icon,
     required String title,
     required String description,
-    VoidCallback? onTap,
-    bool available = false,
+    required VoidCallback onTap,
   }) {
     return Material(
       color: Colors.transparent,
-      child: InkWell(
-        onTap: available ? onTap : null,
-        borderRadius: BorderRadius.circular(17),
-        child: Ink(
-          width: double.infinity,
-          padding: const EdgeInsets.all(17),
-          decoration: BoxDecoration(
-            color: Colors.white,
-            borderRadius: BorderRadius.circular(17),
-            border: Border.all(color: _borderColor),
-          ),
-          child: Row(
-            children: [
-              Container(
-                width: 48,
-                height: 48,
-                decoration: BoxDecoration(
-                  color: const Color(0xFFE8F6F7),
-                  borderRadius: BorderRadius.circular(14),
+
+      child: Ink(
+        decoration: _cardDecoration(),
+
+        child: InkWell(
+          onTap: onTap,
+          borderRadius: BorderRadius.circular(20),
+
+          child: Padding(
+            padding: const EdgeInsets.all(17),
+
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.center,
+
+              children: [
+                _AnalystDashboardIcon(
+                  icon: icon,
+                  size: 49,
                 ),
-                child: Icon(icon, color: _primaryColor, size: 24),
-              ),
 
-              const SizedBox(width: 14),
+                const SizedBox(width: 14),
 
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      title,
-                      style: const TextStyle(
-                        fontSize: 15,
-                        fontWeight: FontWeight.w700,
-                        color: _darkTextColor,
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+
+                    children: [
+                      Text(
+                        title,
+                        style: const TextStyle(
+                          color: AppColors.navy,
+                          fontSize: 14.5,
+                          fontWeight: FontWeight.w800,
+                        ),
                       ),
-                    ),
 
-                    const SizedBox(height: 4),
+                      const SizedBox(height: 5),
 
-                    Text(
-                      description,
-                      style: const TextStyle(
-                        fontSize: 11.5,
-                        height: 1.4,
-                        color: Colors.black54,
+                      Text(
+                        description,
+                        style: const TextStyle(
+                          color: AppColors.secondaryText,
+                          fontSize: 11.5,
+                          height: 1.45,
+                        ),
                       ),
-                    ),
-                  ],
+                    ],
+                  ),
                 ),
-              ),
 
-              if (available)
-                const Icon(Icons.chevron_right_rounded, color: Colors.black38)
-              else
-                Container(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 8,
-                    vertical: 5,
-                  ),
-                  decoration: BoxDecoration(
-                    color: const Color(0xFFF0F4F6),
-                    borderRadius: BorderRadius.circular(20),
-                  ),
-                  child: const Text(
-                    'NEXT',
-                    style: TextStyle(
-                      fontSize: 9,
-                      fontWeight: FontWeight.w800,
-                      color: Color(0xFF627D98),
-                    ),
-                  ),
+                const SizedBox(width: 8),
+
+                const Icon(
+                  Icons.chevron_right_rounded,
+                  color: AppColors.secondaryText,
+                  size: 23,
                 ),
-            ],
+              ],
+            ),
           ),
         ),
       ),
@@ -539,39 +766,137 @@ class _AnalystDashboardState extends State<AnalystDashboard> {
   }
 
   // ---------------------------------------------------------------------------
-  // INFORMATION
+  // DATA PRIVACY INFORMATION
   // ---------------------------------------------------------------------------
 
   Widget _buildInformationCard() {
     return Container(
       width: double.infinity,
-      padding: const EdgeInsets.all(18),
+      padding: const EdgeInsets.all(17),
+
       decoration: BoxDecoration(
         color: const Color(0xFFF1F6FA),
-        borderRadius: BorderRadius.circular(17),
-        border: Border.all(color: const Color(0xFFD8E6EE)),
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(
+          color: const Color(0xFFD8E6EE),
+        ),
       ),
-      child: const Row(
+
+      child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
+
         children: [
-          Icon(Icons.privacy_tip_outlined, color: _primaryColor, size: 24),
+          const Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
 
-          SizedBox(width: 13),
-
-          Expanded(
-            child: Text(
-              'Analytics are generated from aggregated '
-              'stored travel records and are read-only. '
-              'Individual traveller names and email '
-              'addresses are not displayed.',
-              style: TextStyle(
-                fontSize: 12.5,
-                height: 1.5,
-                color: Color(0xFF334E68),
+            children: [
+              Icon(
+                Icons.privacy_tip_outlined,
+                color: AppColors.primary,
+                size: 25,
               ),
-            ),
+
+              SizedBox(width: 12),
+
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+
+                  children: [
+                    Text(
+                      'Aggregated Analytics',
+                      style: TextStyle(
+                        color: AppColors.navy,
+                        fontSize: 14,
+                        fontWeight: FontWeight.w800,
+                      ),
+                    ),
+
+                    SizedBox(height: 7),
+
+                    Text(
+                      'Analytics are generated from aggregated '
+                          'stored travel records and are read-only.',
+                      style: TextStyle(
+                        color: AppColors.secondaryText,
+                        fontSize: 12.5,
+                        height: 1.5,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+
+          const SizedBox(height: 14),
+
+          const Divider(
+            height: 1,
+            color: Color(0xFFD8E6EE),
+          ),
+
+          const SizedBox(height: 12),
+
+          const Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+
+            children: [
+              Icon(
+                Icons.verified_user_outlined,
+                color: AppColors.primary,
+                size: 18,
+              ),
+
+              SizedBox(width: 9),
+
+              Expanded(
+                child: Text(
+                  'Individual traveller names and email '
+                      'addresses are not displayed.',
+                  style: TextStyle(
+                    color: AppColors.secondaryText,
+                    fontSize: 12,
+                    height: 1.5,
+                  ),
+                ),
+              ),
+            ],
           ),
         ],
+      ),
+    );
+  }
+}
+
+// -----------------------------------------------------------------------------
+// REUSABLE ANALYST DASHBOARD ICON
+// -----------------------------------------------------------------------------
+
+class _AnalystDashboardIcon extends StatelessWidget {
+  final IconData icon;
+  final double size;
+
+  const _AnalystDashboardIcon({
+    required this.icon,
+    required this.size,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: size,
+      height: size,
+
+      decoration: BoxDecoration(
+        color: AppColors.primaryLight,
+        borderRadius: BorderRadius.circular(13),
+      ),
+
+      child: Icon(
+        icon,
+        color: AppColors.primary,
+        size: size * 0.51,
       ),
     );
   }

@@ -3,6 +3,7 @@ import 'dart:math' as math;
 import 'package:flutter/material.dart';
 
 import '../../services/analyst_service.dart';
+import '../../theme/app_theme.dart';
 
 class DestinationTrendsScreen extends StatefulWidget {
   const DestinationTrendsScreen({super.key});
@@ -15,216 +16,225 @@ class DestinationTrendsScreen extends StatefulWidget {
 class _DestinationTrendsScreenState extends State<DestinationTrendsScreen> {
   final AnalystService _analystService = AnalystService();
 
-  static const Color _primaryColor = Color(0xFF087F8C);
+  // Cached Firestore analytics.
+  List<Map<String, dynamic>>? _destinations;
+  List<Map<String, dynamic>>? _monthlyTrends;
 
-  static const Color _darkTextColor = Color(0xFF102A43);
+  bool _destinationError = false;
+  bool _monthlyError = false;
 
-  static const Color _backgroundColor = Color(0xFFF7F9FB);
-
-  static const Color _borderColor = Color(0xFFE1E7EC);
-
-  static const Color _barColor = Color(0xFF2F5F98);
-
-  late Future<List<Map<String, dynamic>>> _trendsFuture;
-
-  late Future<List<Map<String, dynamic>>> _monthlyTrendFuture;
+  // Prevent older requests from overwriting newer data.
+  int _requestVersion = 0;
 
   @override
   void initState() {
     super.initState();
-
-    _trendsFuture = _analystService.getDestinationTrends();
-
-    _monthlyTrendFuture = _analystService.getMonthlyDepartureTrend();
+    _loadTrends();
   }
 
-  Future<void> _refresh() async {
-    final Future<List<Map<String, dynamic>>> destinationFuture = _analystService
-        .getDestinationTrends();
+  // ---------------------------------------------------------------------------
+  // LOAD ANALYTICS
+  // ---------------------------------------------------------------------------
 
-    final Future<List<Map<String, dynamic>>> monthlyFuture = _analystService
-        .getMonthlyDepartureTrend();
+  Future<void> _loadTrends() async {
+    final int requestVersion = ++_requestVersion;
+
+    List<Map<String, dynamic>>? updatedDestinations;
+    List<Map<String, dynamic>>? updatedMonthlyTrends;
+
+    bool destinationFailed = false;
+    bool monthlyFailed = false;
+
+    Future<void> fetchDestinations() async {
+      try {
+        updatedDestinations = await _analystService.getDestinationTrends();
+      } catch (error) {
+        destinationFailed = true;
+        debugPrint('DESTINATION ANALYTICS ERROR: $error');
+      }
+    }
+
+    Future<void> fetchMonthlyTrends() async {
+      try {
+        updatedMonthlyTrends = await _analystService.getMonthlyDepartureTrend();
+      } catch (error) {
+        monthlyFailed = true;
+        debugPrint('MONTHLY TREND ERROR: $error');
+      }
+    }
+
+    // Fetch both analytics datasets concurrently.
+    await Future.wait<void>([fetchDestinations(), fetchMonthlyTrends()]);
+
+    if (!mounted || requestVersion != _requestVersion) {
+      return;
+    }
+
+    final bool hadCachedData = _destinations != null || _monthlyTrends != null;
 
     setState(() {
-      _trendsFuture = destinationFuture;
+      if (updatedDestinations != null) {
+        _destinations = updatedDestinations;
+      }
 
-      _monthlyTrendFuture = monthlyFuture;
+      if (updatedMonthlyTrends != null) {
+        _monthlyTrends = updatedMonthlyTrends;
+      }
+
+      _destinationError = destinationFailed;
+      _monthlyError = monthlyFailed;
     });
 
-    await destinationFuture;
-    await monthlyFuture;
+    // Keep existing data visible if refreshing fails.
+    if (hadCachedData && (destinationFailed || monthlyFailed)) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text(
+            'Some analytics could not be refreshed. '
+            'Previously loaded data is still displayed.',
+          ),
+        ),
+      );
+    }
   }
+
+  // ---------------------------------------------------------------------------
+  // REFRESH
+  // ---------------------------------------------------------------------------
+
+  Future<void> _refresh() async {
+    await _loadTrends();
+  }
+
+  // ---------------------------------------------------------------------------
+  // DATA HELPERS
+  // ---------------------------------------------------------------------------
+
+  int _getCount(Map<String, dynamic> item) {
+    final dynamic value = item['count'];
+
+    if (value is num) {
+      return value.toInt();
+    }
+
+    return 0;
+  }
+
+  double _getPercentage(Map<String, dynamic> item) {
+    final dynamic value = item['percentage'];
+
+    if (value is num) {
+      return value.toDouble();
+    }
+
+    return 0;
+  }
+
+  int _getTotalTrips(List<Map<String, dynamic>> destinations) {
+    return destinations.fold<int>(0, (total, item) => total + _getCount(item));
+  }
+
+  Map<String, dynamic>? _getTopDestination(
+    List<Map<String, dynamic>> destinations,
+  ) {
+    if (destinations.isEmpty) {
+      return null;
+    }
+
+    Map<String, dynamic> top = destinations.first;
+
+    for (final Map<String, dynamic> item in destinations) {
+      if (_getCount(item) > _getCount(top)) {
+        top = item;
+      }
+    }
+
+    return _getCount(top) > 0 ? top : null;
+  }
+
+  // ---------------------------------------------------------------------------
+  // SHARED CARD DECORATION
+  // ---------------------------------------------------------------------------
+
+  BoxDecoration _cardDecoration({Color color = Colors.white}) {
+    return BoxDecoration(
+      color: color,
+      borderRadius: BorderRadius.circular(20),
+      border: Border.all(color: AppColors.border),
+      boxShadow: const [
+        BoxShadow(
+          color: Color(0x08000000),
+          blurRadius: 12,
+          offset: Offset(0, 4),
+        ),
+      ],
+    );
+  }
+
+  // ---------------------------------------------------------------------------
+  // MAIN SCREEN
+  // ---------------------------------------------------------------------------
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: _backgroundColor,
+      backgroundColor: AppColors.background,
+
       appBar: AppBar(
         backgroundColor: Colors.white,
         surfaceTintColor: Colors.white,
-        foregroundColor: _darkTextColor,
+        foregroundColor: AppColors.navy,
         elevation: 0,
+
         title: const Text(
           'Destination Trends',
-          style: TextStyle(fontWeight: FontWeight.w700),
+          style: TextStyle(color: AppColors.navy, fontWeight: FontWeight.w800),
         ),
       ),
+
       body: SafeArea(
         child: RefreshIndicator(
+          color: AppColors.primary,
           onRefresh: _refresh,
-          child: FutureBuilder<List<Map<String, dynamic>>>(
-            future: _trendsFuture,
-            builder: (context, destinationSnapshot) {
-              if (destinationSnapshot.connectionState ==
-                  ConnectionState.waiting) {
-                return const Center(child: CircularProgressIndicator());
-              }
 
-              if (destinationSnapshot.hasError) {
-                debugPrint(
-                  'DESTINATION ANALYTICS ERROR: '
-                  '${destinationSnapshot.error}',
-                );
+          child: ListView(
+            physics: const AlwaysScrollableScrollPhysics(
+              parent: ClampingScrollPhysics(),
+            ),
 
-                return ListView(
-                  physics: const AlwaysScrollableScrollPhysics(),
-                  padding: const EdgeInsets.all(24),
-                  children: const [
-                    SizedBox(height: 130),
-                    Center(child: Text('Unable to load destination trends.')),
-                  ],
-                );
-              }
+            padding: const EdgeInsets.fromLTRB(18, 18, 18, 36),
 
-              final List<Map<String, dynamic>> destinations =
-                  destinationSnapshot.data ?? [];
+            children: [
+              _buildHeader(),
 
-              final int totalTrips = destinations.fold<int>(0, (
-                totalValue,
-                item,
-              ) {
-                return totalValue + (item['count'] as int? ?? 0);
-              });
+              const SizedBox(height: 27),
 
-              final int maximum = destinations.isEmpty
-                  ? 0
-                  : destinations
-                        .map((item) => item['count'] as int? ?? 0)
-                        .fold<int>(0, (currentMax, itemCount) {
-                          return itemCount > currentMax
-                              ? itemCount
-                              : currentMax;
-                        });
-
-              final Map<String, dynamic>? topDestination =
-                  totalTrips == 0 || destinations.isEmpty
-                  ? null
-                  : destinations.first;
-
-              return ListView(
-                physics: const AlwaysScrollableScrollPhysics(),
-                padding: const EdgeInsets.fromLTRB(18, 18, 18, 36),
-                children: [
-                  _buildHeader(totalTrips),
-
-                  const SizedBox(height: 28),
-
-                  const Text(
-                    'Trips by Destination',
-                    style: TextStyle(
-                      fontSize: 18,
-                      fontWeight: FontWeight.w800,
-                      color: _darkTextColor,
-                    ),
-                  ),
-
-                  const SizedBox(height: 5),
-
-                  const Text(
-                    'Compare stored trip volume across '
+              _buildSectionTitle(
+                'Trips by Destination',
+                'Compare stored trip volume across '
                     'the supported destinations.',
-                    style: TextStyle(
-                      fontSize: 12.5,
-                      height: 1.4,
-                      color: Colors.black54,
-                    ),
-                  ),
+              ),
 
-                  const SizedBox(height: 16),
+              const SizedBox(height: 15),
 
-                  if (destinations.isEmpty)
-                    _buildEmptyDestinationState()
-                  else ...[
-                    _buildBarChart(
-                      destinations: destinations,
-                      maximum: maximum,
-                    ),
+              _buildDestinationSection(),
 
-                    if (topDestination != null) ...[
-                      const SizedBox(height: 18),
+              const SizedBox(height: 29),
 
-                      _buildTopDestinationCard(topDestination),
-                    ],
-                  ],
-
-                  const SizedBox(height: 32),
-
-                  const Text(
-                    'Travel Activity Over Time',
-                    style: TextStyle(
-                      fontSize: 18,
-                      fontWeight: FontWeight.w800,
-                      color: _darkTextColor,
-                    ),
-                  ),
-
-                  const SizedBox(height: 5),
-
-                  const Text(
-                    'Monthly travel activity based on '
+              _buildSectionTitle(
+                'Travel Activity Over Time',
+                'Monthly travel activity based on '
                     'stored trip departure dates.',
-                    style: TextStyle(
-                      fontSize: 12.5,
-                      height: 1.4,
-                      color: Colors.black54,
-                    ),
-                  ),
+              ),
 
-                  const SizedBox(height: 16),
+              const SizedBox(height: 15),
 
-                  FutureBuilder<List<Map<String, dynamic>>>(
-                    future: _monthlyTrendFuture,
-                    builder: (context, monthlySnapshot) {
-                      if (monthlySnapshot.connectionState ==
-                          ConnectionState.waiting) {
-                        return const SizedBox(
-                          height: 230,
-                          child: Center(child: CircularProgressIndicator()),
-                        );
-                      }
+              _buildMonthlySection(),
 
-                      if (monthlySnapshot.hasError) {
-                        debugPrint(
-                          'MONTHLY TREND ERROR: '
-                          '${monthlySnapshot.error}',
-                        );
+              const SizedBox(height: 26),
 
-                        return _buildTrendErrorState();
-                      }
-
-                      final List<Map<String, dynamic>> monthlyData =
-                          monthlySnapshot.data ?? [];
-
-                      if (monthlyData.isEmpty) {
-                        return _buildEmptyTrendState();
-                      }
-
-                      return _buildMonthlyTrendCard(monthlyData);
-                    },
-                  ),
-                ],
-              );
-            },
+              _buildInformationCard(),
+            ],
           ),
         ),
       ),
@@ -232,62 +242,196 @@ class _DestinationTrendsScreenState extends State<DestinationTrendsScreen> {
   }
 
   // ---------------------------------------------------------------------------
+  // SECTION TITLE
+  // ---------------------------------------------------------------------------
+
+  Widget _buildSectionTitle(String title, String description) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+
+      children: [
+        Text(
+          title,
+          style: const TextStyle(
+            color: AppColors.navy,
+            fontSize: 18,
+            fontWeight: FontWeight.w800,
+          ),
+        ),
+
+        const SizedBox(height: 6),
+
+        Text(
+          description,
+          style: const TextStyle(
+            color: AppColors.secondaryText,
+            fontSize: 12.5,
+            height: 1.45,
+          ),
+        ),
+      ],
+    );
+  }
+
+  // ---------------------------------------------------------------------------
   // HEADER
   // ---------------------------------------------------------------------------
 
-  Widget _buildHeader(int totalTrips) {
+  Widget _buildHeader() {
+    final List<Map<String, dynamic>>? destinations = _destinations;
+
+    final int totalTrips = destinations == null
+        ? 0
+        : _getTotalTrips(destinations);
+
+    String description;
+
+    if (destinations == null && !_destinationError) {
+      description = 'Loading aggregated destination analytics...';
+    } else if (destinations == null) {
+      description = 'Destination analytics are temporarily unavailable.';
+    } else if (totalTrips == 0) {
+      description = 'No stored trip data is currently available.';
+    } else {
+      description =
+          '$totalTrips stored '
+          '${totalTrips == 1 ? 'trip is' : 'trips are'} '
+          'included in the destination analysis.';
+    }
+
     return Container(
       width: double.infinity,
       padding: const EdgeInsets.all(20),
-      decoration: BoxDecoration(
-        gradient: const LinearGradient(
-          colors: [Color(0xFFE7F7F8), Color(0xFFF1F8FB)],
-        ),
-        borderRadius: BorderRadius.circular(20),
-        border: Border.all(color: const Color(0xFFCBE8EB)),
-      ),
-      child: Row(
+      decoration: _cardDecoration(),
+
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+
         children: [
-          const Icon(
-            Icons.travel_explore_outlined,
-            color: _primaryColor,
-            size: 32,
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+
+            children: [
+              const _TrendsIcon(icon: Icons.travel_explore_outlined, size: 52),
+
+              const SizedBox(width: 14),
+
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+
+                  children: [
+                    const Text(
+                      'Destination Insights',
+                      style: TextStyle(
+                        color: AppColors.navy,
+                        fontSize: 19,
+                        fontWeight: FontWeight.w800,
+                      ),
+                    ),
+
+                    const SizedBox(height: 7),
+
+                    Text(
+                      description,
+                      style: const TextStyle(
+                        color: AppColors.secondaryText,
+                        fontSize: 12.5,
+                        height: 1.5,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
           ),
 
-          const SizedBox(width: 14),
+          const SizedBox(height: 18),
 
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                const Text(
-                  'Destination Trends',
+          const Divider(height: 1, color: AppColors.border),
+
+          const SizedBox(height: 13),
+
+          const Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+
+            children: [
+              Icon(Icons.bar_chart_rounded, color: AppColors.primary, size: 19),
+
+              SizedBox(width: 9),
+
+              Expanded(
+                child: Text(
+                  'Explore destination popularity and '
+                  'monthly departure patterns.',
                   style: TextStyle(
-                    fontSize: 20,
-                    fontWeight: FontWeight.w800,
-                    color: _darkTextColor,
+                    color: AppColors.secondaryText,
+                    fontSize: 12,
+                    height: 1.5,
                   ),
                 ),
-
-                const SizedBox(height: 5),
-
-                Text(
-                  totalTrips == 0
-                      ? 'No stored trip data is currently available.'
-                      : '$totalTrips stored '
-                            '${totalTrips == 1 ? 'trip is' : 'trips are'} '
-                            'included in the destination analysis.',
-                  style: const TextStyle(
-                    fontSize: 12.5,
-                    height: 1.4,
-                    color: Colors.black54,
-                  ),
-                ),
-              ],
-            ),
+              ),
+            ],
           ),
         ],
       ),
+    );
+  }
+
+  // ---------------------------------------------------------------------------
+  // DESTINATION SECTION
+  // ---------------------------------------------------------------------------
+
+  Widget _buildDestinationSection() {
+    final List<Map<String, dynamic>>? destinations = _destinations;
+
+    if (destinations == null && _destinationError) {
+      return _buildStatusCard(
+        icon: Icons.cloud_off_outlined,
+        title: 'Unable to Load Destinations',
+        message: 'Destination analytics could not be retrieved.',
+        onRetry: _loadTrends,
+      );
+    }
+
+    if (destinations == null) {
+      return _buildStatusCard(
+        icon: Icons.public_outlined,
+        title: 'Loading Destination Trends',
+        message: 'Retrieving aggregated trip statistics...',
+        isLoading: true,
+      );
+    }
+
+    if (destinations.isEmpty) {
+      return _buildStatusCard(
+        icon: Icons.travel_explore_outlined,
+        title: 'No Destination Data',
+        message:
+            'No stored trip data is currently available '
+            'for destination analysis.',
+      );
+    }
+
+    final int maximum = destinations.fold<int>(
+      0,
+      (current, item) => math.max(current, _getCount(item)),
+    );
+
+    final Map<String, dynamic>? topDestination = _getTopDestination(
+      destinations,
+    );
+
+    return Column(
+      children: [
+        _buildBarChart(destinations: destinations, maximum: maximum),
+
+        if (topDestination != null) ...[
+          const SizedBox(height: 16),
+
+          _buildTopDestinationCard(topDestination),
+        ],
+      ],
     );
   }
 
@@ -301,52 +445,85 @@ class _DestinationTrendsScreenState extends State<DestinationTrendsScreen> {
   }) {
     return Container(
       width: double.infinity,
-      padding: const EdgeInsets.fromLTRB(16, 20, 16, 18),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(18),
-        border: Border.all(color: _borderColor),
-      ),
+      padding: const EdgeInsets.fromLTRB(16, 19, 16, 19),
+      decoration: _cardDecoration(),
+
       child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+
         children: [
+          const Row(
+            children: [
+              Expanded(
+                child: Text(
+                  'Destination Distribution',
+                  style: TextStyle(
+                    color: AppColors.navy,
+                    fontSize: 14,
+                    fontWeight: FontWeight.w800,
+                  ),
+                ),
+              ),
+
+              Icon(Icons.bar_chart_rounded, color: AppColors.primary, size: 22),
+            ],
+          ),
+
+          const SizedBox(height: 5),
+
+          const Text(
+            'Number of trips recorded for each destination',
+            style: TextStyle(color: AppColors.secondaryText, fontSize: 11),
+          ),
+
+          const SizedBox(height: 22),
+
           for (int index = 0; index < destinations.length; index++) ...[
             _buildBarRow(destination: destinations[index], maximum: maximum),
 
-            if (index != destinations.length - 1) const SizedBox(height: 18),
+            if (index != destinations.length - 1) const SizedBox(height: 21),
           ],
         ],
       ),
     );
   }
 
+  // ---------------------------------------------------------------------------
+  // DESTINATION BAR ROW
+  // ---------------------------------------------------------------------------
+
   Widget _buildBarRow({
     required Map<String, dynamic> destination,
     required int maximum,
   }) {
-    final String name = destination['name'] as String? ?? '';
+    final String name = destination['name'] as String? ?? 'Unknown';
 
-    final int itemCount = destination['count'] as int? ?? 0;
+    final int count = _getCount(destination);
 
-    final double percentage = destination['percentage'] as double? ?? 0;
+    final double percentage = _getPercentage(destination);
 
-    final double barFactor = maximum == 0 ? 0 : itemCount / maximum;
+    final double barFactor = maximum <= 0
+        ? 0
+        : (count / maximum).clamp(0.0, 1.0);
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
+
       children: [
         Row(
-          crossAxisAlignment: CrossAxisAlignment.center,
           children: [
             SizedBox(
-              width: 102,
+              width: 94,
+
               child: Text(
                 name,
                 maxLines: 2,
                 overflow: TextOverflow.ellipsis,
+
                 style: const TextStyle(
+                  color: AppColors.navy,
                   fontSize: 11.5,
                   fontWeight: FontWeight.w700,
-                  color: _darkTextColor,
                 ),
               ),
             ),
@@ -360,19 +537,20 @@ class _DestinationTrendsScreenState extends State<DestinationTrendsScreen> {
                     children: [
                       Container(
                         height: 22,
+
                         decoration: BoxDecoration(
-                          color: const Color(0xFFEAF0F3),
-                          borderRadius: BorderRadius.circular(6),
+                          color: AppColors.primaryLight,
+                          borderRadius: BorderRadius.circular(7),
                         ),
                       ),
 
-                      AnimatedContainer(
-                        duration: const Duration(milliseconds: 300),
+                      Container(
                         height: 22,
                         width: constraints.maxWidth * barFactor,
+
                         decoration: BoxDecoration(
-                          color: _barColor,
-                          borderRadius: BorderRadius.circular(6),
+                          color: AppColors.primary,
+                          borderRadius: BorderRadius.circular(7),
                         ),
                       ),
                     ],
@@ -384,27 +562,33 @@ class _DestinationTrendsScreenState extends State<DestinationTrendsScreen> {
             const SizedBox(width: 9),
 
             SizedBox(
-              width: 28,
+              width: 32,
+
               child: Text(
-                '$itemCount',
+                '$count',
                 textAlign: TextAlign.right,
+
                 style: const TextStyle(
+                  color: AppColors.primary,
                   fontSize: 12,
                   fontWeight: FontWeight.w800,
-                  color: _primaryColor,
                 ),
               ),
             ),
           ],
         ),
 
-        const SizedBox(height: 5),
+        const SizedBox(height: 6),
 
         Padding(
-          padding: const EdgeInsets.only(left: 112),
+          padding: const EdgeInsets.only(left: 104),
+
           child: Text(
             '${percentage.toStringAsFixed(1)}% of all trips',
-            style: const TextStyle(fontSize: 9.5, color: Colors.black45),
+            style: const TextStyle(
+              color: AppColors.secondaryText,
+              fontSize: 10,
+            ),
           ),
         ),
       ],
@@ -412,67 +596,68 @@ class _DestinationTrendsScreenState extends State<DestinationTrendsScreen> {
   }
 
   // ---------------------------------------------------------------------------
-  // TOP DESTINATION
+  // TOP DESTINATION CARD
   // ---------------------------------------------------------------------------
 
   Widget _buildTopDestinationCard(Map<String, dynamic> destination) {
     final String name = destination['name'] as String? ?? 'Unknown';
 
-    final int itemCount = destination['count'] as int? ?? 0;
+    final int count = _getCount(destination);
 
-    final double percentage = destination['percentage'] as double? ?? 0;
+    final double percentage = _getPercentage(destination);
 
     return Container(
       width: double.infinity,
       padding: const EdgeInsets.all(17),
+
       decoration: BoxDecoration(
         color: const Color(0xFFF1F6FA),
-        borderRadius: BorderRadius.circular(16),
+        borderRadius: BorderRadius.circular(18),
         border: Border.all(color: const Color(0xFFD8E6EE)),
       ),
+
       child: Row(
         children: [
-          Container(
-            width: 44,
-            height: 44,
-            decoration: BoxDecoration(
-              color: const Color(0xFFE8F6F7),
-              borderRadius: BorderRadius.circular(13),
-            ),
-            child: const Icon(Icons.trending_up_rounded, color: _primaryColor),
-          ),
+          const _TrendsIcon(icon: Icons.trending_up_rounded, size: 47),
 
           const SizedBox(width: 13),
 
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
+
               children: [
                 const Text(
-                  'Top Destination',
-                  style: TextStyle(fontSize: 10.5, color: Colors.black54),
+                  'MOST POPULAR DESTINATION',
+                  style: TextStyle(
+                    color: AppColors.secondaryText,
+                    fontSize: 10,
+                    fontWeight: FontWeight.w800,
+                    letterSpacing: 0.3,
+                  ),
                 ),
 
-                const SizedBox(height: 3),
+                const SizedBox(height: 5),
 
                 Text(
                   name,
                   style: const TextStyle(
-                    fontSize: 15,
+                    color: AppColors.navy,
+                    fontSize: 16,
                     fontWeight: FontWeight.w800,
-                    color: _darkTextColor,
                   ),
                 ),
 
-                const SizedBox(height: 3),
+                const SizedBox(height: 5),
 
                 Text(
-                  '$itemCount '
-                  '${itemCount == 1 ? 'trip' : 'trips'} · '
+                  '$count '
+                  '${count == 1 ? 'trip' : 'trips'} · '
                   '${percentage.toStringAsFixed(1)}%',
                   style: const TextStyle(
-                    fontSize: 11,
-                    color: Color(0xFF486581),
+                    color: AppColors.secondaryText,
+                    fontSize: 11.5,
+                    fontWeight: FontWeight.w600,
                   ),
                 ),
               ],
@@ -484,68 +669,114 @@ class _DestinationTrendsScreenState extends State<DestinationTrendsScreen> {
   }
 
   // ---------------------------------------------------------------------------
-  // MONTHLY TREND
+  // MONTHLY TREND SECTION
+  // ---------------------------------------------------------------------------
+
+  Widget _buildMonthlySection() {
+    final List<Map<String, dynamic>>? monthlyData = _monthlyTrends;
+
+    if (monthlyData == null && _monthlyError) {
+      return _buildStatusCard(
+        icon: Icons.cloud_off_outlined,
+        title: 'Unable to Load Monthly Trends',
+        message:
+            'Monthly departure statistics could not '
+            'be retrieved.',
+        onRetry: _loadTrends,
+      );
+    }
+
+    if (monthlyData == null) {
+      return _buildStatusCard(
+        icon: Icons.show_chart_rounded,
+        title: 'Loading Monthly Trends',
+        message: 'Retrieving departure-date statistics...',
+        isLoading: true,
+      );
+    }
+
+    if (monthlyData.isEmpty) {
+      return _buildStatusCard(
+        icon: Icons.calendar_month_outlined,
+        title: 'No Departure Data',
+        message: 'No departure-date trend data is available.',
+      );
+    }
+
+    return _buildMonthlyTrendCard(monthlyData);
+  }
+
+  // ---------------------------------------------------------------------------
+  // MONTHLY TREND CARD
   // ---------------------------------------------------------------------------
 
   Widget _buildMonthlyTrendCard(List<Map<String, dynamic>> monthlyData) {
-    final int totalDepartures = monthlyData.fold<int>(0, (totalValue, item) {
-      return totalValue + (item['count'] as int? ?? 0);
-    });
+    final int totalDepartures = monthlyData.fold<int>(
+      0,
+      (total, item) => total + _getCount(item),
+    );
 
     Map<String, dynamic> peakMonth = monthlyData.first;
 
-    for (final item in monthlyData) {
-      final int itemCount = item['count'] as int? ?? 0;
-
-      final int currentPeak = peakMonth['count'] as int? ?? 0;
-
-      if (itemCount > currentPeak) {
+    for (final Map<String, dynamic> item in monthlyData) {
+      if (_getCount(item) > _getCount(peakMonth)) {
         peakMonth = item;
       }
     }
 
+    final String peakLabel = '${peakMonth['label'] ?? 'Unknown'}';
+
+    final int peakCount = _getCount(peakMonth);
+
     return Container(
       width: double.infinity,
-      padding: const EdgeInsets.fromLTRB(16, 18, 16, 16),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(18),
-        border: Border.all(color: _borderColor),
-      ),
+
+      padding: const EdgeInsets.fromLTRB(16, 19, 16, 17),
+
+      decoration: _cardDecoration(),
+
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
+
         children: [
           Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+
             children: [
               Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
+
                   children: [
                     const Text(
                       'Trips by Departure Month',
                       style: TextStyle(
+                        color: AppColors.navy,
                         fontSize: 14,
                         fontWeight: FontWeight.w800,
-                        color: _darkTextColor,
                       ),
                     ),
 
-                    const SizedBox(height: 3),
+                    const SizedBox(height: 5),
 
                     Text(
                       '$totalDepartures '
                       '${totalDepartures == 1 ? 'trip' : 'trips'} '
                       'with departure dates',
                       style: const TextStyle(
-                        fontSize: 10.5,
-                        color: Colors.black54,
+                        color: AppColors.secondaryText,
+                        fontSize: 11,
                       ),
                     ),
                   ],
                 ),
               ),
 
-              const Icon(Icons.show_chart_rounded, color: _primaryColor),
+              const Icon(
+                Icons.show_chart_rounded,
+                color: AppColors.primary,
+                size: 23,
+              ),
             ],
           ),
 
@@ -554,53 +785,62 @@ class _DestinationTrendsScreenState extends State<DestinationTrendsScreen> {
           SizedBox(
             width: double.infinity,
             height: 220,
-            child: CustomPaint(
-              painter: _MonthlyTrendPainter(
-                data: monthlyData,
-                lineColor: _primaryColor,
-                textColor: _darkTextColor,
+
+            child: RepaintBoundary(
+              child: CustomPaint(
+                painter: _MonthlyTrendPainter(
+                  data: monthlyData,
+                  lineColor: AppColors.primary,
+                  textColor: AppColors.navy,
+                ),
               ),
             ),
           ),
 
-          const SizedBox(height: 10),
+          const SizedBox(height: 14),
 
           Container(
             width: double.infinity,
-            padding: const EdgeInsets.all(12),
+            padding: const EdgeInsets.all(13),
+
             decoration: BoxDecoration(
-              color: const Color(0xFFF7F9FB),
-              borderRadius: BorderRadius.circular(12),
+              color: AppColors.background,
+              borderRadius: BorderRadius.circular(13),
+              border: Border.all(color: AppColors.border),
             ),
+
             child: Row(
               children: [
-                const Icon(
-                  Icons.calendar_month_outlined,
-                  color: _primaryColor,
-                  size: 19,
+                const _TrendsIcon(
+                  icon: Icons.calendar_month_outlined,
+                  size: 40,
                 ),
 
-                const SizedBox(width: 9),
+                const SizedBox(width: 11),
 
                 Expanded(
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
+
                     children: [
                       const Text(
                         'Peak Departure Month',
-                        style: TextStyle(fontSize: 9.5, color: Colors.black54),
+                        style: TextStyle(
+                          color: AppColors.secondaryText,
+                          fontSize: 10.5,
+                        ),
                       ),
 
-                      const SizedBox(height: 2),
+                      const SizedBox(height: 4),
 
                       Text(
-                        '${peakMonth['label']} · '
-                        '${peakMonth['count']} '
-                        '${peakMonth['count'] == 1 ? 'trip' : 'trips'}',
+                        '$peakLabel · '
+                        '$peakCount '
+                        '${peakCount == 1 ? 'trip' : 'trips'}',
                         style: const TextStyle(
-                          fontSize: 12,
-                          fontWeight: FontWeight.w700,
-                          color: _darkTextColor,
+                          color: AppColors.navy,
+                          fontSize: 12.5,
+                          fontWeight: FontWeight.w800,
                         ),
                       ),
                     ],
@@ -609,14 +849,62 @@ class _DestinationTrendsScreenState extends State<DestinationTrendsScreen> {
               ],
             ),
           ),
+        ],
+      ),
+    );
+  }
 
-          const SizedBox(height: 10),
+  // ---------------------------------------------------------------------------
+  // ANALYTICS INFORMATION
+  // ---------------------------------------------------------------------------
 
-          const Text(
-            'Departure trends describe when stored trips '
-            'are scheduled to occur and do not represent '
-            'the date the trip record was created.',
-            style: TextStyle(fontSize: 9.5, height: 1.4, color: Colors.black45),
+  Widget _buildInformationCard() {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(17),
+
+      decoration: BoxDecoration(
+        color: const Color(0xFFF1F6FA),
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(color: const Color(0xFFD8E6EE)),
+      ),
+
+      child: const Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+
+        children: [
+          Icon(Icons.info_outline_rounded, color: AppColors.primary, size: 24),
+
+          SizedBox(width: 12),
+
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+
+              children: [
+                Text(
+                  'Understanding Departure Trends',
+                  style: TextStyle(
+                    color: AppColors.navy,
+                    fontSize: 13.5,
+                    fontWeight: FontWeight.w800,
+                  ),
+                ),
+
+                SizedBox(height: 7),
+
+                Text(
+                  'Departure trends describe when stored trips '
+                  'are scheduled to occur. They do not represent '
+                  'the date a trip record was created.',
+                  style: TextStyle(
+                    color: AppColors.secondaryText,
+                    fontSize: 12,
+                    height: 1.5,
+                  ),
+                ),
+              ],
+            ),
           ),
         ],
       ),
@@ -624,79 +912,114 @@ class _DestinationTrendsScreenState extends State<DestinationTrendsScreen> {
   }
 
   // ---------------------------------------------------------------------------
-  // EMPTY / ERROR STATES
+  // LOADING / ERROR / EMPTY CARD
   // ---------------------------------------------------------------------------
 
-  Widget _buildEmptyDestinationState() {
+  Widget _buildStatusCard({
+    required IconData icon,
+    required String title,
+    required String message,
+    bool isLoading = false,
+    VoidCallback? onRetry,
+  }) {
     return Container(
       width: double.infinity,
-      padding: const EdgeInsets.all(28),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: _borderColor),
-      ),
-      child: const Column(
+      constraints: const BoxConstraints(minHeight: 215),
+
+      padding: const EdgeInsets.all(22),
+      decoration: _cardDecoration(),
+
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+
         children: [
-          Icon(Icons.travel_explore_outlined, size: 38, color: Colors.black38),
+          _TrendsIcon(icon: icon, size: 52),
 
-          SizedBox(height: 8),
-
-          Text('No trip data available.'),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildEmptyTrendState() {
-    return Container(
-      width: double.infinity,
-      padding: const EdgeInsets.all(28),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: _borderColor),
-      ),
-      child: const Column(
-        children: [
-          Icon(Icons.show_chart_rounded, size: 38, color: Colors.black38),
-
-          SizedBox(height: 8),
+          const SizedBox(height: 13),
 
           Text(
-            'No departure-date trend data is available.',
+            title,
             textAlign: TextAlign.center,
-          ),
-        ],
-      ),
-    );
-  }
 
-  Widget _buildTrendErrorState() {
-    return Container(
-      width: double.infinity,
-      padding: const EdgeInsets.all(24),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: _borderColor),
-      ),
-      child: const Text(
-        'Unable to load monthly departure trends.',
-        textAlign: TextAlign.center,
-        style: TextStyle(color: Colors.black54),
+            style: const TextStyle(
+              color: AppColors.navy,
+              fontSize: 14.5,
+              fontWeight: FontWeight.w800,
+            ),
+          ),
+
+          const SizedBox(height: 7),
+
+          Text(
+            message,
+            textAlign: TextAlign.center,
+
+            style: const TextStyle(
+              color: AppColors.secondaryText,
+              fontSize: 12,
+              height: 1.5,
+            ),
+          ),
+
+          if (isLoading) ...[
+            const SizedBox(height: 17),
+
+            const CircularProgressIndicator(
+              color: AppColors.primary,
+              strokeWidth: 3,
+            ),
+          ],
+
+          if (onRetry != null) ...[
+            const SizedBox(height: 15),
+
+            OutlinedButton.icon(
+              onPressed: onRetry,
+              icon: const Icon(Icons.refresh_rounded, size: 18),
+              label: const Text('Try Again'),
+              style: OutlinedButton.styleFrom(
+                foregroundColor: AppColors.primary,
+              ),
+            ),
+          ],
+        ],
       ),
     );
   }
 }
 
 // -----------------------------------------------------------------------------
-// MONTHLY TREND PAINTER
+// REUSABLE ICON
+// -----------------------------------------------------------------------------
+
+class _TrendsIcon extends StatelessWidget {
+  final IconData icon;
+  final double size;
+
+  const _TrendsIcon({required this.icon, required this.size});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: size,
+      height: size,
+
+      decoration: BoxDecoration(
+        color: AppColors.primaryLight,
+        borderRadius: BorderRadius.circular(13),
+      ),
+
+      child: Icon(icon, color: AppColors.primary, size: size * 0.51),
+    );
+  }
+}
+
+// -----------------------------------------------------------------------------
+// MONTHLY DEPARTURE LINE CHART PAINTER
 // -----------------------------------------------------------------------------
 
 class _MonthlyTrendPainter extends CustomPainter {
   final List<Map<String, dynamic>> data;
-
   final Color lineColor;
   final Color textColor;
 
@@ -706,6 +1029,11 @@ class _MonthlyTrendPainter extends CustomPainter {
     required this.textColor,
   });
 
+  int _count(Map<String, dynamic> item) {
+    final dynamic value = item['count'];
+    return value is num ? value.toInt() : 0;
+  }
+
   @override
   void paint(Canvas canvas, Size size) {
     if (data.isEmpty) {
@@ -713,24 +1041,21 @@ class _MonthlyTrendPainter extends CustomPainter {
     }
 
     const double leftPadding = 32;
-
-    const double rightPadding = 10;
-
-    const double topPadding = 16;
-
+    const double rightPadding = 12;
+    const double topPadding = 18;
     const double bottomPadding = 38;
 
     final double chartWidth = size.width - leftPadding - rightPadding;
 
     final double chartHeight = size.height - topPadding - bottomPadding;
 
-    final List<int> counts = data
-        .map((item) => item['count'] as int? ?? 0)
-        .toList();
+    if (chartWidth <= 0 || chartHeight <= 0) {
+      return;
+    }
 
-    final int rawMaximum = counts.reduce(math.max);
+    final List<int> counts = data.map((item) => _count(item)).toList();
 
-    final int maximum = math.max(rawMaximum, 1);
+    final int maximum = math.max(counts.reduce(math.max), 1);
 
     final Paint gridPaint = Paint()
       ..color = const Color(0xFFE6EBEF)
@@ -776,7 +1101,7 @@ class _MonthlyTrendPainter extends CustomPainter {
           text: gridValue.round().toString(),
           style: TextStyle(
             fontSize: 9,
-            color: textColor.withValues(alpha: 0.5),
+            color: textColor.withValues(alpha: 0.55),
           ),
         ),
         textDirection: TextDirection.ltr,
@@ -795,14 +1120,14 @@ class _MonthlyTrendPainter extends CustomPainter {
     // DATA POINTS
     // -------------------------------------------------------------------------
 
-    final List<Offset> points = <Offset>[];
+    final List<Offset> points = [];
 
     for (int index = 0; index < data.length; index++) {
       final double x = data.length == 1
           ? leftPadding + chartWidth / 2
           : leftPadding + chartWidth * index / (data.length - 1);
 
-      final int itemCount = data[index]['count'] as int? ?? 0;
+      final int itemCount = _count(data[index]);
 
       final double y = topPadding + chartHeight * (1 - itemCount / maximum);
 
@@ -832,15 +1157,13 @@ class _MonthlyTrendPainter extends CustomPainter {
     }
 
     // -------------------------------------------------------------------------
-    // VALUE LABELS
+    // DATA VALUE LABELS
     // -------------------------------------------------------------------------
 
     for (int index = 0; index < points.length; index++) {
-      final String value = '${data[index]['count']}';
-
       final TextPainter valuePainter = TextPainter(
         text: TextSpan(
-          text: value,
+          text: '${_count(data[index])}',
           style: TextStyle(
             fontSize: 9,
             fontWeight: FontWeight.w700,
@@ -873,7 +1196,7 @@ class _MonthlyTrendPainter extends CustomPainter {
           text: label,
           style: TextStyle(
             fontSize: 8.5,
-            color: textColor.withValues(alpha: 0.6),
+            color: textColor.withValues(alpha: 0.65),
           ),
         ),
         textDirection: TextDirection.ltr,
@@ -884,12 +1207,16 @@ class _MonthlyTrendPainter extends CustomPainter {
       labelPainter.paint(
         canvas,
         Offset(
-          x.clamp(0.0, size.width - labelPainter.width),
+          x.clamp(0.0, math.max(0.0, size.width - labelPainter.width)),
           size.height - bottomPadding + 11,
         ),
       );
     }
   }
+
+  // ---------------------------------------------------------------------------
+  // SELECT VISIBLE MONTH LABELS
+  // ---------------------------------------------------------------------------
 
   Set<int> _selectLabelIndices(int itemCount) {
     if (itemCount <= 6) {
@@ -905,15 +1232,22 @@ class _MonthlyTrendPainter extends CustomPainter {
     };
   }
 
+  // ---------------------------------------------------------------------------
+  // REPAINT ONLY WHEN CHART DATA CHANGES
+  // ---------------------------------------------------------------------------
+
   @override
   bool shouldRepaint(covariant _MonthlyTrendPainter oldDelegate) {
-    if (oldDelegate.data.length != data.length) {
+    if (oldDelegate.lineColor != lineColor ||
+        oldDelegate.textColor != textColor ||
+        oldDelegate.data.length != data.length) {
       return true;
     }
 
     for (int index = 0; index < data.length; index++) {
       if (oldDelegate.data[index]['count'] != data[index]['count'] ||
-          oldDelegate.data[index]['label'] != data[index]['label']) {
+          oldDelegate.data[index]['label'] != data[index]['label'] ||
+          oldDelegate.data[index]['shortLabel'] != data[index]['shortLabel']) {
         return true;
       }
     }
