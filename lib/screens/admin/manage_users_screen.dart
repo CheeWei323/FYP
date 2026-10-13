@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../../models/system_user.dart';
 import '../../services/admin_service.dart';
+import '../../theme/app_theme.dart';
 
 class ManageUsersScreen extends StatefulWidget {
   const ManageUsersScreen({super.key});
@@ -20,8 +21,6 @@ class _ManageUsersScreenState extends State<ManageUsersScreen> {
   static const Color _darkTextColor = Color(0xFF102A43);
 
   static const Color _backgroundColor = Color(0xFFF7F9FB);
-
-  static const Color _borderColor = Color(0xFFE1E7EC);
 
   late Future<List<SystemUser>> _usersFuture;
 
@@ -135,13 +134,13 @@ class _ManageUsersScreenState extends State<ManageUsersScreen> {
   String _roleDescription(String role) {
     switch (role) {
       case 'traveller':
-        return 'Access travel planning, requirements and packing features.';
+        return 'Travel planning, requirements and packing.';
 
       case 'contentManager':
-        return 'Maintain and review regulatory travel information.';
+        return 'Manage and review travel regulations.';
 
       case 'analyst':
-        return 'Access tourism data analytics and reporting features.';
+        return 'View tourism analytics and reports.';
 
       default:
         return '';
@@ -307,19 +306,192 @@ class _ManageUsersScreenState extends State<ManageUsersScreen> {
     final bool? confirmed = await showDialog<bool>(
       context: context,
       builder: (BuildContext dialogContext) {
+        final String accountName = user.fullName.trim().isNotEmpty
+            ? user.fullName.trim()
+            : user.email.trim().isNotEmpty
+            ? user.email.trim()
+            : 'Unnamed User';
+
         return AlertDialog(
-          icon: const Icon(
-            Icons.manage_accounts_outlined,
-            color: _primaryColor,
-            size: 32,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(20),
           ),
-          title: const Text('Confirm Role Change', textAlign: TextAlign.center),
-          content: Text(
-            'Change ${user.fullName.isEmpty ? 'this account' : user.fullName} '
-            'from ${_formatRole(user.role)} to '
-            '${_formatRole(newRole)}?',
-            textAlign: TextAlign.center,
+          titlePadding: const EdgeInsets.fromLTRB(22, 22, 22, 8),
+          contentPadding: const EdgeInsets.fromLTRB(22, 8, 22, 12),
+          actionsPadding: const EdgeInsets.fromLTRB(16, 0, 16, 14),
+
+          // ---------------------------------------------------
+          // CONFIRMATION HEADER
+          // ---------------------------------------------------
+          title: Row(
+            children: [
+              Container(
+                width: 42,
+                height: 42,
+                decoration: BoxDecoration(
+                  color: AppColors.primaryLight,
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: const Icon(
+                  Icons.manage_accounts_outlined,
+                  color: AppColors.primary,
+                  size: 23,
+                ),
+              ),
+
+              const SizedBox(width: 12),
+
+              const Expanded(
+                child: Text(
+                  'Confirm Role Change',
+                  style: TextStyle(
+                    color: AppColors.navy,
+                    fontSize: 18,
+                    fontWeight: FontWeight.w800,
+                  ),
+                ),
+              ),
+            ],
           ),
+
+          // ---------------------------------------------------
+          // CONFIRMATION DETAILS
+          // ---------------------------------------------------
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Text(
+                'Review the changes before updating this account.',
+                style: TextStyle(
+                  color: AppColors.secondaryText,
+                  fontSize: 12.5,
+                  height: 1.45,
+                ),
+              ),
+
+              const SizedBox(height: 14),
+
+              Text(
+                accountName,
+                style: const TextStyle(
+                  color: AppColors.navy,
+                  fontSize: 14,
+                  fontWeight: FontWeight.w800,
+                ),
+              ),
+
+              if (user.email.trim().isNotEmpty &&
+                  accountName != user.email.trim()) ...[
+                const SizedBox(height: 3),
+                Text(
+                  user.email,
+                  style: const TextStyle(
+                    color: AppColors.secondaryText,
+                    fontSize: 11.5,
+                  ),
+                ),
+              ],
+
+              const SizedBox(height: 14),
+
+              // -------------------------------------------------
+              // OLD AND NEW ROLES
+              // -------------------------------------------------
+              Container(
+                width: double.infinity,
+                padding: const EdgeInsets.all(14),
+                decoration: BoxDecoration(
+                  color: AppColors.background,
+                  borderRadius: BorderRadius.circular(14),
+                  border: Border.all(color: AppColors.border),
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text(
+                      'CURRENT ROLE',
+                      style: TextStyle(
+                        color: AppColors.secondaryText,
+                        fontSize: 10,
+                        fontWeight: FontWeight.w700,
+                        letterSpacing: 0.6,
+                      ),
+                    ),
+
+                    const SizedBox(height: 5),
+
+                    Text(
+                      _formatRole(user.role),
+                      style: const TextStyle(
+                        color: AppColors.navy,
+                        fontSize: 13.5,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+
+                    const SizedBox(height: 11),
+
+                    const Divider(height: 1, color: AppColors.border),
+
+                    const SizedBox(height: 11),
+
+                    const Text(
+                      'NEW ROLE',
+                      style: TextStyle(
+                        color: AppColors.primary,
+                        fontSize: 10,
+                        fontWeight: FontWeight.w700,
+                        letterSpacing: 0.6,
+                      ),
+                    ),
+
+                    const SizedBox(height: 5),
+
+                    Text(
+                      _formatRole(newRole),
+                      style: const TextStyle(
+                        color: AppColors.primary,
+                        fontSize: 14,
+                        fontWeight: FontWeight.w800,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+
+              const SizedBox(height: 12),
+
+              const Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Icon(
+                    Icons.info_outline_rounded,
+                    color: AppColors.primary,
+                    size: 17,
+                  ),
+
+                  SizedBox(width: 8),
+
+                  Expanded(
+                    child: Text(
+                      'This change affects the features and '
+                      'permissions available to this account.',
+                      style: TextStyle(
+                        color: AppColors.secondaryText,
+                        fontSize: 11.5,
+                        height: 1.45,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ],
+          ),
+
+          // ---------------------------------------------------
+          // CONFIRMATION ACTIONS
+          // ---------------------------------------------------
           actions: [
             TextButton(
               onPressed: () {
@@ -327,6 +499,7 @@ class _ManageUsersScreenState extends State<ManageUsersScreen> {
               },
               child: const Text('Cancel'),
             ),
+
             FilledButton(
               onPressed: () {
                 Navigator.pop(dialogContext, true);
@@ -421,7 +594,56 @@ class _ManageUsersScreenState extends State<ManageUsersScreen> {
             future: _usersFuture,
             builder: (context, snapshot) {
               if (snapshot.connectionState == ConnectionState.waiting) {
-                return const Center(child: CircularProgressIndicator());
+                return ListView(
+                  physics: const AlwaysScrollableScrollPhysics(),
+                  padding: const EdgeInsets.all(18),
+                  children: [
+                    const SizedBox(height: 70),
+
+                    Container(
+                      width: double.infinity,
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 20,
+                        vertical: 32,
+                      ),
+                      decoration: BoxDecoration(
+                        color: Colors.white,
+                        borderRadius: BorderRadius.circular(20),
+                        border: Border.all(color: AppColors.border),
+                      ),
+                      child: const Column(
+                        children: [
+                          CircularProgressIndicator(
+                            color: AppColors.primary,
+                            strokeWidth: 3,
+                          ),
+
+                          SizedBox(height: 20),
+
+                          Text(
+                            'Loading User Accounts',
+                            style: TextStyle(
+                              color: AppColors.navy,
+                              fontSize: 15,
+                              fontWeight: FontWeight.w800,
+                            ),
+                          ),
+
+                          SizedBox(height: 7),
+
+                          Text(
+                            'Retrieving registered accounts...',
+                            textAlign: TextAlign.center,
+                            style: TextStyle(
+                              color: AppColors.secondaryText,
+                              fontSize: 12.5,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                );
               }
 
               if (snapshot.hasError) {
@@ -439,6 +661,36 @@ class _ManageUsersScreenState extends State<ManageUsersScreen> {
                 padding: const EdgeInsets.fromLTRB(18, 18, 18, 36),
                 children: [
                   _buildIntroCard(),
+
+                  const SizedBox(height: 18),
+
+                  // ---------------------------------------------------
+                  // USER ACCOUNT OVERVIEW
+                  // ---------------------------------------------------
+                  Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Expanded(
+                        child: _buildUserSummaryCard(
+                          icon: Icons.people_outline_rounded,
+                          count: _allUsers.length,
+                          label: 'Total Users',
+                        ),
+                      ),
+
+                      const SizedBox(width: 10),
+
+                      Expanded(
+                        child: _buildUserSummaryCard(
+                          icon: Icons.admin_panel_settings_outlined,
+                          count: _allUsers
+                              .where((user) => user.role == 'admin')
+                              .length,
+                          label: 'Protected Admins',
+                        ),
+                      ),
+                    ],
+                  ),
 
                   const SizedBox(height: 22),
 
@@ -497,46 +749,153 @@ class _ManageUsersScreenState extends State<ManageUsersScreen> {
       width: double.infinity,
       padding: const EdgeInsets.all(20),
       decoration: BoxDecoration(
-        gradient: const LinearGradient(
-          colors: [Color(0xFFE7F7F8), Color(0xFFF1F8FB)],
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-        ),
+        color: Colors.white,
         borderRadius: BorderRadius.circular(20),
-        border: Border.all(color: const Color(0xFFCBE8EB)),
+        border: Border.all(color: AppColors.border),
+        boxShadow: const [
+          BoxShadow(
+            color: Color(0x08000000),
+            blurRadius: 12,
+            offset: Offset(0, 4),
+          ),
+        ],
       ),
-      child: const Row(
+      child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Icon(Icons.manage_accounts_outlined, color: _primaryColor, size: 30),
+          // ---------------------------------------------------
+          // USER MANAGEMENT HEADER
+          // ---------------------------------------------------
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Container(
+                width: 52,
+                height: 52,
+                decoration: BoxDecoration(
+                  color: AppColors.primaryLight,
+                  borderRadius: BorderRadius.circular(15),
+                ),
+                child: const Icon(
+                  Icons.manage_accounts_outlined,
+                  color: AppColors.primary,
+                  size: 28,
+                ),
+              ),
 
-          SizedBox(width: 14),
+              const SizedBox(width: 14),
 
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  'User Management',
+              const Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'User Management',
+                      style: TextStyle(
+                        color: AppColors.navy,
+                        fontSize: 20,
+                        fontWeight: FontWeight.w800,
+                        height: 1.3,
+                      ),
+                    ),
+
+                    SizedBox(height: 8),
+
+                    Text(
+                      'Review registered accounts and '
+                      'manage their authorised system roles.',
+                      style: TextStyle(
+                        color: AppColors.secondaryText,
+                        fontSize: 12.5,
+                        height: 1.5,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+
+          const SizedBox(height: 19),
+
+          const Divider(height: 1, color: AppColors.border),
+
+          const SizedBox(height: 15),
+
+          // ---------------------------------------------------
+          // ROLE MANAGEMENT INFORMATION
+          // ---------------------------------------------------
+          const Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Icon(Icons.shield_outlined, color: AppColors.primary, size: 19),
+
+              SizedBox(width: 10),
+
+              Expanded(
+                child: Text(
+                  'Administrator roles cannot be changed '
+                  'through this management screen.',
                   style: TextStyle(
-                    fontSize: 20,
-                    fontWeight: FontWeight.w800,
-                    color: _darkTextColor,
+                    color: AppColors.secondaryText,
+                    fontSize: 12,
+                    height: 1.5,
                   ),
                 ),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
 
-                SizedBox(height: 6),
+  Widget _buildUserSummaryCard({
+    required IconData icon,
+    required int count,
+    required String label,
+  }) {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(color: AppColors.border),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Container(
+            width: 42,
+            height: 42,
+            decoration: BoxDecoration(
+              color: AppColors.primaryLight,
+              borderRadius: BorderRadius.circular(12),
+            ),
+            child: Icon(icon, color: AppColors.primary, size: 22),
+          ),
 
-                Text(
-                  'Review registered system accounts and '
-                  'manage their authorised roles.',
-                  style: TextStyle(
-                    fontSize: 13,
-                    height: 1.45,
-                    color: Colors.black54,
-                  ),
-                ),
-              ],
+          const SizedBox(height: 14),
+
+          Text(
+            '$count',
+            style: const TextStyle(
+              color: AppColors.navy,
+              fontSize: 27,
+              fontWeight: FontWeight.w800,
+            ),
+          ),
+
+          const SizedBox(height: 5),
+
+          Text(
+            label,
+            style: const TextStyle(
+              color: AppColors.secondaryText,
+              fontSize: 12,
+              fontWeight: FontWeight.w600,
+              height: 1.35,
             ),
           ),
         ],
@@ -547,17 +906,35 @@ class _ManageUsersScreenState extends State<ManageUsersScreen> {
   Widget _buildSearchField() {
     return TextField(
       controller: _searchController,
+      textInputAction: TextInputAction.search,
       onChanged: (value) {
         setState(() {
           _searchText = value;
         });
       },
+      style: const TextStyle(color: AppColors.navy, fontSize: 13.5),
       decoration: InputDecoration(
         hintText: 'Search name, email or role',
-        prefixIcon: const Icon(Icons.search_rounded),
+        hintStyle: const TextStyle(
+          color: AppColors.secondaryText,
+          fontSize: 13,
+        ),
+
+        prefixIcon: const Icon(
+          Icons.search_rounded,
+          color: AppColors.primary,
+          size: 22,
+        ),
+
         suffixIcon: _searchText.isEmpty
             ? null
             : IconButton(
+                tooltip: 'Clear search',
+                icon: const Icon(
+                  Icons.close_rounded,
+                  color: AppColors.secondaryText,
+                  size: 20,
+                ),
                 onPressed: () {
                   _searchController.clear();
 
@@ -565,131 +942,223 @@ class _ManageUsersScreenState extends State<ManageUsersScreen> {
                     _searchText = '';
                   });
                 },
-                icon: const Icon(Icons.close_rounded),
               ),
+
         filled: true,
         fillColor: Colors.white,
+
+        contentPadding: const EdgeInsets.symmetric(
+          horizontal: 16,
+          vertical: 17,
+        ),
+
         border: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(14),
-          borderSide: const BorderSide(color: _borderColor),
+          borderRadius: BorderRadius.circular(16),
+          borderSide: const BorderSide(color: AppColors.border),
         ),
+
         enabledBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(14),
-          borderSide: const BorderSide(color: _borderColor),
+          borderRadius: BorderRadius.circular(16),
+          borderSide: const BorderSide(color: AppColors.border),
         ),
+
         focusedBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(14),
-          borderSide: const BorderSide(color: _primaryColor, width: 1.4),
+          borderRadius: BorderRadius.circular(16),
+          borderSide: const BorderSide(color: AppColors.primary, width: 1.5),
         ),
       ),
     );
   }
 
   Widget _buildUserCard(SystemUser user) {
+    final bool isAdmin = user.role == 'admin';
+    final bool isUpdating = _updatingUserId == user.id;
+
+    final String displayName = user.fullName.trim().isNotEmpty
+        ? user.fullName.trim()
+        : 'Unnamed User';
+
+    final String displayEmail = user.email.trim().isNotEmpty
+        ? user.email.trim()
+        : 'No email recorded';
+
+    final String avatarInitial = user.fullName.trim().isNotEmpty
+        ? user.fullName.trim()[0].toUpperCase()
+        : user.email.trim().isNotEmpty
+        ? user.email.trim()[0].toUpperCase()
+        : 'U';
+
     return Container(
       width: double.infinity,
-      margin: const EdgeInsets.only(bottom: 10),
-      padding: const EdgeInsets.all(16),
+      margin: const EdgeInsets.only(bottom: 12),
+      padding: const EdgeInsets.all(17),
       decoration: BoxDecoration(
         color: Colors.white,
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: _borderColor),
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(color: AppColors.border),
+        boxShadow: const [
+          BoxShadow(
+            color: Color(0x08000000),
+            blurRadius: 10,
+            offset: Offset(0, 3),
+          ),
+        ],
       ),
-      child: Row(
+      child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Container(
-            width: 44,
-            height: 44,
-            decoration: BoxDecoration(
-              color: const Color(0xFFE8F6F7),
-              borderRadius: BorderRadius.circular(13),
-            ),
-            child: const Icon(
-              Icons.person_outline_rounded,
-              color: _primaryColor,
-              size: 23,
-            ),
-          ),
-
-          const SizedBox(width: 13),
-
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  user.fullName.isEmpty ? 'Unnamed User' : user.fullName,
+          // ---------------------------------------------------
+          // ACCOUNT AVATAR AND INFORMATION
+          // ---------------------------------------------------
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Container(
+                width: 48,
+                height: 48,
+                decoration: BoxDecoration(
+                  color: AppColors.primaryLight,
+                  borderRadius: BorderRadius.circular(15),
+                ),
+                alignment: Alignment.center,
+                child: Text(
+                  avatarInitial,
                   style: const TextStyle(
-                    fontSize: 15,
-                    fontWeight: FontWeight.w700,
-                    color: _darkTextColor,
+                    color: AppColors.primary,
+                    fontSize: 21,
+                    fontWeight: FontWeight.w800,
                   ),
                 ),
+              ),
 
-                const SizedBox(height: 4),
+              const SizedBox(width: 13),
 
-                Text(
-                  user.email.isEmpty ? 'No email recorded' : user.email,
-                  style: const TextStyle(fontSize: 12.5, color: Colors.black54),
-                ),
-
-                const SizedBox(height: 9),
-
-                Wrap(
-                  spacing: 7,
-                  runSpacing: 7,
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    _buildRoleBadge(user.role),
-                    _buildInfoChip('Joined ${_formatDate(user.createdAt)}'),
+                    Text(
+                      displayName,
+                      softWrap: true,
+                      style: const TextStyle(
+                        color: AppColors.navy,
+                        fontSize: 15.5,
+                        fontWeight: FontWeight.w800,
+                        height: 1.35,
+                      ),
+                    ),
+
+                    const SizedBox(height: 7),
+
+                    Text(
+                      displayEmail,
+                      softWrap: true,
+                      style: const TextStyle(
+                        color: AppColors.secondaryText,
+                        fontSize: 12,
+                        height: 1.5,
+                      ),
+                    ),
                   ],
                 ),
-                if (user.role != 'admin') ...[
-                  const SizedBox(height: 12),
+              ),
+            ],
+          ),
 
-                  SizedBox(
-                    width: double.infinity,
-                    height: 40,
-                    child: OutlinedButton.icon(
-                      onPressed: _updatingUserId != null
-                          ? null
-                          : () => _changeUserRole(user),
-                      icon: _updatingUserId == user.id
-                          ? const SizedBox(
-                              width: 16,
-                              height: 16,
-                              child: CircularProgressIndicator(strokeWidth: 2),
-                            )
-                          : const Icon(
-                              Icons.manage_accounts_outlined,
-                              size: 18,
-                            ),
-                      label: const Text('Manage Role'),
-                    ),
-                  ),
-                ] else ...[
-                  const SizedBox(height: 10),
+          const SizedBox(height: 17),
 
-                  const Row(
-                    children: [
-                      Icon(
-                        Icons.lock_outline_rounded,
-                        size: 15,
-                        color: Colors.black38,
-                      ),
+          const Divider(height: 1, color: AppColors.border),
 
-                      SizedBox(width: 5),
+          const SizedBox(height: 15),
 
-                      Text(
-                        'Administrator role is protected',
-                        style: TextStyle(fontSize: 10.5, color: Colors.black45),
-                      ),
-                    ],
-                  ),
-                ],
-              ],
+          // ---------------------------------------------------
+          // ROLE AND REGISTRATION INFORMATION
+          // ---------------------------------------------------
+          const Text(
+            'ACCOUNT INFORMATION',
+            style: TextStyle(
+              color: AppColors.secondaryText,
+              fontSize: 10,
+              fontWeight: FontWeight.w800,
+              letterSpacing: 0.8,
             ),
           ),
+
+          const SizedBox(height: 11),
+
+          Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            children: [
+              _buildRoleBadge(user.role),
+
+              _buildInfoChip('Joined ${_formatDate(user.createdAt)}'),
+            ],
+          ),
+
+          const SizedBox(height: 17),
+
+          // ---------------------------------------------------
+          // ROLE MANAGEMENT / PROTECTED ADMIN
+          // ---------------------------------------------------
+          if (!isAdmin)
+            SizedBox(
+              width: double.infinity,
+              height: 46,
+              child: OutlinedButton.icon(
+                onPressed: _updatingUserId != null
+                    ? null
+                    : () {
+                        _changeUserRole(user);
+                      },
+                icon: isUpdating
+                    ? const SizedBox(
+                        width: 18,
+                        height: 18,
+                        child: CircularProgressIndicator(
+                          strokeWidth: 2,
+                          color: AppColors.primary,
+                        ),
+                      )
+                    : const Icon(Icons.manage_accounts_outlined, size: 19),
+                label: Text(isUpdating ? 'Updating Role...' : 'Manage Role'),
+              ),
+            )
+          else
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: AppColors.background,
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(color: AppColors.border),
+              ),
+              child: const Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Icon(
+                    Icons.lock_outline_rounded,
+                    color: AppColors.primary,
+                    size: 19,
+                  ),
+
+                  SizedBox(width: 9),
+
+                  Expanded(
+                    child: Text(
+                      'Administrator role is protected '
+                      'and cannot be changed here.',
+                      style: TextStyle(
+                        color: AppColors.secondaryText,
+                        fontSize: 12,
+                        fontWeight: FontWeight.w600,
+                        height: 1.45,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
         ],
       ),
     );
@@ -728,39 +1197,73 @@ class _ManageUsersScreenState extends State<ManageUsersScreen> {
   }
 
   Widget _buildEmptyState({required String title, required String message}) {
+    final bool isSearchEmpty = title == 'No matching users';
+
     return Container(
       width: double.infinity,
-      padding: const EdgeInsets.all(30),
+      padding: const EdgeInsets.all(24),
       decoration: BoxDecoration(
         color: Colors.white,
-        borderRadius: BorderRadius.circular(18),
-        border: Border.all(color: _borderColor),
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(color: AppColors.border),
       ),
       child: Column(
         children: [
-          const Icon(
-            Icons.people_outline_rounded,
-            size: 40,
-            color: Colors.black38,
-          ),
-
-          const SizedBox(height: 10),
-
-          Text(
-            title,
-            style: const TextStyle(
-              fontWeight: FontWeight.w700,
-              color: _darkTextColor,
+          Container(
+            width: 64,
+            height: 64,
+            decoration: BoxDecoration(
+              color: AppColors.primaryLight,
+              borderRadius: BorderRadius.circular(19),
+            ),
+            child: Icon(
+              isSearchEmpty
+                  ? Icons.search_off_rounded
+                  : Icons.people_outline_rounded,
+              color: AppColors.primary,
+              size: 31,
             ),
           ),
 
-          const SizedBox(height: 4),
+          const SizedBox(height: 16),
+
+          Text(
+            title,
+            textAlign: TextAlign.center,
+            style: const TextStyle(
+              color: AppColors.navy,
+              fontSize: 15,
+              fontWeight: FontWeight.w800,
+            ),
+          ),
+
+          const SizedBox(height: 8),
 
           Text(
             message,
             textAlign: TextAlign.center,
-            style: const TextStyle(fontSize: 12.5, color: Colors.black54),
+            style: const TextStyle(
+              color: AppColors.secondaryText,
+              fontSize: 12.5,
+              height: 1.5,
+            ),
           ),
+
+          if (isSearchEmpty) ...[
+            const SizedBox(height: 17),
+
+            OutlinedButton.icon(
+              onPressed: () {
+                _searchController.clear();
+
+                setState(() {
+                  _searchText = '';
+                });
+              },
+              icon: const Icon(Icons.refresh_rounded, size: 18),
+              label: const Text('Clear Search'),
+            ),
+          ],
         ],
       ),
     );
@@ -768,34 +1271,61 @@ class _ManageUsersScreenState extends State<ManageUsersScreen> {
 
   Widget _buildErrorState() {
     return Container(
-      padding: const EdgeInsets.all(22),
+      width: double.infinity,
+      padding: const EdgeInsets.all(24),
       decoration: BoxDecoration(
         color: Colors.white,
-        borderRadius: BorderRadius.circular(18),
-        border: Border.all(color: _borderColor),
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(color: AppColors.border),
       ),
       child: Column(
         children: [
-          const Icon(
-            Icons.error_outline_rounded,
-            size: 38,
-            color: Colors.black45,
-          ),
-
-          const SizedBox(height: 10),
-
-          const Text(
-            'Unable to load user accounts.',
-            textAlign: TextAlign.center,
-            style: TextStyle(
-              fontWeight: FontWeight.w700,
-              color: _darkTextColor,
+          Container(
+            width: 64,
+            height: 64,
+            decoration: BoxDecoration(
+              color: AppColors.primaryLight,
+              borderRadius: BorderRadius.circular(19),
+            ),
+            child: const Icon(
+              Icons.cloud_off_outlined,
+              color: AppColors.primary,
+              size: 30,
             ),
           ),
 
-          const SizedBox(height: 12),
+          const SizedBox(height: 16),
 
-          OutlinedButton(onPressed: _refresh, child: const Text('Try Again')),
+          const Text(
+            'Unable to Load User Accounts',
+            textAlign: TextAlign.center,
+            style: TextStyle(
+              color: AppColors.navy,
+              fontSize: 15,
+              fontWeight: FontWeight.w800,
+            ),
+          ),
+
+          const SizedBox(height: 8),
+
+          const Text(
+            'User accounts could not be retrieved. '
+            'Please check your connection and try again.',
+            textAlign: TextAlign.center,
+            style: TextStyle(
+              color: AppColors.secondaryText,
+              fontSize: 12.5,
+              height: 1.5,
+            ),
+          ),
+
+          const SizedBox(height: 18),
+
+          OutlinedButton.icon(
+            onPressed: _refresh,
+            icon: const Icon(Icons.refresh_rounded, size: 18),
+            label: const Text('Try Again'),
+          ),
         ],
       ),
     );
@@ -805,50 +1335,66 @@ class _ManageUsersScreenState extends State<ManageUsersScreen> {
     required String role,
     required String selectedRole,
   }) {
-    final bool selected = selectedRole == role;
+    final bool isSelected = selectedRole == role;
 
-    return Container(
+    return AnimatedContainer(
+      duration: const Duration(milliseconds: 180),
       margin: const EdgeInsets.only(bottom: 8),
       decoration: BoxDecoration(
-        color: selected ? const Color(0xFFE8F6F7) : Colors.white,
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: selected ? _primaryColor : _borderColor),
+        color: isSelected ? AppColors.primaryLight : Colors.white,
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(
+          color: isSelected ? AppColors.primary : AppColors.border,
+          width: isSelected ? 1.5 : 1,
+        ),
       ),
       child: RadioListTile<String>(
         value: role,
-        activeColor: _primaryColor,
+        selected: isSelected,
+        activeColor: AppColors.primary,
+        dense: true,
+        visualDensity: const VisualDensity(horizontal: -2, vertical: -2),
+        contentPadding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
         title: Row(
+          crossAxisAlignment: CrossAxisAlignment.center,
           children: [
             Icon(
               _roleIcon(role),
-              size: 19,
-              color: selected ? _primaryColor : const Color(0xFF486581),
+              color: isSelected ? AppColors.primary : AppColors.secondaryText,
+              size: 21,
             ),
 
-            const SizedBox(width: 8),
+            const SizedBox(width: 10),
 
             Expanded(
-              child: Text(
-                _formatRole(role),
-                style: TextStyle(
-                  fontSize: 13.5,
-                  fontWeight: FontWeight.w700,
-                  color: selected ? _primaryColor : _darkTextColor,
-                ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    _formatRole(role),
+                    style: TextStyle(
+                      color: isSelected ? AppColors.primary : AppColors.navy,
+                      fontSize: 13.5,
+                      fontWeight: FontWeight.w800,
+                      height: 1.3,
+                    ),
+                  ),
+
+                  const SizedBox(height: 4),
+
+                  Text(
+                    _roleDescription(role),
+                    style: const TextStyle(
+                      color: AppColors.secondaryText,
+                      fontSize: 11,
+                      height: 1.35,
+                    ),
+                  ),
+                ],
               ),
             ),
           ],
-        ),
-        subtitle: Padding(
-          padding: const EdgeInsets.only(top: 3),
-          child: Text(
-            _roleDescription(role),
-            style: const TextStyle(
-              fontSize: 10.5,
-              height: 1.3,
-              color: Colors.black54,
-            ),
-          ),
         ),
       ),
     );

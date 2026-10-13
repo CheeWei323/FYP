@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import '../../services/auth_service.dart';
 import '../../services/user_service.dart';
 import '../login_screen.dart';
+import '../../theme/app_theme.dart';
 
 class AdminProfileScreen extends StatefulWidget {
   const AdminProfileScreen({super.key});
@@ -17,11 +18,7 @@ class _AdminProfileScreenState extends State<AdminProfileScreen> {
 
   final AuthService _authService = AuthService();
 
-  static const Color _primaryColor = Color(0xFF087F8C);
-
   static const Color _darkTextColor = Color(0xFF102A43);
-
-  static const Color _borderColor = Color(0xFFE1E7EC);
 
   late Future<Map<String, dynamic>> _profileFuture;
 
@@ -69,17 +66,97 @@ class _AdminProfileScreenState extends State<AdminProfileScreen> {
       context: context,
       builder: (BuildContext dialogContext) {
         return AlertDialog(
-          icon: const Icon(
-            Icons.logout_rounded,
-            color: _primaryColor,
-            size: 32,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(20),
           ),
-          title: const Text('Log Out', textAlign: TextAlign.center),
-          content: const Text(
-            'Are you sure you want to log out '
-            'of the Administrator account?',
-            textAlign: TextAlign.center,
+          titlePadding: const EdgeInsets.fromLTRB(20, 20, 20, 8),
+          contentPadding: const EdgeInsets.fromLTRB(20, 8, 20, 12),
+          actionsPadding: const EdgeInsets.fromLTRB(14, 0, 14, 12),
+
+          // ---------------------------------------------------
+          // LOGOUT CONFIRMATION HEADER
+          // ---------------------------------------------------
+          title: Row(
+            children: [
+              Container(
+                width: 44,
+                height: 44,
+                decoration: BoxDecoration(
+                  color: const Color(0xFFFFEBEE),
+                  borderRadius: BorderRadius.circular(13),
+                ),
+                child: const Icon(
+                  Icons.logout_rounded,
+                  color: AppColors.danger,
+                  size: 23,
+                ),
+              ),
+
+              const SizedBox(width: 12),
+
+              const Expanded(
+                child: Text(
+                  'Log Out',
+                  style: TextStyle(
+                    color: AppColors.navy,
+                    fontSize: 18,
+                    fontWeight: FontWeight.w800,
+                  ),
+                ),
+              ),
+            ],
           ),
+
+          // ---------------------------------------------------
+          // LOGOUT CONFIRMATION MESSAGE
+          // ---------------------------------------------------
+          content: const Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                'Are you sure you want to log out of '
+                'your Administrator account?',
+                style: TextStyle(
+                  color: AppColors.navy,
+                  fontSize: 13,
+                  fontWeight: FontWeight.w600,
+                  height: 1.5,
+                ),
+              ),
+
+              SizedBox(height: 12),
+
+              Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Icon(
+                    Icons.info_outline_rounded,
+                    color: AppColors.primary,
+                    size: 18,
+                  ),
+
+                  SizedBox(width: 9),
+
+                  Expanded(
+                    child: Text(
+                      'You will need to sign in again '
+                      'to access the Administrator dashboard.',
+                      style: TextStyle(
+                        color: AppColors.secondaryText,
+                        fontSize: 12,
+                        height: 1.5,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ],
+          ),
+
+          // ---------------------------------------------------
+          // LOGOUT CONFIRMATION ACTIONS
+          // ---------------------------------------------------
           actions: [
             TextButton(
               onPressed: () {
@@ -87,11 +164,17 @@ class _AdminProfileScreenState extends State<AdminProfileScreen> {
               },
               child: const Text('Cancel'),
             ),
-            FilledButton(
+
+            FilledButton.icon(
+              style: FilledButton.styleFrom(
+                backgroundColor: AppColors.danger,
+                foregroundColor: Colors.white,
+              ),
               onPressed: () {
                 Navigator.pop(dialogContext, true);
               },
-              child: const Text('Log Out'),
+              icon: const Icon(Icons.logout_rounded, size: 17),
+              label: const Text('Log Out'),
             ),
           ],
         );
@@ -159,7 +242,58 @@ class _AdminProfileScreenState extends State<AdminProfileScreen> {
         future: _profileFuture,
         builder: (context, snapshot) {
           if (snapshot.connectionState == ConnectionState.waiting) {
-            return const Center(child: CircularProgressIndicator());
+            return ListView(
+              physics: const AlwaysScrollableScrollPhysics(),
+              padding: const EdgeInsets.all(18),
+              children: [
+                const SizedBox(height: 70),
+
+                Container(
+                  width: double.infinity,
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 20,
+                    vertical: 32,
+                  ),
+                  decoration: BoxDecoration(
+                    color: Colors.white,
+                    borderRadius: BorderRadius.circular(20),
+                    border: Border.all(color: AppColors.border),
+                  ),
+                  child: const Column(
+                    children: [
+                      CircularProgressIndicator(
+                        color: AppColors.primary,
+                        strokeWidth: 3,
+                      ),
+
+                      SizedBox(height: 20),
+
+                      Text(
+                        'Loading Administrator Profile',
+                        textAlign: TextAlign.center,
+                        style: TextStyle(
+                          color: AppColors.navy,
+                          fontSize: 15,
+                          fontWeight: FontWeight.w800,
+                        ),
+                      ),
+
+                      SizedBox(height: 8),
+
+                      Text(
+                        'Retrieving your account information...',
+                        textAlign: TextAlign.center,
+                        style: TextStyle(
+                          color: AppColors.secondaryText,
+                          fontSize: 12.5,
+                          height: 1.5,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            );
           }
 
           if (snapshot.hasError) {
@@ -273,69 +407,124 @@ class _AdminProfileScreenState extends State<AdminProfileScreen> {
     required String fullName,
     required String email,
   }) {
+    final String displayName = fullName.trim().isNotEmpty
+        ? fullName.trim()
+        : 'System Administrator';
+
+    final String displayEmail = email.trim().isNotEmpty
+        ? email.trim()
+        : 'No email recorded';
+
     return Container(
       width: double.infinity,
-      padding: const EdgeInsets.all(20),
+      padding: const EdgeInsets.all(18),
       decoration: BoxDecoration(
-        gradient: const LinearGradient(
-          colors: [Color(0xFFE7F7F8), Color(0xFFF1F8FB)],
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-        ),
+        color: Colors.white,
         borderRadius: BorderRadius.circular(20),
-        border: Border.all(color: const Color(0xFFCBE8EB)),
+        border: Border.all(color: AppColors.border),
+        boxShadow: const [
+          BoxShadow(
+            color: Color(0x08000000),
+            blurRadius: 12,
+            offset: Offset(0, 4),
+          ),
+        ],
       ),
       child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Container(
-            width: 70,
-            height: 70,
-            decoration: const BoxDecoration(
-              color: Colors.white,
-              shape: BoxShape.circle,
-            ),
-            child: const Icon(
-              Icons.admin_panel_settings_outlined,
-              size: 36,
-              color: _primaryColor,
-            ),
-          ),
-
-          const SizedBox(height: 13),
-
-          Text(
-            fullName.isEmpty ? 'System Administrator' : fullName,
-            textAlign: TextAlign.center,
-            style: const TextStyle(
-              fontSize: 20,
-              fontWeight: FontWeight.w800,
-              color: _darkTextColor,
-            ),
-          ),
-
-          const SizedBox(height: 4),
-
-          Text(
-            email,
-            textAlign: TextAlign.center,
-            style: const TextStyle(fontSize: 12.5, color: Colors.black54),
-          ),
-
-          const SizedBox(height: 10),
-
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-            decoration: BoxDecoration(
-              color: const Color(0xFFDDF3F4),
-              borderRadius: BorderRadius.circular(20),
-            ),
-            child: const Text(
-              'SYSTEM ADMINISTRATOR',
-              style: TextStyle(
-                fontSize: 10,
-                fontWeight: FontWeight.w800,
-                color: _primaryColor,
+          // ---------------------------------------------------
+          // ADMINISTRATOR PROFILE HEADER
+          // ---------------------------------------------------
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Container(
+                width: 58,
+                height: 58,
+                decoration: BoxDecoration(
+                  color: AppColors.primaryLight,
+                  borderRadius: BorderRadius.circular(17),
+                ),
+                child: const Icon(
+                  Icons.admin_panel_settings_outlined,
+                  color: AppColors.primary,
+                  size: 31,
+                ),
               ),
+
+              const SizedBox(width: 14),
+
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      displayName,
+                      softWrap: true,
+                      style: const TextStyle(
+                        color: AppColors.navy,
+                        fontSize: 18,
+                        fontWeight: FontWeight.w800,
+                        height: 1.3,
+                      ),
+                    ),
+
+                    const SizedBox(height: 6),
+
+                    Text(
+                      displayEmail,
+                      softWrap: true,
+                      style: const TextStyle(
+                        color: AppColors.secondaryText,
+                        fontSize: 12,
+                        height: 1.5,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+
+          const SizedBox(height: 17),
+
+          const Divider(height: 1, color: AppColors.border),
+
+          const SizedBox(height: 14),
+
+          // ---------------------------------------------------
+          // ADMINISTRATOR ROLE INDICATOR
+          // ---------------------------------------------------
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 11, vertical: 8),
+            decoration: BoxDecoration(
+              color: AppColors.primaryLight,
+              borderRadius: BorderRadius.circular(12),
+            ),
+            child: const Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(
+                  Icons.verified_user_outlined,
+                  color: AppColors.primary,
+                  size: 17,
+                ),
+
+                SizedBox(width: 7),
+
+                Flexible(
+                  child: Text(
+                    'SYSTEM ADMINISTRATOR',
+                    style: TextStyle(
+                      color: AppColors.primary,
+                      fontSize: 10.5,
+                      fontWeight: FontWeight.w800,
+                      letterSpacing: 0.4,
+                    ),
+                  ),
+                ),
+              ],
             ),
           ),
         ],
@@ -353,40 +542,60 @@ class _AdminProfileScreenState extends State<AdminProfileScreen> {
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
         color: Colors.white,
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: _borderColor),
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(color: AppColors.border),
+        boxShadow: const [
+          BoxShadow(
+            color: Color(0x08000000),
+            blurRadius: 10,
+            offset: Offset(0, 3),
+          ),
+        ],
       ),
       child: Row(
+        crossAxisAlignment: CrossAxisAlignment.center,
         children: [
+          // ---------------------------------------------------
+          // INFORMATION ICON
+          // ---------------------------------------------------
           Container(
-            width: 42,
-            height: 42,
+            width: 46,
+            height: 46,
             decoration: BoxDecoration(
-              color: const Color(0xFFE8F6F7),
-              borderRadius: BorderRadius.circular(12),
+              color: AppColors.primaryLight,
+              borderRadius: BorderRadius.circular(13),
             ),
-            child: Icon(icon, color: _primaryColor, size: 21),
+            child: Icon(icon, color: AppColors.primary, size: 23),
           ),
 
           const SizedBox(width: 13),
 
+          // ---------------------------------------------------
+          // INFORMATION LABEL AND VALUE
+          // ---------------------------------------------------
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
                   label,
-                  style: const TextStyle(fontSize: 11, color: Colors.black54),
+                  style: const TextStyle(
+                    color: AppColors.secondaryText,
+                    fontSize: 11.5,
+                    fontWeight: FontWeight.w500,
+                  ),
                 ),
 
-                const SizedBox(height: 3),
+                const SizedBox(height: 5),
 
                 Text(
                   value,
+                  softWrap: true,
                   style: const TextStyle(
+                    color: AppColors.navy,
                     fontSize: 14,
-                    fontWeight: FontWeight.w700,
-                    color: _darkTextColor,
+                    fontWeight: FontWeight.w800,
+                    height: 1.4,
                   ),
                 ),
               ],
@@ -400,32 +609,102 @@ class _AdminProfileScreenState extends State<AdminProfileScreen> {
   Widget _buildAccessCard() {
     return Container(
       width: double.infinity,
-      padding: const EdgeInsets.all(18),
+      padding: const EdgeInsets.all(17),
       decoration: BoxDecoration(
         color: const Color(0xFFF1F6FA),
-        borderRadius: BorderRadius.circular(17),
+        borderRadius: BorderRadius.circular(18),
         border: Border.all(color: const Color(0xFFD8E6EE)),
       ),
-      child: const Row(
+      child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Icon(Icons.verified_user_outlined, color: _primaryColor, size: 25),
-
-          SizedBox(width: 13),
-
-          Expanded(
-            child: Text(
-              'This account has administrative access '
-              'to user role management, destination '
-              'availability and administrative activity '
-              'history. Administrator roles cannot be '
-              'changed through the client application.',
-              style: TextStyle(
-                fontSize: 12.5,
-                height: 1.5,
-                color: Color(0xFF334E68),
+          // ---------------------------------------------------
+          // ADMINISTRATOR ACCESS HEADER
+          // ---------------------------------------------------
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Container(
+                width: 42,
+                height: 42,
+                decoration: BoxDecoration(
+                  color: Colors.white,
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: const Icon(
+                  Icons.verified_user_outlined,
+                  color: AppColors.primary,
+                  size: 24,
+                ),
               ),
-            ),
+
+              const SizedBox(width: 12),
+
+              const Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Administrator Access',
+                      style: TextStyle(
+                        color: AppColors.navy,
+                        fontSize: 14,
+                        fontWeight: FontWeight.w800,
+                      ),
+                    ),
+
+                    SizedBox(height: 7),
+
+                    Text(
+                      'This account can manage authorised '
+                      'user roles, destination availability '
+                      'and administrative activity history.',
+                      style: TextStyle(
+                        color: AppColors.secondaryText,
+                        fontSize: 12.5,
+                        height: 1.5,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+
+          const SizedBox(height: 15),
+
+          const Divider(height: 1, color: Color(0xFFD8E6EE)),
+
+          const SizedBox(height: 13),
+
+          // ---------------------------------------------------
+          // PROTECTED ADMINISTRATOR ROLE
+          // ---------------------------------------------------
+          const Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Icon(
+                Icons.lock_outline_rounded,
+                color: AppColors.primary,
+                size: 19,
+              ),
+
+              SizedBox(width: 9),
+
+              Expanded(
+                child: Text(
+                  'Administrator roles are protected '
+                  'from modification through the '
+                  'client application.',
+                  style: TextStyle(
+                    color: AppColors.navy,
+                    fontSize: 12,
+                    fontWeight: FontWeight.w600,
+                    height: 1.5,
+                  ),
+                ),
+              ),
+            ],
           ),
         ],
       ),
@@ -434,34 +713,62 @@ class _AdminProfileScreenState extends State<AdminProfileScreen> {
 
   Widget _buildErrorState() {
     return Container(
+      width: double.infinity,
       padding: const EdgeInsets.all(24),
       decoration: BoxDecoration(
         color: Colors.white,
-        borderRadius: BorderRadius.circular(18),
-        border: Border.all(color: _borderColor),
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(color: AppColors.border),
       ),
       child: Column(
         children: [
-          const Icon(
-            Icons.error_outline_rounded,
-            size: 38,
-            color: Colors.black45,
-          ),
-
-          const SizedBox(height: 10),
-
-          const Text(
-            'Unable to load administrator profile.',
-            textAlign: TextAlign.center,
-            style: TextStyle(
-              fontWeight: FontWeight.w700,
-              color: _darkTextColor,
+          Container(
+            width: 64,
+            height: 64,
+            decoration: BoxDecoration(
+              color: AppColors.primaryLight,
+              borderRadius: BorderRadius.circular(19),
+            ),
+            child: const Icon(
+              Icons.cloud_off_outlined,
+              color: AppColors.primary,
+              size: 30,
             ),
           ),
 
-          const SizedBox(height: 12),
+          const SizedBox(height: 16),
 
-          OutlinedButton(onPressed: _refresh, child: const Text('Try Again')),
+          const Text(
+            'Unable to Load Profile',
+            textAlign: TextAlign.center,
+            style: TextStyle(
+              color: AppColors.navy,
+              fontSize: 15,
+              fontWeight: FontWeight.w800,
+            ),
+          ),
+
+          const SizedBox(height: 8),
+
+          const Text(
+            'Administrator information could not be '
+            'retrieved. Please check your connection '
+            'and try again.',
+            textAlign: TextAlign.center,
+            style: TextStyle(
+              color: AppColors.secondaryText,
+              fontSize: 12.5,
+              height: 1.5,
+            ),
+          ),
+
+          const SizedBox(height: 18),
+
+          OutlinedButton.icon(
+            onPressed: _refresh,
+            icon: const Icon(Icons.refresh_rounded, size: 18),
+            label: const Text('Try Again'),
+          ),
         ],
       ),
     );

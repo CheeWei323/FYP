@@ -6,6 +6,7 @@ import '../admin/admin_activity_history_screen.dart';
 import '../admin/admin_profile_screen.dart';
 import '../admin/manage_destinations_screen.dart';
 import '../admin/manage_users_screen.dart';
+import '../../theme/app_theme.dart';
 
 class AdminDashboard extends StatefulWidget {
   const AdminDashboard({super.key});
@@ -16,8 +17,6 @@ class AdminDashboard extends StatefulWidget {
 
 class _AdminDashboardState extends State<AdminDashboard> {
   final AdminService _adminService = AdminService();
-
-  static const Color _primaryColor = Color(0xFF087F8C);
 
   static const Color _darkTextColor = Color(0xFF102A43);
 
@@ -264,51 +263,102 @@ class _AdminDashboardState extends State<AdminDashboard> {
       width: double.infinity,
       padding: const EdgeInsets.all(20),
       decoration: BoxDecoration(
-        gradient: const LinearGradient(
-          colors: [Color(0xFFE7F7F8), Color(0xFFF1F8FB)],
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-        ),
+        color: Colors.white,
         borderRadius: BorderRadius.circular(20),
-        border: Border.all(color: const Color(0xFFCBE8EB)),
+        border: Border.all(color: AppColors.border),
+        boxShadow: const [
+          BoxShadow(
+            color: Color(0x08000000),
+            blurRadius: 12,
+            offset: Offset(0, 4),
+          ),
+        ],
       ),
-      child: const Row(
+      child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Icon(
-            Icons.admin_panel_settings_outlined,
-            color: _primaryColor,
-            size: 32,
+          // ---------------------------------------------------
+          // ADMINISTRATOR HEADER
+          // ---------------------------------------------------
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Container(
+                width: 52,
+                height: 52,
+                decoration: BoxDecoration(
+                  color: AppColors.primaryLight,
+                  borderRadius: BorderRadius.circular(15),
+                ),
+                child: const Icon(
+                  Icons.admin_panel_settings_outlined,
+                  color: AppColors.primary,
+                  size: 29,
+                ),
+              ),
+
+              const SizedBox(width: 14),
+
+              const Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Administrator Workspace',
+                      style: TextStyle(
+                        color: AppColors.navy,
+                        fontSize: 20,
+                        fontWeight: FontWeight.w800,
+                        height: 1.3,
+                      ),
+                    ),
+
+                    SizedBox(height: 8),
+
+                    Text(
+                      'Manage system access, supported '
+                      'destinations and administrative '
+                      'activity in one place.',
+                      style: TextStyle(
+                        color: AppColors.secondaryText,
+                        fontSize: 12.5,
+                        height: 1.5,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
           ),
 
-          SizedBox(width: 14),
+          const SizedBox(height: 19),
 
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  'TravelGuard MY',
+          const Divider(height: 1, color: AppColors.border),
+
+          const SizedBox(height: 15),
+
+          // ---------------------------------------------------
+          // ADMINISTRATOR ROLE INFORMATION
+          // ---------------------------------------------------
+          const Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Icon(Icons.shield_outlined, color: AppColors.primary, size: 19),
+
+              SizedBox(width: 10),
+
+              Expanded(
+                child: Text(
+                  'System administration tools are '
+                  'restricted to authorised accounts.',
                   style: TextStyle(
-                    fontSize: 21,
-                    fontWeight: FontWeight.w800,
-                    color: _darkTextColor,
+                    color: AppColors.secondaryText,
+                    fontSize: 12,
+                    height: 1.5,
                   ),
                 ),
-
-                SizedBox(height: 6),
-
-                Text(
-                  'Monitor system access, manage authorised '
-                  'accounts and maintain destination availability.',
-                  style: TextStyle(
-                    fontSize: 13.5,
-                    height: 1.45,
-                    color: Colors.black54,
-                  ),
-                ),
-              ],
-            ),
+              ),
+            ],
           ),
         ],
       ),
@@ -319,34 +369,113 @@ class _AdminDashboardState extends State<AdminDashboard> {
   // SYSTEM OVERVIEW
   // ---------------------------------------------------------------------------
 
+  Widget _buildDashboardStatusCard({
+    required IconData icon,
+    required String title,
+    required String message,
+    bool isLoading = false,
+  }) {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 28),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(color: AppColors.border),
+      ),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Container(
+            width: 64,
+            height: 64,
+            decoration: BoxDecoration(
+              color: AppColors.primaryLight,
+              borderRadius: BorderRadius.circular(19),
+            ),
+            child: Icon(icon, color: AppColors.primary, size: 30),
+          ),
+
+          const SizedBox(height: 17),
+
+          Text(
+            title,
+            textAlign: TextAlign.center,
+            style: const TextStyle(
+              color: AppColors.navy,
+              fontSize: 15,
+              fontWeight: FontWeight.w800,
+            ),
+          ),
+
+          const SizedBox(height: 8),
+
+          Text(
+            message,
+            textAlign: TextAlign.center,
+            style: const TextStyle(
+              color: AppColors.secondaryText,
+              fontSize: 12.5,
+              height: 1.5,
+            ),
+          ),
+
+          if (isLoading) ...[
+            const SizedBox(height: 20),
+
+            const CircularProgressIndicator(
+              color: AppColors.primary,
+              strokeWidth: 3,
+            ),
+          ] else ...[
+            const SizedBox(height: 14),
+
+            const Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Icon(
+                  Icons.swipe_down_alt_rounded,
+                  size: 17,
+                  color: AppColors.primary,
+                ),
+                SizedBox(width: 6),
+                Text(
+                  'Pull down to refresh',
+                  style: TextStyle(
+                    color: AppColors.primary,
+                    fontSize: 12,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ],
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+
   Widget _buildOverview() {
     return FutureBuilder<Map<String, int>>(
       future: _overviewFuture,
       builder: (context, snapshot) {
         if (snapshot.connectionState == ConnectionState.waiting) {
-          return Container(
-            height: 260,
-            decoration: BoxDecoration(
-              color: Colors.white,
-              borderRadius: BorderRadius.circular(18),
-              border: Border.all(color: _borderColor),
-            ),
-            child: const Center(child: CircularProgressIndicator()),
+          return _buildDashboardStatusCard(
+            icon: Icons.analytics_outlined,
+            title: 'Loading System Overview',
+            message:
+                'Retrieving the latest account and '
+                'destination statistics...',
+            isLoading: true,
           );
         }
-
         if (snapshot.hasError) {
-          return Container(
-            padding: const EdgeInsets.all(18),
-            decoration: BoxDecoration(
-              color: Colors.white,
-              borderRadius: BorderRadius.circular(18),
-              border: Border.all(color: _borderColor),
-            ),
-            child: const Text(
-              'Unable to load system overview.',
-              textAlign: TextAlign.center,
-            ),
+          return _buildDashboardStatusCard(
+            icon: Icons.cloud_off_outlined,
+            title: 'Unable to Load Overview',
+            message:
+                'System statistics could not be retrieved. '
+                'Please check your connection and try again.',
           );
         }
 
@@ -438,33 +567,73 @@ class _AdminDashboardState extends State<AdminDashboard> {
     required String label,
   }) {
     return Container(
+      width: double.infinity,
+      constraints: const BoxConstraints(minHeight: 156),
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
         color: Colors.white,
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: _borderColor),
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(color: AppColors.border),
+        boxShadow: const [
+          BoxShadow(
+            color: Color(0x08000000),
+            blurRadius: 10,
+            offset: Offset(0, 3),
+          ),
+        ],
       ),
       child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Icon(icon, color: _primaryColor, size: 23),
+          // ---------------------------------------------------
+          // STATISTIC ICON
+          // ---------------------------------------------------
+          Container(
+            width: 43,
+            height: 43,
+            decoration: BoxDecoration(
+              color: AppColors.primaryLight,
+              borderRadius: BorderRadius.circular(13),
+            ),
+            child: Icon(icon, color: AppColors.primary, size: 23),
+          ),
 
-          const SizedBox(height: 7),
+          const SizedBox(height: 15),
 
-          Text(
-            value,
-            style: const TextStyle(
-              fontSize: 21,
-              fontWeight: FontWeight.w800,
-              color: _darkTextColor,
+          // ---------------------------------------------------
+          // STATISTIC VALUE
+          // ---------------------------------------------------
+          SizedBox(
+            width: double.infinity,
+            child: FittedBox(
+              fit: BoxFit.scaleDown,
+              alignment: Alignment.centerLeft,
+              child: Text(
+                value,
+                style: const TextStyle(
+                  color: AppColors.navy,
+                  fontSize: 27,
+                  fontWeight: FontWeight.w800,
+                  height: 1.1,
+                ),
+              ),
             ),
           ),
 
-          const SizedBox(height: 3),
+          const SizedBox(height: 7),
 
+          // ---------------------------------------------------
+          // STATISTIC LABEL
+          // ---------------------------------------------------
           Text(
             label,
-            textAlign: TextAlign.center,
-            style: const TextStyle(fontSize: 11, color: Colors.black54),
+            softWrap: true,
+            style: const TextStyle(
+              color: AppColors.secondaryText,
+              fontSize: 12,
+              fontWeight: FontWeight.w600,
+              height: 1.35,
+            ),
           ),
         ],
       ),
@@ -484,70 +653,115 @@ class _AdminDashboardState extends State<AdminDashboard> {
   }) {
     return Material(
       color: Colors.transparent,
-      child: InkWell(
-        onTap: onTap,
-        borderRadius: BorderRadius.circular(18),
-        child: Ink(
-          padding: const EdgeInsets.all(18),
-          decoration: BoxDecoration(
-            color: Colors.white,
-            borderRadius: BorderRadius.circular(18),
-            border: Border.all(color: _borderColor),
-          ),
-          child: Row(
-            children: [
-              Container(
-                width: 50,
-                height: 50,
-                decoration: BoxDecoration(
-                  color: const Color(0xFFE8F6F7),
-                  borderRadius: BorderRadius.circular(15),
-                ),
-                child: Icon(icon, color: _primaryColor, size: 25),
-              ),
-
-              const SizedBox(width: 15),
-
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
+      borderRadius: BorderRadius.circular(20),
+      child: Ink(
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(20),
+          border: Border.all(color: AppColors.border),
+          boxShadow: const [
+            BoxShadow(
+              color: Color(0x08000000),
+              blurRadius: 12,
+              offset: Offset(0, 4),
+            ),
+          ],
+        ),
+        child: InkWell(
+          onTap: onTap,
+          borderRadius: BorderRadius.circular(20),
+          child: Padding(
+            padding: const EdgeInsets.all(18),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                // ---------------------------------------------
+                // MANAGEMENT ICON AND TITLE
+                // ---------------------------------------------
+                Row(
+                  crossAxisAlignment: CrossAxisAlignment.center,
                   children: [
-                    Text(
-                      title,
-                      style: const TextStyle(
-                        fontSize: 16,
-                        fontWeight: FontWeight.w700,
-                        color: _darkTextColor,
+                    Container(
+                      width: 49,
+                      height: 49,
+                      decoration: BoxDecoration(
+                        color: AppColors.primaryLight,
+                        borderRadius: BorderRadius.circular(14),
+                      ),
+                      child: Icon(icon, color: AppColors.primary, size: 25),
+                    ),
+
+                    const SizedBox(width: 13),
+
+                    Expanded(
+                      child: Text(
+                        title,
+                        style: const TextStyle(
+                          color: AppColors.navy,
+                          fontSize: 16,
+                          fontWeight: FontWeight.w800,
+                          height: 1.35,
+                        ),
                       ),
                     ),
 
-                    const SizedBox(height: 5),
+                    const SizedBox(width: 8),
 
-                    Text(
-                      description,
-                      style: const TextStyle(
-                        fontSize: 12.5,
-                        height: 1.4,
-                        color: Colors.black54,
-                      ),
-                    ),
-
-                    const SizedBox(height: 9),
-
-                    Text(
-                      actionText,
-                      style: const TextStyle(
-                        fontSize: 13,
-                        fontWeight: FontWeight.w700,
-                        color: _primaryColor,
-                      ),
+                    const Icon(
+                      Icons.chevron_right_rounded,
+                      color: AppColors.secondaryText,
+                      size: 23,
                     ),
                   ],
                 ),
-              ),
 
-              const Icon(Icons.chevron_right_rounded, color: Colors.black38),
-            ],
+                const SizedBox(height: 15),
+
+                // ---------------------------------------------
+                // MANAGEMENT DESCRIPTION
+                // ---------------------------------------------
+                Text(
+                  description,
+                  style: const TextStyle(
+                    color: AppColors.secondaryText,
+                    fontSize: 12.5,
+                    height: 1.55,
+                  ),
+                ),
+
+                const SizedBox(height: 17),
+
+                const Divider(height: 1, color: AppColors.border),
+
+                const SizedBox(height: 13),
+
+                // ---------------------------------------------
+                // NAVIGATION ACTION
+                // ---------------------------------------------
+                Row(
+                  children: [
+                    Expanded(
+                      child: Text(
+                        actionText,
+                        style: const TextStyle(
+                          color: AppColors.primary,
+                          fontSize: 12.5,
+                          fontWeight: FontWeight.w800,
+                        ),
+                      ),
+                    ),
+
+                    const SizedBox(width: 8),
+
+                    const Icon(
+                      Icons.arrow_forward_rounded,
+                      color: AppColors.primary,
+                      size: 19,
+                    ),
+                  ],
+                ),
+              ],
+            ),
           ),
         ),
       ),
@@ -622,75 +836,193 @@ class _AdminDashboardState extends State<AdminDashboard> {
   }
 
   Widget _buildRecentActivityCard(AdminActivityLog log) {
+    // ---------------------------------------------------------
+    // ACTIVITY STATUS COLOURS
+    // ---------------------------------------------------------
+
+    final bool isEnabled = log.action == 'destinationEnabled';
+    final bool isDisabled = log.action == 'destinationDisabled';
+
+    final Color accentColor = isEnabled
+        ? AppColors.success
+        : isDisabled
+        ? const Color(0xFFA86300)
+        : AppColors.primary;
+
+    final Color accentBackground = isEnabled
+        ? const Color(0xFFEAF7F1)
+        : isDisabled
+        ? const Color(0xFFFFF4DC)
+        : AppColors.primaryLight;
+
+    final String performedBy = log.performedByName.trim().isNotEmpty
+        ? log.performedByName.trim()
+        : log.performedByEmail.trim().isNotEmpty
+        ? log.performedByEmail.trim()
+        : 'Administrator';
+
     return Container(
       width: double.infinity,
-      margin: const EdgeInsets.only(bottom: 9),
-      padding: const EdgeInsets.all(15),
+      margin: const EdgeInsets.only(bottom: 11),
+      padding: const EdgeInsets.all(17),
       decoration: BoxDecoration(
         color: Colors.white,
-        borderRadius: BorderRadius.circular(15),
-        border: Border.all(color: _borderColor),
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(color: AppColors.border),
+        boxShadow: const [
+          BoxShadow(
+            color: Color(0x08000000),
+            blurRadius: 10,
+            offset: Offset(0, 3),
+          ),
+        ],
       ),
-      child: Row(
+      child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Container(
-            width: 39,
-            height: 39,
-            decoration: BoxDecoration(
-              color: const Color(0xFFE8F6F7),
-              borderRadius: BorderRadius.circular(11),
-            ),
-            child: Icon(
-              _adminActivityIcon(log.action),
-              color: _primaryColor,
-              size: 20,
-            ),
+          // ---------------------------------------------------
+          // ACTIVITY TYPE AND TARGET
+          // ---------------------------------------------------
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Container(
+                width: 44,
+                height: 44,
+                decoration: BoxDecoration(
+                  color: accentBackground,
+                  borderRadius: BorderRadius.circular(13),
+                ),
+                child: Icon(
+                  _adminActivityIcon(log.action),
+                  color: accentColor,
+                  size: 23,
+                ),
+              ),
+
+              const SizedBox(width: 12),
+
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    // Activity type badge.
+                    Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 9,
+                        vertical: 6,
+                      ),
+                      decoration: BoxDecoration(
+                        color: accentBackground,
+                        borderRadius: BorderRadius.circular(9),
+                      ),
+                      child: Text(
+                        _adminActivityLabel(log.action),
+                        style: TextStyle(
+                          color: accentColor,
+                          fontSize: 10,
+                          fontWeight: FontWeight.w800,
+                          letterSpacing: 0.3,
+                        ),
+                      ),
+                    ),
+
+                    const SizedBox(height: 10),
+
+                    // User or destination affected.
+                    Text(
+                      log.targetName,
+                      style: const TextStyle(
+                        color: AppColors.navy,
+                        fontSize: 15,
+                        fontWeight: FontWeight.w800,
+                        height: 1.35,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
           ),
 
-          const SizedBox(width: 12),
+          // ---------------------------------------------------
+          // ACTIVITY DESCRIPTION
+          // ---------------------------------------------------
+          if (log.details.trim().isNotEmpty) ...[
+            const SizedBox(height: 15),
 
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  _adminActivityLabel(log.action),
-                  style: const TextStyle(
-                    fontSize: 11,
-                    fontWeight: FontWeight.w700,
-                    color: _primaryColor,
-                  ),
-                ),
-
-                const SizedBox(height: 3),
-
-                Text(
-                  log.targetName,
-                  style: const TextStyle(
-                    fontSize: 14,
-                    fontWeight: FontWeight.w700,
-                    color: _darkTextColor,
-                  ),
-                ),
-
-                const SizedBox(height: 3),
-
-                Text(
-                  log.details,
-                  style: const TextStyle(fontSize: 11.5, color: Colors.black54),
-                ),
-
-                const SizedBox(height: 6),
-
-                Text(
-                  '${log.performedByName.isEmpty ? log.performedByEmail : log.performedByName}'
-                  ' • '
-                  '${_formatAdminActivityTime(log.timestamp)}',
-                  style: const TextStyle(fontSize: 9.5, color: Colors.black45),
-                ),
-              ],
+            Text(
+              log.details,
+              style: const TextStyle(
+                color: AppColors.secondaryText,
+                fontSize: 12.5,
+                height: 1.5,
+              ),
             ),
+          ],
+
+          const SizedBox(height: 16),
+
+          const Divider(height: 1, color: AppColors.border),
+
+          const SizedBox(height: 13),
+
+          // ---------------------------------------------------
+          // ADMINISTRATOR INFORMATION
+          // ---------------------------------------------------
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Icon(
+                Icons.person_outline_rounded,
+                color: AppColors.secondaryText,
+                size: 17,
+              ),
+
+              const SizedBox(width: 8),
+
+              Expanded(
+                child: Text(
+                  'By $performedBy',
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                    color: AppColors.secondaryText,
+                    fontSize: 11.5,
+                    fontWeight: FontWeight.w600,
+                    height: 1.4,
+                  ),
+                ),
+              ),
+            ],
+          ),
+
+          const SizedBox(height: 9),
+
+          // ---------------------------------------------------
+          // ACTIVITY TIMESTAMP
+          // ---------------------------------------------------
+          Row(
+            children: [
+              const Icon(
+                Icons.schedule_outlined,
+                color: AppColors.secondaryText,
+                size: 17,
+              ),
+
+              const SizedBox(width: 8),
+
+              Expanded(
+                child: Text(
+                  _formatAdminActivityTime(log.timestamp),
+                  style: const TextStyle(
+                    color: AppColors.secondaryText,
+                    fontSize: 11.5,
+                    height: 1.4,
+                  ),
+                ),
+              ),
+            ],
           ),
         ],
       ),
@@ -734,6 +1066,7 @@ class _AdminDashboardState extends State<AdminDashboard> {
       return 'Time pending';
     }
 
+    // Convert the stored timestamp to the device's local time.
     final DateTime local = timestamp.toLocal();
 
     const List<String> months = [
@@ -751,9 +1084,16 @@ class _AdminDashboardState extends State<AdminDashboard> {
       'Dec',
     ];
 
+    final int hour = local.hour % 12 == 0 ? 12 : local.hour % 12;
+
+    final String minute = local.minute.toString().padLeft(2, '0');
+
+    final String period = local.hour >= 12 ? 'PM' : 'AM';
+
     return '${local.day} '
         '${months[local.month - 1]} '
-        '${local.year}';
+        '${local.year} • '
+        '$hour:$minute $period';
   }
 
   // ---------------------------------------------------------------------------
@@ -762,31 +1102,96 @@ class _AdminDashboardState extends State<AdminDashboard> {
 
   Widget _buildInformationCard() {
     return Container(
-      padding: const EdgeInsets.all(18),
+      width: double.infinity,
+      padding: const EdgeInsets.all(17),
       decoration: BoxDecoration(
         color: const Color(0xFFF1F6FA),
         borderRadius: BorderRadius.circular(18),
         border: Border.all(color: const Color(0xFFD8E6EE)),
       ),
-      child: const Row(
+      child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Icon(Icons.security_outlined, color: _primaryColor, size: 25),
-
-          SizedBox(width: 13),
-
-          Expanded(
-            child: Text(
-              'Administrator access is used to manage authorised '
-              'system roles, destination availability and review '
-              'administrative activity. Administrator accounts '
-              'remain protected from client-side role modification.',
-              style: TextStyle(
-                fontSize: 12.5,
-                height: 1.5,
-                color: Color(0xFF334E68),
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Container(
+                width: 40,
+                height: 40,
+                decoration: BoxDecoration(
+                  color: Colors.white,
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: const Icon(
+                  Icons.security_outlined,
+                  color: AppColors.primary,
+                  size: 22,
+                ),
               ),
-            ),
+
+              const SizedBox(width: 12),
+
+              const Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Administration & Security',
+                      style: TextStyle(
+                        color: AppColors.navy,
+                        fontSize: 14,
+                        fontWeight: FontWeight.w800,
+                      ),
+                    ),
+
+                    SizedBox(height: 7),
+
+                    Text(
+                      'Administrator access is used to manage '
+                      'authorised system roles, destination '
+                      'availability and administrative activity.',
+                      style: TextStyle(
+                        color: AppColors.secondaryText,
+                        fontSize: 12.5,
+                        height: 1.55,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+
+          const SizedBox(height: 15),
+
+          const Divider(height: 1, color: Color(0xFFD8E6EE)),
+
+          const SizedBox(height: 13),
+
+          const Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Icon(
+                Icons.verified_user_outlined,
+                color: AppColors.primary,
+                size: 18,
+              ),
+
+              SizedBox(width: 9),
+
+              Expanded(
+                child: Text(
+                  'Administrator accounts remain protected '
+                  'from client-side role modification.',
+                  style: TextStyle(
+                    color: AppColors.navy,
+                    fontSize: 12,
+                    fontWeight: FontWeight.w600,
+                    height: 1.5,
+                  ),
+                ),
+              ),
+            ],
           ),
         ],
       ),
