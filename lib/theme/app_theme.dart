@@ -5,14 +5,15 @@ import 'package:flutter/material.dart';
 // -----------------------------------------------------------------------------
 
 class AppColors {
-  static const Color primary = Color(0xFF087F8C);
-  static const Color primaryLight = Color(0xFFE8F6F7);
+  static const Color accent = Color(0xFFF2C49B);
+  static const Color primary = Color(0xFF65466E);
+  static const Color primaryLight = Color(0xFFF0E8F2);
 
-  static const Color navy = Color(0xFF102A43);
-  static const Color secondaryText = Color(0xFF486581);
+  static const Color navy = Color(0xFF28232D);
+  static const Color secondaryText = Color(0xFF655E69);
 
-  static const Color background = Color(0xFFF7F9FB);
-  static const Color border = Color(0xFFE1E7EC);
+  static const Color background = Color(0xFFFAF7F2);
+  static const Color border = Color(0xFFE5DFE5);
 
   static const Color danger = Color(0xFFC62828);
   static const Color success = Color(0xFF177245);
@@ -45,6 +46,11 @@ class AppTheme {
           surface: Colors.white,
           onSurface: AppColors.navy,
           error: AppColors.danger,
+          primaryContainer: AppColors.primaryLight,
+          onPrimaryContainer: AppColors.primary,
+          secondary: AppColors.primary,
+          secondaryContainer: AppColors.accent,
+          onSecondaryContainer: AppColors.navy,
         );
 
     return ThemeData(
@@ -112,6 +118,19 @@ class AppTheme {
         ),
       ),
 
+      dividerTheme: const DividerThemeData(color: AppColors.border),
+      elevatedButtonTheme: ElevatedButtonThemeData(
+        style: ElevatedButton.styleFrom(
+          backgroundColor: AppColors.primary,
+          foregroundColor: Colors.white,
+          minimumSize: const Size(0, 48),
+          elevation: 0,
+          padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 14),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(13),
+          ),
+        ),
+      ),
       // Primary action buttons.
       filledButtonTheme: FilledButtonThemeData(
         style: FilledButton.styleFrom(
@@ -131,7 +150,7 @@ class AppTheme {
         style: OutlinedButton.styleFrom(
           foregroundColor: AppColors.primary,
           minimumSize: const Size(0, 48),
-          side: const BorderSide(color: Color(0xFF9BD2D7)),
+          side: const BorderSide(color: Color(0xFFC8B8CE)),
           shape: RoundedRectangleBorder(
             borderRadius: BorderRadius.circular(13),
           ),
@@ -141,6 +160,7 @@ class AppTheme {
 
       // Shared input field appearance.
       inputDecorationTheme: InputDecorationThemeData(
+        errorMaxLines: 3,
         filled: true,
         fillColor: Colors.white,
         contentPadding: const EdgeInsets.symmetric(
