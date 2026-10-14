@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 
 import '../../models/reminder.dart';
 import '../../models/trip.dart';
+import '../../navigation/app_route_observer.dart';
 import '../../services/reminder_service.dart';
 import '../../services/trip_service.dart';
 import '../../services/user_service.dart';
@@ -22,7 +23,8 @@ class TravellerDashboard extends StatefulWidget {
   State<TravellerDashboard> createState() => _TravellerDashboardState();
 }
 
-class _TravellerDashboardState extends State<TravellerDashboard> {
+class _TravellerDashboardState extends State<TravellerDashboard>
+    with WidgetsBindingObserver, RouteAware {
   final _userService = UserService();
   final _tripService = TripService();
   final _reminderService = ReminderService();
@@ -40,6 +42,9 @@ class _TravellerDashboardState extends State<TravellerDashboard> {
   List<Reminder> _reminders = [];
   int _completed = 0;
   int _total = 0;
+  int? _notificationCount;
+  PageRoute<dynamic>? _subscribedRoute;
+  static const _preparationWindowDays = 30;
 
   DateTime _day(DateTime date) => DateTime(date.year, date.month, date.day);
 
@@ -60,7 +65,61 @@ class _TravellerDashboardState extends State<TravellerDashboard> {
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     _loadData();
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+
+    final route = ModalRoute.of(context);
+
+    if (route is PageRoute<dynamic> && route != _subscribedRoute) {
+      appRouteObserver.unsubscribe(this);
+      _subscribedRoute = route;
+      appRouteObserver.subscribe(this, route);
+    }
+  }
+
+  @override
+  void didPopNext() {
+    if (!_openingPage) _loadData(showLoading: false);
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed &&
+        !_openingPage &&
+        (_subscribedRoute?.isCurrent ?? false)) {
+      _loadData(showLoading: false);
+    }
+  }
+
+  @override
+  void dispose() {
+    appRouteObserver.unsubscribe(this);
+    WidgetsBinding.instance.removeObserver(this);
+    super.dispose();
+  }
+
+  int _daysUntil(DateTime date) {
+    final now = DateTime.now();
+
+    return DateTime.utc(
+      date.year,
+      date.month,
+      date.day,
+    ).difference(DateTime.utc(now.year, now.month, now.day)).inDays;
+  }
+
+  Future<Map<String, int>?> _fetchProgress(String tripId) async {
+    try {
+      return await _tripService.getChecklistProgress(tripId);
+    } catch (error) {
+      debugPrint('DASHBOARD PROGRESS ERROR: $error');
+      return null;
+    }
   }
 
   // A reminder failure should not prevent travellers from opening their trips.
@@ -99,16 +158,44 @@ class _TravellerDashboardState extends State<TravellerDashboard> {
 
       trips.sort((a, b) => a.departureDate.compareTo(b.departureDate));
 
-      final today = _day(DateTime.now());
       final activeTrips = trips
-          .where((trip) => !_day(trip.departureDate).isBefore(today))
+          .where((trip) => _daysUntil(trip.departureDate) >= 0)
           .toList();
 
       final next = activeTrips.firstOrNull;
 
+      final preparationTrips = activeTrips
+          .where(
+            (trip) => _daysUntil(trip.departureDate) <= _preparationWindowDays,
+          )
+          .toList();
+
+      final progressTrips = <String, Trip>{
+        for (final trip in preparationTrips) trip.id: trip,
+      };
+
+      if (next != null) {
+        progressTrips[next.id] = next;
+      }
+
+      // Reuse checklist reads for Home progress and the notification count.
+      final progressResults = await Future.wait(
+        progressTrips.values.map(
+          (trip) async => MapEntry(trip.id, await _fetchProgress(trip.id)),
+        ),
+      );
+
+      final progressByTrip = Map<String, Map<String, int>?>.fromEntries(
+        progressResults,
+      );
+
       final progress = next == null
           ? <String, int>{'completed': 0, 'total': 0}
-          : await _tripService.getChecklistProgress(next.id);
+          : progressByTrip[next.id];
+
+      if (progress == null) {
+        throw StateError('Upcoming trip progress unavailable.');
+      }
 
       final activeIds = activeTrips.map((trip) => trip.id).toSet();
 
@@ -121,6 +208,22 @@ class _TravellerDashboardState extends State<TravellerDashboard> {
               .toList()
             ..sort((a, b) => a.reminderAt.compareTo(b.reminderAt));
 
+      final countAvailable =
+          reminders != null &&
+          preparationTrips.every((trip) => progressByTrip[trip.id] != null);
+
+      int preparationCount = 0;
+
+      for (final trip in preparationTrips) {
+        final counts = progressByTrip[trip.id];
+
+        if (counts != null &&
+            (counts['total'] ?? 0) > 0 &&
+            (counts['completed'] ?? 0) < (counts['total'] ?? 0)) {
+          preparationCount++;
+        }
+      }
+
       final profileName = (profile?['fullName'] as String?)?.trim() ?? '';
       final displayName = user.displayName?.trim() ?? '';
 
@@ -132,11 +235,15 @@ class _TravellerDashboardState extends State<TravellerDashboard> {
             : displayName.isNotEmpty
             ? displayName
             : 'Traveller';
+
         _trips = trips;
         _reminders = pendingReminders;
         _remindersUnavailable = reminders == null;
         _completed = progress['completed'] ?? 0;
         _total = progress['total'] ?? 0;
+        _notificationCount = countAvailable
+            ? pendingReminders.length + preparationCount
+            : null;
         _loading = false;
         _refreshing = false;
       });
@@ -147,6 +254,7 @@ class _TravellerDashboardState extends State<TravellerDashboard> {
 
       setState(() {
         _error = 'Your travel information could not be loaded.';
+        _notificationCount = null;
         _loading = false;
         _refreshing = false;
       });
@@ -173,8 +281,9 @@ class _TravellerDashboardState extends State<TravellerDashboard> {
 
   void _changeTab(int index) {
     if (index == _selectedIndex) return;
+
     setState(() => _selectedIndex = index);
-    if (index == 0 || index == 2) _loadData();
+    _loadData(showLoading: index == 0 || index == 2);
   }
 
   Future<void> _openNotifications() => _openPage(
@@ -211,9 +320,7 @@ class _TravellerDashboardState extends State<TravellerDashboard> {
   }
 
   String _departure(Trip trip) {
-    final days = _day(
-      trip.departureDate,
-    ).difference(_day(DateTime.now())).inDays;
+    final days = _daysUntil(trip.departureDate);
 
     if (days == 0) return 'Departing today';
     if (days == 1) return 'Departing tomorrow';
@@ -248,9 +355,20 @@ class _TravellerDashboardState extends State<TravellerDashboard> {
               icon: const Icon(Icons.add_rounded),
             ),
           IconButton(
-            tooltip: 'Notifications',
+            tooltip: _notificationCount == null
+                ? 'Notifications'
+                : 'Notifications, $_notificationCount pending',
             onPressed: _openNotifications,
-            icon: const Icon(Icons.notifications_none_rounded),
+            icon: ExcludeSemantics(
+              child: Badge.count(
+                count: _notificationCount ?? 0,
+                maxCount: 99,
+                isLabelVisible: (_notificationCount ?? 0) > 0,
+                backgroundColor: AppColors.danger,
+                textColor: Colors.white,
+                child: const Icon(Icons.notifications_none_rounded),
+              ),
+            ),
           ),
           const SizedBox(width: 8),
         ],
