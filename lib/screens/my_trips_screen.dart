@@ -31,11 +31,11 @@ class _MyTripsScreenState extends State<MyTripsScreen> {
 
   final Map<String, Future<Map<String, int>>> _progressCache = {};
 
-  static const Color _primaryColor = Color(0xFF087F8C);
+  static const Color _primaryColor = AppColors.primary;
 
-  static const Color _darkTextColor = Color(0xFF102A43);
+  static const Color _darkTextColor = AppColors.navy;
 
-  static const Color _borderColor = Color(0xFFE1E7EC);
+  static const Color _borderColor = AppColors.border;
 
   @override
   void initState() {
@@ -200,6 +200,9 @@ class _MyTripsScreenState extends State<MyTripsScreen> {
       context: context,
       builder: (dialogContext) {
         return AlertDialog(
+          // Keep the deletion confirmation centred and scrollable.
+          scrollable: true,
+          actionsAlignment: MainAxisAlignment.center,
           icon: const Icon(
             Icons.delete_outline_rounded,
             color: Color(0xFFC62828),
@@ -309,56 +312,45 @@ class _MyTripsScreenState extends State<MyTripsScreen> {
   // SCREEN
   // ---------------------------------------------------------------------------
 
+  // Show the trip list and keep selection actions below the scrollable content.
   @override
   Widget build(BuildContext context) {
-    final Widget content = Stack(
+    final content = Column(
       children: [
-        Container(
-          color: AppColors.background,
-          child: FutureBuilder<List<Trip>>(
-            future: _tripsFuture,
-            builder: (context, snapshot) {
-              if (snapshot.connectionState == ConnectionState.waiting) {
-                return const Center(child: CircularProgressIndicator());
-              }
+        // Load trips and show the appropriate loading, error or empty state.
+        Expanded(
+          child: ColoredBox(
+            color: AppColors.background,
+            child: FutureBuilder<List<Trip>>(
+              future: _tripsFuture,
+              builder: (context, snapshot) {
+                if (snapshot.connectionState == ConnectionState.waiting) {
+                  return const Center(child: CircularProgressIndicator());
+                }
 
-              if (snapshot.hasError) {
-                return _buildErrorState();
-              }
+                if (snapshot.hasError) return _buildErrorState();
 
-              final List<Trip> trips = snapshot.data ?? [];
+                final trips = snapshot.data ?? <Trip>[];
+                if (trips.isEmpty) return _buildEmptyState();
 
-              if (trips.isEmpty) {
-                return _buildEmptyState();
-              }
-
-              return _buildTripsList(trips);
-            },
+                return _buildTripsList(trips);
+              },
+            ),
           ),
         ),
 
-        // Keep delete action accessible without scrolling
-        // through every trip card.
+        // Reserve space for the delete button so it cannot cover a trip card.
         if (_selectionMode)
-          Positioned(
-            left: 16,
-            right: 16,
-            bottom: 12,
-            child: SafeArea(
-              top: false,
+          SafeArea(
+            top: false,
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(16, 8, 16, 12),
               child: Container(
                 padding: const EdgeInsets.all(10),
                 decoration: BoxDecoration(
                   color: Colors.white,
                   borderRadius: BorderRadius.circular(18),
                   border: Border.all(color: AppColors.border),
-                  boxShadow: const [
-                    BoxShadow(
-                      color: Color(0x18000000),
-                      blurRadius: 16,
-                      offset: Offset(0, 5),
-                    ),
-                  ],
                 ),
                 child: _buildDeleteSelectedButton(),
               ),
@@ -367,13 +359,12 @@ class _MyTripsScreenState extends State<MyTripsScreen> {
       ],
     );
 
-    if (widget.embedded) {
-      return content;
-    }
+    // Reuse the dashboard app bar when this screen is embedded in Trips.
+    if (widget.embedded) return content;
 
     return Scaffold(
       backgroundColor: AppColors.background,
-      appBar: AppBar(title: const Text('My Trips')),
+      appBar: AppBar(title: const Text('Trips')),
       body: content,
     );
   }
@@ -429,7 +420,7 @@ class _MyTripsScreenState extends State<MyTripsScreen> {
               width: 82,
               height: 82,
               decoration: BoxDecoration(
-                color: const Color(0xFFE8F6F7),
+                color: AppColors.primaryLight,
                 borderRadius: BorderRadius.circular(24),
               ),
               child: const Icon(
@@ -466,51 +457,39 @@ class _MyTripsScreenState extends State<MyTripsScreen> {
   // FILTERS
   // ---------------------------------------------------------------------------
 
+  // Display one accessible filter and indicate the current selection.
   Widget _buildFilterChip({required String value, required String label}) {
-    final bool selected = _selectedFilter == value;
+    final selected = _selectedFilter == value;
 
-    return InkWell(
-      borderRadius: BorderRadius.circular(14),
-      onTap: () {
-        _changeFilter(value);
-      },
-      child: Container(
-        height: 46,
-        alignment: Alignment.center,
-        decoration: BoxDecoration(
-          color: selected ? const Color(0xFFDFF3F5) : Colors.white,
-          borderRadius: BorderRadius.circular(14),
-          border: Border.all(
-            color: selected ? _primaryColor : _borderColor,
-            width: selected ? 1.5 : 1,
-          ),
-        ),
-        child: Text(
-          label,
-          maxLines: 1,
-          style: TextStyle(
-            fontWeight: FontWeight.w600,
-            color: selected ? _primaryColor : const Color(0xFF486581),
-          ),
-        ),
+    return ChoiceChip(
+      label: Text(label),
+      selected: selected,
+      showCheckmark: false,
+      selectedColor: AppColors.primaryLight,
+      backgroundColor: Colors.white,
+      surfaceTintColor: Colors.transparent,
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+      labelStyle: TextStyle(
+        color: selected ? AppColors.primary : AppColors.secondaryText,
+        fontWeight: FontWeight.w700,
       ),
+      side: BorderSide(color: selected ? AppColors.primary : AppColors.border),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+
+      // Keep the active selection stable while deletion is in progress.
+      onSelected: _isDeletingSelected ? null : (_) => _changeFilter(value),
     );
   }
 
+  // Let filters wrap when the screen or text size needs more space.
   Widget _buildTripControls() {
-    return Row(
+    return Wrap(
+      spacing: 8,
+      runSpacing: 8,
       children: [
-        Expanded(
-          child: _buildFilterChip(value: 'all', label: 'All'),
-        ),
-        const SizedBox(width: 8),
-        Expanded(
-          child: _buildFilterChip(value: 'upcoming', label: 'Upcoming'),
-        ),
-        const SizedBox(width: 8),
-        Expanded(
-          child: _buildFilterChip(value: 'past', label: 'Past'),
-        ),
+        _buildFilterChip(value: 'all', label: 'All'),
+        _buildFilterChip(value: 'upcoming', label: 'Upcoming'),
+        _buildFilterChip(value: 'past', label: 'Past'),
       ],
     );
   }
@@ -547,10 +526,19 @@ class _MyTripsScreenState extends State<MyTripsScreen> {
       onRefresh: _refreshTrips,
       child: ListView(
         physics: const AlwaysScrollableScrollPhysics(),
-        padding: const EdgeInsets.fromLTRB(16, 18, 16, 110),
+        padding: const EdgeInsets.fromLTRB(16, 18, 16, 28),
         children: [
+          // Introduce the trip workspace before its filters.
+          Text(
+            'Your journeys, together.',
+            style: Theme.of(context).textTheme.headlineSmall,
+          ),
+          const SizedBox(height: 8),
+          const Text(
+            'Open a trip to review its details and travel requirements.',
+          ),
+          const SizedBox(height: 20),
           _buildTripControls(),
-
           const SizedBox(height: 24),
 
           if (noFilteredTrips) ...[
@@ -634,60 +622,69 @@ class _MyTripsScreenState extends State<MyTripsScreen> {
   // SECTION HEADER
   // ---------------------------------------------------------------------------
 
+  // Show a trip group count and its selection action without squeezing text.
   Widget _buildSectionHeader({
     required String title,
     required int count,
     bool showSelectionAction = false,
   }) {
-    return Row(
+    final heading = Row(
       children: [
-        Text(
-          title,
-          style: const TextStyle(
-            fontSize: 18,
-            fontWeight: FontWeight.w800,
-            color: _darkTextColor,
-          ),
+        Expanded(
+          child: Text(title, style: Theme.of(context).textTheme.titleLarge),
         ),
-
         const SizedBox(width: 8),
-
         Container(
-          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
           decoration: BoxDecoration(
-            color: const Color(0xFFE8F6F7),
+            color: AppColors.primaryLight,
             borderRadius: BorderRadius.circular(20),
           ),
           child: Text(
             '$count',
             style: const TextStyle(
-              fontSize: 11,
+              color: AppColors.primary,
               fontWeight: FontWeight.w700,
-              color: _primaryColor,
             ),
           ),
         ),
-
-        const Spacer(),
-
-        if (showSelectionAction)
-          TextButton.icon(
-            style: TextButton.styleFrom(
-              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-              minimumSize: Size.zero,
-              tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-              visualDensity: VisualDensity.compact,
-            ),
-            onPressed: _isDeletingSelected ? null : _toggleSelectionMode,
-            icon: Icon(
-              _selectionMode
-                  ? Icons.close_rounded
-                  : Icons.checklist_rtl_rounded,
-              size: 19,
-            ),
-            label: Text(_selectionMode ? 'Cancel' : 'Select'),
-          ),
       ],
+    );
+
+    if (!showSelectionAction) return heading;
+
+    final selectionButton = TextButton.icon(
+      onPressed: _isDeletingSelected ? null : _toggleSelectionMode,
+      icon: Icon(
+        _selectionMode ? Icons.close_rounded : Icons.checklist_rtl_rounded,
+        size: 20,
+      ),
+      label: Text(_selectionMode ? 'Cancel' : 'Select'),
+    );
+
+    // Move the selection action below the heading for larger text.
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        if (MediaQuery.textScalerOf(context).scale(14) > 20 ||
+            constraints.maxWidth < 300) {
+          return Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              heading,
+              const SizedBox(height: 4),
+              Align(alignment: Alignment.centerRight, child: selectionButton),
+            ],
+          );
+        }
+
+        return Row(
+          children: [
+            Expanded(child: heading),
+            const SizedBox(width: 10),
+            selectionButton,
+          ],
+        );
+      },
     );
   }
 
@@ -695,11 +692,22 @@ class _MyTripsScreenState extends State<MyTripsScreen> {
   // TRIP CARD
   // ---------------------------------------------------------------------------
 
+  // Show trip details or toggle selection when a traveller taps a trip card.
   Widget _buildTripCard(Trip trip, {required bool past}) {
-    final bool selected = _selectedTripIds.contains(trip.id);
+    final selected = _selectedTripIds.contains(trip.id);
+    final media = MediaQuery.of(context);
+    final reduceMotion = media.disableAnimations || media.accessibleNavigation;
 
+    final imageHeight = (media.textScaler.scale(23) * 2.8 + 90).clamp(
+      160.0,
+      300.0,
+    );
+
+    // Animate selection while respecting reduced-motion settings.
     return AnimatedContainer(
-      duration: const Duration(milliseconds: 200),
+      duration: reduceMotion
+          ? Duration.zero
+          : const Duration(milliseconds: 200),
       curve: Curves.easeOutCubic,
       decoration: BoxDecoration(
         color: Colors.white,
@@ -708,18 +716,12 @@ class _MyTripsScreenState extends State<MyTripsScreen> {
           color: selected ? AppColors.primary : AppColors.border,
           width: selected ? 2 : 1,
         ),
-        boxShadow: const [
-          BoxShadow(
-            color: Color(0x0A000000),
-            blurRadius: 12,
-            offset: Offset(0, 4),
-          ),
-        ],
       ),
       clipBehavior: Clip.antiAlias,
       child: Material(
         color: Colors.transparent,
         child: InkWell(
+          // A tap either opens this trip or changes its selection state.
           onTap: _isDeletingSelected
               ? null
               : () {
@@ -730,42 +732,43 @@ class _MyTripsScreenState extends State<MyTripsScreen> {
                   }
                 },
           child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              // ---------------------------------------------------------------
-              // LANDMARK IMAGE
-              // ---------------------------------------------------------------
+              // Keep the destination title readable over its photograph.
               DestinationPhoto(
                 countryId: trip.destinationCountryId,
-                height: 145,
+                height: imageHeight,
                 child: Padding(
                   padding: const EdgeInsets.all(17),
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [
                       Row(
                         children: [
                           const Expanded(
                             child: Text(
                               'TRIP DESTINATION',
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
                               style: TextStyle(
                                 color: Colors.white,
                                 fontSize: 10,
+                                height: 1.1,
                                 fontWeight: FontWeight.w800,
                                 letterSpacing: 1.3,
                               ),
                             ),
                           ),
-
                           if (_selectionMode)
                             Container(
                               width: 34,
                               height: 34,
                               decoration: BoxDecoration(
+                                shape: BoxShape.circle,
                                 color: selected
                                     ? AppColors.primary
                                     : const Color(0xCCFFFFFF),
-                                shape: BoxShape.circle,
                                 border: Border.all(
                                   color: Colors.white,
                                   width: 1.5,
@@ -783,9 +786,6 @@ class _MyTripsScreenState extends State<MyTripsScreen> {
                             ),
                         ],
                       ),
-
-                      const Spacer(),
-
                       Text(
                         _formatText(trip.destinationCountryId),
                         maxLines: 2,
@@ -793,10 +793,8 @@ class _MyTripsScreenState extends State<MyTripsScreen> {
                         style: const TextStyle(
                           color: Colors.white,
                           fontSize: 23,
+                          height: 1.15,
                           fontWeight: FontWeight.w800,
-                          shadows: [
-                            Shadow(color: Color(0x77000000), blurRadius: 8),
-                          ],
                         ),
                       ),
                     ],
@@ -804,15 +802,12 @@ class _MyTripsScreenState extends State<MyTripsScreen> {
                 ),
               ),
 
-              // ---------------------------------------------------------------
-              // TRIP INFORMATION
-              // ---------------------------------------------------------------
+              // Allow trip dates and metadata to wrap naturally.
               Padding(
                 padding: const EdgeInsets.all(17),
                 child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
-                    // Purpose and duration adapt to available width.
                     Wrap(
                       spacing: 8,
                       runSpacing: 8,
@@ -823,83 +818,59 @@ class _MyTripsScreenState extends State<MyTripsScreen> {
                         ),
                         _buildTripInfoChip(
                           Icons.schedule_outlined,
-                          '${trip.durationDays} days',
+                          '${trip.durationDays} day'
+                          '${trip.durationDays == 1 ? '' : 's'}',
                         ),
                       ],
                     ),
-
-                    const SizedBox(height: 17),
-
-                    // Departure date and trip status can wrap
-                    // instead of overflowing on smaller phones.
-                    Wrap(
-                      spacing: 12,
-                      runSpacing: 9,
-                      crossAxisAlignment: WrapCrossAlignment.center,
-                      children: [
-                        Row(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            const Icon(
-                              Icons.calendar_today_outlined,
-                              size: 17,
-                              color: AppColors.secondaryText,
-                            ),
-                            const SizedBox(width: 8),
-                            Text(
-                              _formatDate(trip.departureDate),
-                              style: const TextStyle(
-                                color: AppColors.navy,
-                                fontSize: 13,
-                                fontWeight: FontWeight.w600,
-                              ),
-                            ),
-                          ],
+                    const SizedBox(height: 16),
+                    Text(
+                      'Departure: ${_formatDate(trip.departureDate)}',
+                      style: const TextStyle(
+                        color: AppColors.navy,
+                        fontSize: 13,
+                        height: 1.5,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                    const SizedBox(height: 10),
+                    Align(
+                      alignment: Alignment.centerLeft,
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 11,
+                          vertical: 6,
                         ),
-
-                        Container(
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 11,
-                            vertical: 6,
-                          ),
-                          decoration: BoxDecoration(
+                        decoration: BoxDecoration(
+                          color: past
+                              ? AppColors.background
+                              : AppColors.primaryLight,
+                          borderRadius: BorderRadius.circular(20),
+                        ),
+                        child: Text(
+                          past ? 'Past' : 'Upcoming',
+                          style: TextStyle(
                             color: past
-                                ? const Color(0xFFF0F2F4)
-                                : const Color(0xFFDFF5EA),
-                            borderRadius: BorderRadius.circular(20),
-                          ),
-                          child: Text(
-                            past ? 'Past' : 'Upcoming',
-                            style: TextStyle(
-                              color: past
-                                  ? const Color(0xFF607D8B)
-                                  : AppColors.success,
-                              fontSize: 11,
-                              fontWeight: FontWeight.w700,
-                            ),
+                                ? AppColors.secondaryText
+                                : AppColors.primary,
+                            fontSize: 12,
+                            fontWeight: FontWeight.w700,
                           ),
                         ),
-                      ],
+                      ),
                     ),
-
                     const SizedBox(height: 18),
-
-                    // Existing Firestore checklist progress.
                     _buildProgressSection(trip.id),
 
-                    // Hide navigation buttons while selecting trips.
+                    // Hide navigation while the traveller is selecting trips.
                     if (!_selectionMode) ...[
-                      const SizedBox(height: 19),
-
-                      SizedBox(
-                        width: double.infinity,
-                        child: FilledButton.icon(
-                          onPressed: () => _openTrip(trip),
-                          icon: const Icon(
-                            Icons.arrow_forward_rounded,
-                            size: 19,
-                          ),
-                          label: const Text('View Trip'),
+                      const SizedBox(height: 18),
+                      FilledButton.icon(
+                        onPressed: () => _openTrip(trip),
+                        icon: const Icon(Icons.arrow_forward_rounded, size: 19),
+                        label: const Text(
+                          'View trip',
+                          textAlign: TextAlign.center,
                         ),
                       ),
                     ],
@@ -946,41 +917,36 @@ class _MyTripsScreenState extends State<MyTripsScreen> {
   // DELETE SELECTED BUTTON
   // ---------------------------------------------------------------------------
 
+  // Show selection count and prevent empty or repeated delete requests.
   Widget _buildDeleteSelectedButton() {
-    return SizedBox(
-      width: double.infinity,
-      height: 48,
-      child: FilledButton.icon(
-        style: FilledButton.styleFrom(
-          backgroundColor: const Color(0xFFC62828),
-          foregroundColor: Colors.white,
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(13),
-          ),
-        ),
-        onPressed: _selectedTripIds.isEmpty || _isDeletingSelected
-            ? null
-            : _deleteSelectedTrips,
-        icon: _isDeletingSelected
-            ? const SizedBox(
-                width: 18,
-                height: 18,
-                child: CircularProgressIndicator(
-                  strokeWidth: 2,
-                  color: Colors.white,
-                ),
-              )
-            : const Icon(Icons.delete_outline_rounded),
-        label: Text(
-          _isDeletingSelected
-              ? 'Deleting...'
-              : _selectedTripIds.isEmpty
-              ? 'Select Trips to Delete'
-              : 'Delete Selected '
-                    '(${_selectedTripIds.length})',
-          style: const TextStyle(fontWeight: FontWeight.w700),
-        ),
+    final label = _isDeletingSelected
+        ? 'Deleting...'
+        : _selectedTripIds.isEmpty
+        ? 'Select trips to delete'
+        : 'Delete selected (${_selectedTripIds.length})';
+
+    return FilledButton.icon(
+      style: FilledButton.styleFrom(
+        backgroundColor: AppColors.danger,
+        foregroundColor: Colors.white,
+        minimumSize: const Size(0, 48),
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(13)),
       ),
+      onPressed: _selectedTripIds.isEmpty || _isDeletingSelected
+          ? null
+          : _deleteSelectedTrips,
+      icon: _isDeletingSelected
+          ? const SizedBox(
+              width: 18,
+              height: 18,
+              child: CircularProgressIndicator(
+                strokeWidth: 2,
+                color: Colors.white,
+              ),
+            )
+          : const Icon(Icons.delete_outline_rounded),
+      label: Text(label, textAlign: TextAlign.center),
     );
   }
 
@@ -1049,7 +1015,7 @@ class _MyTripsScreenState extends State<MyTripsScreen> {
               child: LinearProgressIndicator(
                 value: progressValue,
                 minHeight: 7,
-                backgroundColor: const Color(0xFFE5EEF0),
+                backgroundColor: AppColors.primaryLight,
                 valueColor: const AlwaysStoppedAnimation<Color>(_primaryColor),
               ),
             ),
