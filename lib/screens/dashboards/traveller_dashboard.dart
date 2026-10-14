@@ -76,6 +76,7 @@ class _TravellerDashboardState extends State<TravellerDashboard> {
   Future<void> _loadData({bool showLoading = true}) async {
     if (!mounted) return;
     final request = ++_loadId;
+
     setState(() {
       _loading = showLoading;
       _refreshing = !showLoading;
@@ -91,20 +92,26 @@ class _TravellerDashboardState extends State<TravellerDashboard> {
         _tripService.getUserTrips(user.uid),
         _fetchReminders(user.uid),
       ]);
+
       final profile = results[0] as Map<String, dynamic>?;
       final trips = results[1] as List<Trip>;
       final reminders = results[2] as List<Reminder>?;
+
       trips.sort((a, b) => a.departureDate.compareTo(b.departureDate));
 
       final today = _day(DateTime.now());
       final activeTrips = trips
           .where((trip) => !_day(trip.departureDate).isBefore(today))
           .toList();
+
       final next = activeTrips.firstOrNull;
+
       final progress = next == null
           ? <String, int>{'completed': 0, 'total': 0}
           : await _tripService.getChecklistProgress(next.id);
+
       final activeIds = activeTrips.map((trip) => trip.id).toSet();
+
       final pendingReminders =
           (reminders ?? <Reminder>[])
               .where(
@@ -113,10 +120,12 @@ class _TravellerDashboardState extends State<TravellerDashboard> {
               )
               .toList()
             ..sort((a, b) => a.reminderAt.compareTo(b.reminderAt));
+
       final profileName = (profile?['fullName'] as String?)?.trim() ?? '';
       final displayName = user.displayName?.trim() ?? '';
 
       if (!mounted || request != _loadId) return;
+
       setState(() {
         _name = profileName.isNotEmpty
             ? profileName
@@ -133,7 +142,9 @@ class _TravellerDashboardState extends State<TravellerDashboard> {
       });
     } catch (error) {
       debugPrint('TRAVELLER DASHBOARD ERROR: $error');
+
       if (!mounted || request != _loadId) return;
+
       setState(() {
         _error = 'Your travel information could not be loaded.';
         _loading = false;
@@ -145,10 +156,12 @@ class _TravellerDashboardState extends State<TravellerDashboard> {
   Future<void> _openPage(Widget page) async {
     if (_openingPage) return;
     _openingPage = true;
+
     try {
       await Navigator.of(
         context,
       ).push(MaterialPageRoute<void>(builder: (_) => page));
+
       if (mounted) {
         setState(() => _tripsRevision++);
         await _loadData(showLoading: false);
@@ -193,6 +206,7 @@ class _TravellerDashboardState extends State<TravellerDashboard> {
       'Nov',
       'Dec',
     ];
+
     return '${date.day} ${months[date.month - 1]} ${date.year}';
   }
 
@@ -200,8 +214,10 @@ class _TravellerDashboardState extends State<TravellerDashboard> {
     final days = _day(
       trip.departureDate,
     ).difference(_day(DateTime.now())).inDays;
+
     if (days == 0) return 'Departing today';
     if (days == 1) return 'Departing tomorrow';
+
     return 'Departing in $days days';
   }
 
@@ -209,6 +225,7 @@ class _TravellerDashboardState extends State<TravellerDashboard> {
   Widget build(BuildContext context) {
     final titles = ['TravelGuard MY', 'Trips', 'Packing', 'Profile'];
     final Widget page;
+
     switch (_selectedIndex) {
       case 1:
         page = MyTripsScreen(key: ValueKey(_tripsRevision), embedded: true);
@@ -270,6 +287,7 @@ class _TravellerDashboardState extends State<TravellerDashboard> {
 
   Widget _buildDataPage() {
     if (_loading) return const Center(child: CircularProgressIndicator());
+
     final content = _error != null
         ? <Widget>[
             _message(
@@ -304,6 +322,7 @@ class _TravellerDashboardState extends State<TravellerDashboard> {
   List<Widget> _homeContent() {
     final trip = _nextTrip;
     final remaining = (_total - _completed).clamp(0, _total);
+
     return [
       Text(
         'Hello, $_firstName.',
@@ -385,6 +404,7 @@ class _TravellerDashboardState extends State<TravellerDashboard> {
   Widget _tripCard(Trip trip) {
     final imageHeight = (MediaQuery.textScalerOf(context).scale(30) * 2 + 70)
         .clamp(170.0, 300.0);
+
     return Card(
       margin: EdgeInsets.zero,
       clipBehavior: Clip.antiAlias,
@@ -442,7 +462,6 @@ class _TravellerDashboardState extends State<TravellerDashboard> {
                       minHeight: 8,
                       backgroundColor: AppColors.primaryLight,
                       semanticsLabel: 'Requirements completed',
-                      semanticsValue: '${(_progress * 100).round()} percent',
                     ),
                   ),
                   const SizedBox(height: 10),
@@ -470,6 +489,7 @@ class _TravellerDashboardState extends State<TravellerDashboard> {
     final trip = _trips.firstWhere((trip) => trip.id == reminder.tripId);
     final overdue = reminder.reminderAt.isBefore(DateTime.now());
     final time = TimeOfDay.fromDateTime(reminder.reminderAt).format(context);
+
     return _ActionTile(
       icon: overdue ? Icons.schedule_rounded : Icons.notifications_none_rounded,
       title: reminder.title,
@@ -482,6 +502,7 @@ class _TravellerDashboardState extends State<TravellerDashboard> {
 
   List<Widget> _prepareContent() {
     final trips = _upcomingTrips;
+
     return [
       Text(
         'Pack for your next journey.',
