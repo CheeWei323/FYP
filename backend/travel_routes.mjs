@@ -1,20 +1,20 @@
-import { Router } from 'express';
-import { rateLimit } from 'express-rate-limit';
-import { getApps, initializeApp } from 'firebase-admin/app';
-import { getAuth } from 'firebase-admin/auth';
+import { Router } from "express";
+import { rateLimit } from "express-rate-limit";
+import { getApps, initializeApp } from "firebase-admin/app";
+import { getAuth } from "firebase-admin/auth";
 
 // -----------------------------------------------------------------------------
 // INPUT VALIDATION
 // -----------------------------------------------------------------------------
 const countryCodes = new Map([
-  ['japan', 'JP'],
-  ['australia', 'AU'],
-  ['united_states', 'US'],
-  ['usa', 'US'],
-  ['us', 'US'],
-  ['united_kingdom', 'GB'],
-  ['uk', 'GB'],
-  ['south_korea', 'KR'],
+  ["japan", "JP"],
+  ["australia", "AU"],
+  ["united_states", "US"],
+  ["usa", "US"],
+  ["us", "US"],
+  ["united_kingdom", "GB"],
+  ["uk", "GB"],
+  ["south_korea", "KR"],
 ]);
 
 // Attach safe messages and HTTP statuses to expected failures.
@@ -25,7 +25,7 @@ function apiError(status, message) {
 // Reject empty, oversized or non-text input before calling Google.
 function text(value, name, maximum = 200) {
   if (
-    typeof value !== 'string' ||
+    typeof value !== "string" ||
     !value.trim() ||
     value.trim().length > maximum
   ) {
@@ -37,14 +37,14 @@ function text(value, name, maximum = 200) {
 
 // Restrict place searches to the project's supported destinations.
 function countryCode(value) {
-  const id = text(value, 'destination country')
+  const id = text(value, "destination country")
     .toLowerCase()
-    .replace(/[\s-]+/g, '_');
+    .replace(/[\s-]+/g, "_");
 
   const code = countryCodes.get(id);
 
   if (!code) {
-    throw apiError(400, 'This destination is not supported.');
+    throw apiError(400, "This destination is not supported.");
   }
 
   return code;
@@ -52,10 +52,10 @@ function countryCode(value) {
 
 // Keep place identifiers separate from addresses and URL paths.
 function placeId(value) {
-  const id = text(value, 'place ID', 512);
+  const id = text(value, "place ID", 512);
 
   if (!/^[A-Za-z0-9_-]+$/.test(id)) {
-    throw apiError(400, 'The place ID is invalid.');
+    throw apiError(400, "The place ID is invalid.");
   }
 
   return id;
@@ -65,11 +65,8 @@ function placeId(value) {
 function sessionToken(value) {
   if (value === undefined) return undefined;
 
-  if (
-    typeof value !== 'string' ||
-    !/^[A-Za-z0-9_-]{1,36}$/.test(value)
-  ) {
-    throw apiError(400, 'The search-session token is invalid.');
+  if (typeof value !== "string" || !/^[A-Za-z0-9_-]{1,36}$/.test(value)) {
+    throw apiError(400, "The search-session token is invalid.");
   }
 
   return value;
@@ -89,75 +86,76 @@ export function createTravelRouter({
   let firebaseAuth;
 
   // Verify Firebase signatures and claims for the app's Firebase project.
-  const verify = verifyToken ?? ((token) => {
-    const name = 'travelguard-routing';
+  const verify =
+    verifyToken ??
+    ((token) => {
+      const name = "travelguard-routing";
 
-    const firebaseApp =
-      getApps().find((item) => item.name === name) ??
-      initializeApp({ projectId }, name);
+      const firebaseApp =
+        getApps().find((item) => item.name === name) ??
+        initializeApp({ projectId }, name);
 
-    firebaseAuth ??= getAuth(firebaseApp);
+      firebaseAuth ??= getAuth(firebaseApp);
 
-    return firebaseAuth.verifyIdToken(token);
-  });
+      return firebaseAuth.verifyIdToken(token);
+    });
 
   // Prevent browsers and proxies from caching travel queries and results.
   router.use((req, res, next) => {
-    res.set('Cache-Control', 'no-store');
+    res.set("Cache-Control", "no-store");
     next();
   });
 
   // Report configuration presence without returning keys or making billable calls.
-  router.get('/status', (req, res) => {
+  router.get("/status", (req, res) => {
     const configured = Boolean(apiKey && projectId);
 
     res.status(configured ? 200 : 503).json({ configured });
   });
 
   // Limit unauthenticated traffic before token verification.
-  router.use(rateLimit({
-    windowMs: 60_000,
-    limit: 120,
-    standardHeaders: true,
-    legacyHeaders: false,
-    message: {
-      error: 'Too many requests. Please wait a minute.',
-    },
-  }));
+  router.use(
+    rateLimit({
+      windowMs: 60_000,
+      limit: 120,
+      standardHeaders: true,
+      legacyHeaders: false,
+      message: {
+        error: "Too many requests. Please wait a minute.",
+      },
+    }),
+  );
 
   // Require a signed-in Firebase user before any Google request.
   router.use(async (req, res, next) => {
     if (!apiKey || !projectId) {
-      throw apiError(503, 'Route planning is not configured yet.');
+      throw apiError(503, "Route planning is not configured yet.");
     }
 
     const match = /^Bearer ([^\s]{1,8192})$/i.exec(
-      req.get('Authorization') ?? '',
+      req.get("Authorization") ?? "",
     );
 
     if (!match) {
-      throw apiError(401, 'Please sign in to use route planning.');
+      throw apiError(401, "Please sign in to use route planning.");
     }
 
     try {
       const decoded = await verify(match[1]);
 
       if (!decoded.uid) {
-        throw new Error('Missing Firebase user.');
+        throw new Error("Missing Firebase user.");
       }
 
       req.travellerUid = decoded.uid;
     } catch (error) {
-      if (error.code === 'auth/internal-error') {
-        throw apiError(
-          503,
-          'Sign-in verification is temporarily unavailable.',
-        );
+      if (error.code === "auth/internal-error") {
+        throw apiError(503, "Sign-in verification is temporarily unavailable.");
       }
 
       throw apiError(
         401,
-        'Your session is invalid or expired. Please sign in again.',
+        "Your session is invalid or expired. Please sign in again.",
       );
     }
 
@@ -165,16 +163,18 @@ export function createTravelRouter({
   });
 
   // Share the allowance across a user's devices and network addresses.
-  router.use(rateLimit({
-    windowMs: 60_000,
-    limit: 60,
-    keyGenerator: (req) => req.travellerUid,
-    standardHeaders: true,
-    legacyHeaders: false,
-    message: {
-      error: 'Too many travel searches. Please wait a minute.',
-    },
-  }));
+  router.use(
+    rateLimit({
+      windowMs: 60_000,
+      limit: 60,
+      keyGenerator: (req) => req.travellerUid,
+      standardHeaders: true,
+      legacyHeaders: false,
+      message: {
+        error: "Too many travel searches. Please wait a minute.",
+      },
+    }),
+  );
 
   // ---------------------------------------------------------------------------
   // GOOGLE REQUESTS
@@ -186,61 +186,43 @@ export function createTravelRouter({
 
     try {
       response = await fetchImpl(url, {
-        method: body === undefined ? 'GET' : 'POST',
+        method: body === undefined ? "GET" : "POST",
         headers: {
-          'Content-Type': 'application/json',
-          'X-Goog-Api-Key': apiKey,
-          'X-Goog-FieldMask': fieldMask,
+          "Content-Type": "application/json",
+          "X-Goog-Api-Key": apiKey,
+          "X-Goog-FieldMask": fieldMask,
         },
-        ...(body === undefined
-          ? {}
-          : { body: JSON.stringify(body) }),
+        ...(body === undefined ? {} : { body: JSON.stringify(body) }),
         signal: AbortSignal.timeout(12_000),
       });
 
       data = await response.json();
     } catch (error) {
-      if (
-        error.name === 'TimeoutError' ||
-        error.name === 'AbortError'
-      ) {
-        throw apiError(
-          504,
-          'The map service took too long. Please try again.',
-        );
+      if (error.name === "TimeoutError" || error.name === "AbortError") {
+        throw apiError(504, "The map service took too long. Please try again.");
       }
 
       throw apiError(
         502,
-        'The map service could not be reached. Please try again.',
+        "The map service could not be reached. Please try again.",
       );
     }
 
     if (!response.ok) {
-      console.error(
-        'GOOGLE MAPS REQUEST FAILED:',
-        response.status,
-      );
+      console.error("GOOGLE MAPS REQUEST FAILED:", response.status);
 
       if (response.status === 404) {
-        throw apiError(404, 'This place could not be found.');
+        throw apiError(404, "This place could not be found.");
       }
 
       throw apiError(
         503,
-        'The map service is unavailable. Please try again later.',
+        "The map service is unavailable. Please try again later.",
       );
     }
 
-    if (
-      !data ||
-      typeof data !== 'object' ||
-      Array.isArray(data)
-    ) {
-      throw apiError(
-        502,
-        'The map service returned an invalid response.',
-      );
+    if (!data || typeof data !== "object" || Array.isArray(data)) {
+      throw apiError(502, "The map service returned an invalid response.");
     }
 
     return data;
@@ -250,22 +232,22 @@ export function createTravelRouter({
   // PLACE SEARCH
   // ---------------------------------------------------------------------------
   // Return selectable place predictions within the selected country.
-  router.post('/places/autocomplete', async (req, res) => {
+  router.post("/places/autocomplete", async (req, res) => {
     const body = req.body ?? {};
     const code = countryCode(body.countryId);
-    const input = text(body.input, 'search text');
+    const input = text(body.input, "search text");
 
     if (input.length < 2) {
-      throw apiError(400, 'Enter at least two characters.');
+      throw apiError(400, "Enter at least two characters.");
     }
 
     const data = await googleJson(
-      'https://places.googleapis.com/v1/places:autocomplete',
-      'suggestions.placePrediction.placeId,suggestions.placePrediction.text.text',
+      "https://places.googleapis.com/v1/places:autocomplete",
+      "suggestions.placePrediction.placeId,suggestions.placePrediction.text.text",
       {
         input,
         includedRegionCodes: [code.toLowerCase()],
-        languageCode: 'en',
+        languageCode: "en",
         sessionToken: sessionToken(body.sessionToken),
       },
     );
@@ -282,193 +264,194 @@ export function createTravelRouter({
   });
 
   // Resolve a selection to coordinates and confirm its destination country.
-  router.post('/places/details', async (req, res) => {
+  router.post("/places/details", async (req, res) => {
     const body = req.body ?? {};
     const code = countryCode(body.countryId);
     const id = placeId(body.placeId);
+
+    // Validate the optional name lookup before requesting Google data.
+    if (
+      body.includeDisplayName !== undefined &&
+      typeof body.includeDisplayName !== "boolean"
+    ) {
+      throw apiError(400, "Choose a valid place-name option.");
+    }
+
+    const includeDisplayName = body.includeDisplayName === true;
 
     const url = new URL(
       `https://places.googleapis.com/v1/places/${encodeURIComponent(id)}`,
     );
 
-    url.searchParams.set('languageCode', 'en');
+    url.searchParams.set("languageCode", "en");
 
     const token = sessionToken(body.sessionToken);
 
     if (token) {
-      url.searchParams.set('sessionToken', token);
+      url.searchParams.set("sessionToken", token);
     }
 
+    // Request the Pro-tier name field only when refreshing saved places.
+    const fields =
+      "id,formattedAddress,location,addressComponents,attributions";
     const data = await googleJson(
       url,
-            'id,formattedAddress,location,addressComponents,attributions',
+      includeDisplayName ? `${fields},displayName` : fields,
     );
 
-    const country = data.addressComponents?.find(
-      (item) => item.types?.includes('country'),
+    const country = data.addressComponents?.find((item) =>
+      item.types?.includes("country"),
     );
 
     if (country?.shortText?.toUpperCase() !== code) {
       throw apiError(
         400,
-        'Choose a place within your trip destination country.',
+        "Choose a place within your trip destination country.",
       );
     }
 
     const latitude = data.location?.latitude;
     const longitude = data.location?.longitude;
 
-    if (
-      !Number.isFinite(latitude) ||
-      !Number.isFinite(longitude)
-    ) {
+    if (!Number.isFinite(latitude) || !Number.isFinite(longitude)) {
+      throw apiError(502, "Coordinates are unavailable for this place.");
+    }
+
+    res.json({
+      placeId: data.id,
+      address: data.formattedAddress ?? "",
+      ...(includeDisplayName
+        ? { displayName: data.displayName?.text ?? "" }
+        : {}),
+      latitude,
+      longitude,
+      attributions: data.attributions ?? [],
+    });
+  });
+
+  // ---------------------------------------------------------------------------
+  // ROUTE CALCULATION
+  // ---------------------------------------------------------------------------
+  // Preserve the traveller's stop order and compare alternatives for two places.
+  router.post("/routes/compute", async (req, res) => {
+    const body = req.body ?? {};
+    const origin = placeId(body.originPlaceId);
+    const destination = placeId(body.destinationPlaceId);
+    const travelMode = body.travelMode ?? "DRIVE";
+
+    const requestedStops =
+      body.intermediatePlaceIds === undefined ? [] : body.intermediatePlaceIds;
+
+    if (!Array.isArray(requestedStops) || requestedStops.length > 5) {
+      throw apiError(400, "Choose up to five intermediate stops.");
+    }
+
+    const stops = requestedStops.map((value) => placeId(value));
+    const journey = [origin, ...stops, destination];
+
+    // Allow return trips, but reject duplicate places next to each other.
+    if (journey.some((id, index) => index > 0 && id === journey[index - 1])) {
+      throw apiError(400, "Consecutive places must be different.");
+    }
+
+    if (!["DRIVE", "WALK"].includes(travelMode)) {
+      throw apiError(400, "Choose driving or walking.");
+    }
+
+    const data = await googleJson(
+      "https://routes.googleapis.com/directions/v2:computeRoutes",
+      "routes.distanceMeters,routes.duration,routes.polyline.encodedPolyline,routes.description,routes.warnings,routes.legs.distanceMeters,routes.legs.duration,routes.legs.polyline.encodedPolyline",
+      {
+        origin: { placeId: origin },
+        destination: { placeId: destination },
+
+        ...(stops.length
+          ? {
+              intermediates: stops.map((id) => ({
+                placeId: id,
+              })),
+            }
+          : {}),
+
+        travelMode,
+
+        ...(travelMode === "DRIVE"
+          ? { routingPreference: "TRAFFIC_UNAWARE" }
+          : {}),
+
+        computeAlternativeRoutes: stops.length === 0,
+        optimizeWaypointOrder: false,
+        languageCode: "en-US",
+        units: "METRIC",
+      },
+    );
+
+    if (!Array.isArray(data.routes) || data.routes.length === 0) {
       throw apiError(
-        502,
-        'Coordinates are unavailable for this place.',
+        404,
+        "No route was found. Try different places or a different travel mode.",
       );
     }
 
-        res.json({
-          placeId: data.id,
-          address: data.formattedAddress ?? '',
-          latitude,
-          longitude,
-          attributions: data.attributions ?? [],
-        });
-  });
+    // Validate totals and every segment before returning a complete journey.
+    function estimates(value) {
+      const duration = /^(\d+(?:\.\d+)?)s$/.exec(value?.duration ?? "");
 
-    // ---------------------------------------------------------------------------
-    // ROUTE CALCULATION
-    // ---------------------------------------------------------------------------
-    // Preserve the traveller's stop order and compare alternatives for two places.
-    router.post('/routes/compute', async (req, res) => {
-      const body = req.body ?? {};
-      const origin = placeId(body.originPlaceId);
-      const destination = placeId(body.destinationPlaceId);
-      const travelMode = body.travelMode ?? 'DRIVE';
+      const distanceMeters = value?.distanceMeters ?? 0;
+      const durationSeconds = duration ? Number(duration[1]) : NaN;
 
-      const requestedStops = body.intermediatePlaceIds === undefined
-        ? []
-        : body.intermediatePlaceIds;
-
-      if (!Array.isArray(requestedStops) || requestedStops.length > 5) {
-        throw apiError(400, 'Choose up to five intermediate stops.');
-      }
-
-      const stops = requestedStops.map((value) => placeId(value));
-      const journey = [origin, ...stops, destination];
-
-      // Allow return trips, but reject duplicate places next to each other.
       if (
-        journey.some(
-          (id, index) => index > 0 && id === journey[index - 1],
-        )
+        !Number.isFinite(durationSeconds) ||
+        !Number.isFinite(distanceMeters) ||
+        distanceMeters < 0
       ) {
-        throw apiError(400, 'Consecutive places must be different.');
-      }
-
-      if (!['DRIVE', 'WALK'].includes(travelMode)) {
-        throw apiError(400, 'Choose driving or walking.');
-      }
-
-      const data = await googleJson(
-        'https://routes.googleapis.com/directions/v2:computeRoutes',
-        'routes.distanceMeters,routes.duration,routes.polyline.encodedPolyline,routes.description,routes.warnings,routes.legs.distanceMeters,routes.legs.duration,routes.legs.polyline.encodedPolyline',
-        {
-          origin: { placeId: origin },
-          destination: { placeId: destination },
-
-          ...(stops.length
-            ? {
-                intermediates: stops.map((id) => ({
-                  placeId: id,
-                })),
-              }
-            : {}),
-
-          travelMode,
-
-          ...(travelMode === 'DRIVE'
-            ? { routingPreference: 'TRAFFIC_UNAWARE' }
-            : {}),
-
-          computeAlternativeRoutes: stops.length === 0,
-          optimizeWaypointOrder: false,
-          languageCode: 'en-US',
-          units: 'METRIC',
-        },
-      );
-
-      if (!Array.isArray(data.routes) || data.routes.length === 0) {
         throw apiError(
-          404,
-          'No route was found. Try different places or a different travel mode.',
+          502,
+          "The map service returned incomplete route information.",
         );
       }
 
-      // Validate totals and every segment before returning a complete journey.
-      function estimates(value) {
-        const duration = /^(\d+(?:\.\d+)?)s$/.exec(
-          value?.duration ?? '',
+      return { distanceMeters, durationSeconds };
+    }
+
+    const routes = data.routes.map((route) => {
+      const encodedPolyline = route.polyline?.encodedPolyline;
+
+      // Retain Google's actual path for each section of the journey.
+      const legs = Array.isArray(route.legs)
+        ? route.legs.map((leg) => ({
+            ...estimates(leg),
+            ...(typeof leg.polyline?.encodedPolyline === "string"
+              ? { encodedPolyline: leg.polyline.encodedPolyline }
+              : {}),
+          }))
+        : [];
+
+      if (
+        !encodedPolyline ||
+        (stops.length > 0 && legs.length !== stops.length + 1)
+      ) {
+        throw apiError(
+          502,
+          "The map service returned an incomplete journey. Please try again.",
         );
-
-        const distanceMeters = value?.distanceMeters ?? 0;
-        const durationSeconds = duration
-          ? Number(duration[1])
-          : NaN;
-
-        if (
-          !Number.isFinite(durationSeconds) ||
-          !Number.isFinite(distanceMeters) ||
-          distanceMeters < 0
-        ) {
-          throw apiError(
-            502,
-            'The map service returned incomplete route information.',
-          );
-        }
-
-        return { distanceMeters, durationSeconds };
       }
 
-      const routes = data.routes.map((route) => {
-        const encodedPolyline = route.polyline?.encodedPolyline;
-
-        // Retain Google's actual path for each section of the journey.
-        const legs = Array.isArray(route.legs)
-          ? route.legs.map((leg) => ({
-              ...estimates(leg),
-              ...(typeof leg.polyline?.encodedPolyline === 'string'
-                ? { encodedPolyline: leg.polyline.encodedPolyline }
-                : {}),
-            }))
-          : [];
-
-        if (
-          !encodedPolyline ||
-          (stops.length > 0 && legs.length !== stops.length + 1)
-        ) {
-          throw apiError(
-            502,
-            'The map service returned an incomplete journey. Please try again.',
-          );
-        }
-
-        return {
-          ...estimates(route),
-          encodedPolyline,
-          description: route.description ?? '',
-          warnings: route.warnings ?? [],
-          legs,
-        };
-      });
-
-      res.json({
-        routes,
-        travelMode,
-        trafficAware: false,
-      });
+      return {
+        ...estimates(route),
+        encodedPolyline,
+        description: route.description ?? "",
+        warnings: route.warnings ?? [],
+        legs,
+      };
     });
+
+    res.json({
+      routes,
+      travelMode,
+      trafficAware: false,
+    });
+  });
 
   // ---------------------------------------------------------------------------
   // ERROR RESPONSES
@@ -480,16 +463,13 @@ export function createTravelRouter({
     const status = error.status ?? 500;
 
     if (status === 500) {
-      console.error(
-        'TRAVEL API ERROR:',
-        error.code ?? 'unexpected',
-      );
+      console.error("TRAVEL API ERROR:", error.code ?? "unexpected");
     }
 
     res.status(status).json({
       error: error.status
         ? error.message
-        : 'Travel planning failed. Please try again.',
+        : "Travel planning failed. Please try again.",
     });
   });
 
