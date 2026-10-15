@@ -11,7 +11,6 @@ import '../../theme/app_theme.dart';
 import '../../widgets/destination_photo.dart';
 import '../add_trip_screen.dart';
 import '../my_trips_screen.dart';
-import '../packing_screen.dart';
 import '../traveller_alerts_screen.dart';
 import '../traveller_settings_screen.dart';
 import '../trip_details_screen.dart';
@@ -279,11 +278,15 @@ class _TravellerDashboardState extends State<TravellerDashboard>
     }
   }
 
+  // ---------------------------------------------------------------------------
+  // TAB NAVIGATION
+  // ---------------------------------------------------------------------------
+  // Switch sections and refresh travel data for Home and the notification badge.
   void _changeTab(int index) {
     if (index == _selectedIndex) return;
 
     setState(() => _selectedIndex = index);
-    _loadData(showLoading: index == 0 || index == 2);
+    _loadData(showLoading: index == 0);
   }
 
   Future<void> _openNotifications() => _openPage(
@@ -330,13 +333,13 @@ class _TravellerDashboardState extends State<TravellerDashboard>
 
   @override
   Widget build(BuildContext context) {
-    final titles = ['TravelGuard MY', 'Trips', 'Packing', 'Profile'];
+    final titles = ['TravelGuard MY', 'Trips', 'Profile'];
     final Widget page;
 
     switch (_selectedIndex) {
       case 1:
         page = MyTripsScreen(key: ValueKey(_tripsRevision), embedded: true);
-      case 3:
+      case 2:
         page = const TravellerSettingsScreen();
       default:
         page = _buildDataPage();
@@ -389,11 +392,6 @@ class _TravellerDashboardState extends State<TravellerDashboard>
             label: 'Trips',
           ),
           NavigationDestination(
-            icon: Icon(Icons.backpack_outlined),
-            selectedIcon: Icon(Icons.backpack_rounded),
-            label: 'Packing',
-          ),
-          NavigationDestination(
             icon: Icon(Icons.person_outline_rounded),
             selectedIcon: Icon(Icons.person_rounded),
             label: 'Profile',
@@ -416,14 +414,12 @@ class _TravellerDashboardState extends State<TravellerDashboard>
               onPressed: () => _loadData(),
             ),
           ]
-        : _selectedIndex == 2
-        ? _prepareContent()
         : _homeContent();
 
     return RefreshIndicator(
       onRefresh: () => _loadData(showLoading: false),
       child: ListView(
-        key: PageStorageKey(_selectedIndex == 2 ? 'prepare' : 'home'),
+        key: const PageStorageKey('home'),
         physics: const AlwaysScrollableScrollPhysics(),
         padding: const EdgeInsets.fromLTRB(20, 16, 20, 28),
         children: [
@@ -510,11 +506,11 @@ class _TravellerDashboardState extends State<TravellerDashboard>
       ),
       const SizedBox(height: 12),
       _ActionTile(
-        icon: Icons.backpack_outlined,
-        title: 'Organise your packing',
+        icon: Icons.fact_check_outlined,
+        title: 'Manage trip preparation',
         subtitle:
-            'Open Packing to manage packing lists for your upcoming trips.',
-        onTap: () => _changeTab(2),
+            'Choose a trip to open its requirements, packing, map and reminders.',
+        onTap: () => _changeTab(1),
       ),
     ];
   }
@@ -616,64 +612,6 @@ class _TravellerDashboardState extends State<TravellerDashboard>
       onTap: () => _openPage(TripDetailsScreen(trip: trip)),
       warm: overdue,
     );
-  }
-
-  List<Widget> _prepareContent() {
-    final trips = _upcomingTrips;
-
-    return [
-      Text(
-        'Pack for your next journey.',
-        style: Theme.of(context).textTheme.headlineSmall,
-      ),
-      const SizedBox(height: 8),
-      const Text('Choose an upcoming trip to organise its packing list.'),
-      const SizedBox(height: 24),
-      if (trips.isEmpty) ...[
-        _message(
-          icon: Icons.backpack_outlined,
-          title: 'Your packing starts with a trip',
-          description:
-              'Create a trip to get started. You can find earlier trips in the Trips tab.',
-          button: 'Create a trip',
-          onPressed: () => _openPage(const AddTripScreen()),
-        ),
-        TextButton(
-          onPressed: () => _changeTab(1),
-          child: const Text('Browse saved trips'),
-        ),
-      ] else
-        for (final trip in trips) ...[
-          Card(
-            margin: EdgeInsets.zero,
-            child: Padding(
-              padding: const EdgeInsets.all(20),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  Text(
-                    _label(trip.destinationCountryId),
-                    style: Theme.of(context).textTheme.titleLarge,
-                  ),
-                  const SizedBox(height: 6),
-                  Text(
-                    '${_date(trip.departureDate)} · ${_label(trip.purpose)} · ${trip.durationDays} day${trip.durationDays == 1 ? '' : 's'}',
-                  ),
-                  const SizedBox(height: 16),
-                  FilledButton(
-                    onPressed: () => _openPage(PackingScreen(trip: trip)),
-                    child: const Text(
-                      'Open packing list',
-                      textAlign: TextAlign.center,
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ),
-          const SizedBox(height: 14),
-        ],
-    ];
   }
 
   Widget _heading(String title, {VoidCallback? action}) => Row(

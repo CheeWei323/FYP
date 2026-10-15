@@ -942,8 +942,7 @@ class _TripDetailsScreenState extends State<TripDetailsScreen> {
             _buildFeatureCard(
               icon: Icons.luggage_outlined,
               title: 'Packing List',
-              description:
-                  'Use the same saved packing list available from your Packing tab.',
+              description: 'Manage the packing list saved for this trip.',
               actionText: 'Open Packing List',
               onTap: _openPackingList,
             ),
