@@ -544,3 +544,46 @@ for (const legs of [
     assert.equal(result.status, 502);
   });
 }
+
+// Verify separate outbound and return geometry from one Google request.
+test('Each segment keeps its own Google geometry in the same request', async (t) => {
+  const { request, calls } = await setup(t, {
+    data: {
+      routes: [{
+        ...journeyResult.routes[0],
+        legs: [
+          {
+            distanceMeters: 1000,
+            duration: '300s',
+            polyline: { encodedPolyline: 'outbound-shape' },
+          },
+          {
+            distanceMeters: 2000,
+            duration: '600s',
+            polyline: { encodedPolyline: 'return-shape' },
+          },
+        ],
+      }],
+    },
+  });
+
+  const result = await request('/routes/compute', {
+    originPlaceId: 'Hotel',
+    destinationPlaceId: 'Hotel',
+    intermediatePlaceIds: ['Museum'],
+  });
+
+  assert.equal(result.status, 200);
+
+  assert.deepEqual(
+    result.body.routes[0].legs.map((leg) => leg.encodedPolyline),
+    ['outbound-shape', 'return-shape'],
+  );
+
+  assert.match(
+    calls[0].options.headers['X-Goog-FieldMask'],
+    /routes\.legs\.polyline\.encodedPolyline/,
+  );
+
+  assert.equal(calls.length, 1);
+});

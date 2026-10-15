@@ -373,7 +373,7 @@ export function createTravelRouter({
 
       const data = await googleJson(
         'https://routes.googleapis.com/directions/v2:computeRoutes',
-        'routes.distanceMeters,routes.duration,routes.polyline.encodedPolyline,routes.description,routes.warnings,routes.legs.distanceMeters,routes.legs.duration',
+        'routes.distanceMeters,routes.duration,routes.polyline.encodedPolyline,routes.description,routes.warnings,routes.legs.distanceMeters,routes.legs.duration,routes.legs.polyline.encodedPolyline',
         {
           origin: { placeId: origin },
           destination: { placeId: destination },
@@ -434,8 +434,14 @@ export function createTravelRouter({
       const routes = data.routes.map((route) => {
         const encodedPolyline = route.polyline?.encodedPolyline;
 
+        // Retain Google's actual path for each section of the journey.
         const legs = Array.isArray(route.legs)
-          ? route.legs.map(estimates)
+          ? route.legs.map((leg) => ({
+              ...estimates(leg),
+              ...(typeof leg.polyline?.encodedPolyline === 'string'
+                ? { encodedPolyline: leg.polyline.encodedPolyline }
+                : {}),
+            }))
           : [];
 
         if (
