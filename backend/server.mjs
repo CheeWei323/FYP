@@ -2,6 +2,7 @@ import 'dotenv/config';
 import express from 'express';
 import { rateLimit } from 'express-rate-limit';
 import { GoogleGenAI } from '@google/genai';
+import { createTravelRouter } from './travel_routes.mjs';
 
 const app = express();
 
@@ -10,6 +11,12 @@ const port = process.env.PORT || 3000;
 app.set('trust proxy', 1);
 
 app.use(express.json());
+
+// -----------------------------------------------------------------------------
+// TRAVEL PLANNING API
+// -----------------------------------------------------------------------------
+// Add authenticated place searches and route calculations to the existing server.
+app.use('/api/travel', createTravelRouter());
 
 const apiKey = process.env.GEMINI_API_KEY;
 
