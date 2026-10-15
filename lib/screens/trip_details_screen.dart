@@ -8,7 +8,7 @@ import 'packing_screen.dart';
 import '../services/reminder_service.dart';
 import '../services/notification_service.dart';
 import '../theme/app_theme.dart';
-import '../widgets/destination_photo.dart';
+import '../widgets/trip_overview_card.dart';
 
 class TripDetailsScreen extends StatefulWidget {
   final Trip trip;
@@ -24,11 +24,11 @@ class _TripDetailsScreenState extends State<TripDetailsScreen> {
 
   final ReminderService _reminderService = ReminderService();
 
-  static const Color _primaryColor = Color(0xFF087F8C);
+  static const Color _primaryColor = AppColors.primary;
 
-  static const Color _darkTextColor = Color(0xFF102A43);
+  static const Color _darkTextColor = AppColors.navy;
 
-  static const Color _backgroundColor = Color(0xFFF7F9FB);
+  static const Color _backgroundColor = AppColors.background;
 
   late Trip _trip;
 
@@ -953,218 +953,19 @@ class _TripDetailsScreenState extends State<TripDetailsScreen> {
     );
   }
 
+  // ---------------------------------------------------------------------------
+  // TRIP OVERVIEW
+  // ---------------------------------------------------------------------------
+  // Pass the current trip to the shared header, including any saved edits.
   Widget _buildTripHeader() {
-    return Container(
-      width: double.infinity,
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(22),
-        border: Border.all(color: AppColors.border),
-      ),
-      clipBehavior: Clip.antiAlias,
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          // -----------------------------------------------------
-          // DESTINATION LANDMARK PHOTO
-          // -----------------------------------------------------
-          DestinationPhoto(
-            countryId: _trip.destinationCountryId,
-            height: 190,
-            child: Padding(
-              padding: const EdgeInsets.all(20),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  // Trip status displayed over the image.
-                  Align(
-                    alignment: Alignment.topLeft,
-                    child: Container(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 12,
-                        vertical: 7,
-                      ),
-                      decoration: BoxDecoration(
-                        color: const Color(0xDDFFFFFF),
-                        borderRadius: BorderRadius.circular(20),
-                      ),
-                      child: Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Icon(
-                            _isPastTrip
-                                ? Icons.history_rounded
-                                : Icons.flight_takeoff_rounded,
-                            size: 15,
-                            color: AppColors.primary,
-                          ),
-                          const SizedBox(width: 6),
-                          Text(
-                            _isPastTrip ? 'Past Trip' : 'Upcoming Trip',
-                            style: const TextStyle(
-                              color: AppColors.navy,
-                              fontSize: 11,
-                              fontWeight: FontWeight.w800,
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                  ),
-
-                  const Spacer(),
-
-                  const Text(
-                    'TRIP DESTINATION',
-                    style: TextStyle(
-                      color: Color(0xE6FFFFFF),
-                      fontSize: 10,
-                      fontWeight: FontWeight.w800,
-                      letterSpacing: 1.4,
-                    ),
-                  ),
-
-                  const SizedBox(height: 7),
-
-                  Text(
-                    _formatText(_trip.destinationCountryId),
-                    maxLines: 2,
-                    overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(
-                      color: Colors.white,
-                      fontSize: 27,
-                      fontWeight: FontWeight.w800,
-                      shadows: [
-                        Shadow(color: Color(0x88000000), blurRadius: 9),
-                      ],
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ),
-
-          // -----------------------------------------------------
-          // TRIP DETAILS
-          // -----------------------------------------------------
-          Padding(
-            padding: const EdgeInsets.all(18),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                // Wrap avoids overflow on smaller phones.
-                Wrap(
-                  spacing: 9,
-                  runSpacing: 9,
-                  children: [
-                    _buildHeaderChip(
-                      Icons.explore_outlined,
-                      _formatText(_trip.purpose),
-                    ),
-                    _buildHeaderChip(
-                      Icons.schedule_outlined,
-                      '${_trip.durationDays} days',
-                    ),
-                  ],
-                ),
-
-                const SizedBox(height: 19),
-
-                const Divider(height: 1, color: AppColors.border),
-
-                const SizedBox(height: 18),
-
-                Row(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Container(
-                      width: 44,
-                      height: 44,
-                      decoration: BoxDecoration(
-                        color: AppColors.primaryLight,
-                        borderRadius: BorderRadius.circular(13),
-                      ),
-                      child: const Icon(
-                        Icons.calendar_month_outlined,
-                        color: AppColors.primary,
-                        size: 22,
-                      ),
-                    ),
-
-                    const SizedBox(width: 12),
-
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          const Text(
-                            'Departure Date',
-                            style: TextStyle(
-                              fontSize: 12,
-                              color: AppColors.secondaryText,
-                            ),
-                          ),
-
-                          const SizedBox(height: 4),
-
-                          Text(
-                            _formatDate(_trip.departureDate),
-                            style: const TextStyle(
-                              color: AppColors.navy,
-                              fontSize: 16,
-                              fontWeight: FontWeight.w800,
-                            ),
-                          ),
-
-                          const SizedBox(height: 5),
-
-                          Text(
-                            _departureStatus,
-                            style: const TextStyle(
-                              color: AppColors.primary,
-                              fontSize: 12,
-                              fontWeight: FontWeight.w700,
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                  ],
-                ),
-              ],
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  // -----------------------------------------------------------------------------
-  // REUSABLE TRIP HEADER CHIP
-  // -----------------------------------------------------------------------------
-
-  Widget _buildHeaderChip(IconData icon, String label) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 9),
-      decoration: BoxDecoration(
-        color: AppColors.primaryLight,
-        borderRadius: BorderRadius.circular(11),
-      ),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Icon(icon, color: AppColors.primary, size: 17),
-          const SizedBox(width: 7),
-          Text(
-            label,
-            style: const TextStyle(
-              color: AppColors.primary,
-              fontSize: 12,
-              fontWeight: FontWeight.w700,
-            ),
-          ),
-        ],
-      ),
+    return TripOverviewCard(
+      countryId: _trip.destinationCountryId,
+      destination: _formatText(_trip.destinationCountryId),
+      purpose: _formatText(_trip.purpose),
+      durationDays: _trip.durationDays,
+      departureDateLabel: _formatDate(_trip.departureDate),
+      departureStatus: _departureStatus,
+      isPastTrip: _isPastTrip,
     );
   }
 
