@@ -59,6 +59,54 @@ service cloud.firestore {
   ];
 }
 
+    // Validate a place ID and its preceding visit while allowing return trips.
+    function validRouteVisit(ids, index) {
+      return ids.size() <= index
+             || (
+               ids[index] is string
+               && ids[index].matches('^[A-Za-z0-9_-]{1,512}$')
+               && (
+                 index == 0
+                 || ids[index] != ids[index - 1]
+               )
+             );
+    }
+
+    // Store only traveller choices for the current trip destination.
+    function validRoutePlan(data, tripId) {
+      return data.keys().hasAll([
+               'schemaVersion',
+               'countryId',
+               'travelMode',
+               'placeIds',
+               'updatedAt'
+             ])
+             && data.keys().hasOnly([
+               'schemaVersion',
+               'countryId',
+               'travelMode',
+               'placeIds',
+               'updatedAt'
+             ])
+             && data.schemaVersion == 1
+             && data.countryId is string
+             && data.countryId == getAfter(
+               /databases/$(database)/documents/trips/$(tripId)
+             ).data.destinationCountryId
+             && data.travelMode in ['DRIVE', 'WALK']
+             && data.placeIds is list
+             && data.placeIds.size() >= 2
+             && data.placeIds.size() <= 7
+             && validRouteVisit(data.placeIds, 0)
+             && validRouteVisit(data.placeIds, 1)
+             && validRouteVisit(data.placeIds, 2)
+             && validRouteVisit(data.placeIds, 3)
+             && validRouteVisit(data.placeIds, 4)
+             && validRouteVisit(data.placeIds, 5)
+             && validRouteVisit(data.placeIds, 6)
+             && data.updatedAt == request.time;
+    }
+
 
     // -----------------------------------------------------------------------
     // DATA VALIDATION HELPERS
@@ -710,6 +758,22 @@ match /reminders/{reminderId} {
       allow delete: if isTraveller()
                     && resource.data.userId == request.auth.uid;
 
+      // ---------------------------------------------------------------------
+      // PRIVATE ROUTE PLAN
+      // ---------------------------------------------------------------------
+      match /routePlans/{planId} {
+        allow read, delete: if planId == 'current'
+                            && isTraveller()
+                            && ownsTrip(tripId);
+
+        allow create, update: if planId == 'current'
+                              && isTraveller()
+                              && ownsTrip(tripId)
+                              && validRoutePlan(
+                                request.resource.data,
+                                tripId
+                              );
+      }
 
       // ---------------------------------------------------------------------
       // CHECKLIST ITEMS

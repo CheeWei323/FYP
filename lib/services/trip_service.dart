@@ -155,6 +155,11 @@ class TripService {
       'updatedAt': FieldValue.serverTimestamp(),
     });
 
+    // Remove a saved route when its destination no longer matches the trip.
+    if (existingTrip.destinationCountryId != countryId) {
+      batch.delete(tripReference.collection('routePlans').doc('current'));
+    }
+
     // Regenerate the regulatory checklist only
     // when rule-matching inputs changed.
     if (requirementsChanged) {
@@ -243,6 +248,9 @@ class TripService {
     for (final Reminder reminder in tripReminders) {
       batch.delete(_firestore.collection('reminders').doc(reminder.id));
     }
+
+    // Delete the private saved route together with its parent trip.
+    batch.delete(tripReference.collection('routePlans').doc('current'));
 
     // Delete the parent trip in the same Firestore batch.
     batch.delete(tripReference);

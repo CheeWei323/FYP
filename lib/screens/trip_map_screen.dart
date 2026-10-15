@@ -8,15 +8,22 @@ import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import '../models/trip.dart';
+import '../services/route_plan_service.dart';
 import '../services/travel_route_service.dart';
 import '../theme/app_theme.dart';
 import 'place_search_screen.dart';
 
 class TripMapScreen extends StatefulWidget {
-  const TripMapScreen({super.key, required this.trip, this.service});
+  const TripMapScreen({
+    super.key,
+    required this.trip,
+    this.service,
+    this.planService,
+  });
 
   final Trip trip;
   final TravelRouteService? service;
+  final RoutePlanService? planService;
 
   @override
   State<TripMapScreen> createState() => _TripMapScreenState();
@@ -30,6 +37,19 @@ class _TripMapScreenState extends State<TripMapScreen> {
   final _mapKey = GlobalKey();
 
   late final TravelRouteService _service;
+  late final RoutePlanService _planService;
+
+  SavedRoutePlan? _savedPlan;
+  String? _planError;
+
+  bool _planBusy = true;
+  bool _planLoaded = false;
+  bool _writingPlan = false;
+  bool _edited = false;
+  bool _allowPop = false;
+  bool _leaveDialog = false;
+
+  int _planRevision = 0;
 
   GoogleMapController? _map;
   TravelPlace? _origin;
@@ -89,17 +109,20 @@ class _TripMapScreenState extends State<TripMapScreen> {
       _views[_countryId] ??
       const CameraPosition(target: LatLng(0, 0), zoom: 1.5);
 
-  // Share one service between planning and place-selection screens.
+  // Share services and check for an existing saved plan.
   @override
   void initState() {
     super.initState();
     _service = widget.service ?? TravelRouteService();
+    _planService = widget.planService ?? RoutePlanService();
+    _loadPlan();
   }
 
   // Discard late results and release the service owned by this screen.
   @override
   void dispose() {
     _revision++;
+    _planRevision++;
     _markerRevision++;
     _map = null;
 
@@ -111,9 +134,30 @@ class _TripMapScreenState extends State<TripMapScreen> {
   }
 
   // ---------------------------------------------------------------------------
-  // PLACE AND ROUTE ACTIONS
+  // SAVED ROUTE PLANS
   // ---------------------------------------------------------------------------
-  // Invalidate old routes whenever their places or travel mode change.
+  // Keep edits unavailable until the saved record has been checked.
+  bool get _busy => _loading || _picking || _planBusy || !_planLoaded;
+
+  // Read the current order, including endpoints that are not selected yet.
+  List<String?> get _draftIds => [
+    _origin?.id,
+    ..._stops.map((place) => place.id),
+    _destination?.id,
+  ];
+
+  // Ignore refreshed Google data when comparing saved choices.
+  bool get _hasChanges {
+    if (!_edited) return false;
+
+    if (_savedPlan != null) {
+      return !_savedPlan!.matches(_mode, _draftIds);
+    }
+
+    return _origin != null || _destination != null || _stops.isNotEmpty;
+  }
+
+  // Invalidate geometry whenever the selected journey changes.
   void _clearRoutes() {
     _revision++;
     _routes = [];
@@ -123,7 +167,239 @@ class _TripMapScreenState extends State<TripMapScreen> {
     _error = null;
   }
 
-  // Keep visit numbers stable while endpoints are still being selected.
+  // Mark manual changes without changing the saved record.
+  void _markChanged() {
+    _edited = true;
+    _planError = null;
+    _clearRoutes();
+  }
+
+  // Translate storage errors into traveller-facing messages.
+  String _planMessage(Object error) {
+    if (error is TravelRouteException) return error.message;
+    if (error is StateError) return error.message.toString();
+    if (error is FormatException) return error.message;
+
+    return 'Could not access your saved route plan. Check your connection and retry.';
+  }
+
+  // Restore saved choices with fresh Places data.
+  Future<void> _loadPlan() async {
+    final revision = ++_planRevision;
+
+    setState(() {
+      _planBusy = true;
+      _planLoaded = false;
+      _planError = null;
+    });
+
+    try {
+      final plan = await _planService.load(widget.trip);
+
+      if (!mounted || revision != _planRevision) return;
+
+      _savedPlan = plan;
+      _planLoaded = true;
+
+      final places = plan == null
+          ? <TravelPlace>[]
+          : await _service.restorePlaces(
+              countryId: _countryId,
+              placeIds: plan.placeIds,
+            );
+
+      if (!mounted || revision != _planRevision) return;
+
+      setState(() {
+        _origin = places.isEmpty ? null : places.first;
+        _destination = places.isEmpty ? null : places.last;
+
+        _stops
+          ..clear()
+          ..addAll(places.isEmpty ? [] : places.sublist(1, places.length - 1));
+
+        _mode = plan?.travelMode ?? 'DRIVE';
+        _edited = false;
+        _clearRoutes();
+      });
+
+      _refreshMarkers();
+    } catch (error) {
+      if (mounted && revision == _planRevision) {
+        setState(() => _planError = _planMessage(error));
+      }
+    } finally {
+      if (mounted && revision == _planRevision) {
+        setState(() => _planBusy = false);
+      }
+    }
+  }
+
+  // Save the ordered IDs and mode after validating a complete draft.
+  Future<bool> _savePlan() async {
+    if (_busy || _origin == null || _destination == null) {
+      return false;
+    }
+
+    late final SavedRoutePlan plan;
+
+    try {
+      plan = SavedRoutePlan(
+        countryId: widget.trip.destinationCountryId,
+        travelMode: _mode,
+        placeIds: _draftIds.cast<String>(),
+      );
+    } on FormatException catch (error) {
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(error.message)));
+      return false;
+    }
+
+    setState(() {
+      _planBusy = true;
+      _writingPlan = true;
+    });
+
+    try {
+      await _planService.save(widget.trip, plan);
+
+      if (!mounted) return false;
+
+      setState(() {
+        _savedPlan = plan;
+        _edited = false;
+      });
+
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('Route plan saved.')));
+
+      return true;
+    } catch (error) {
+      if (mounted) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text(_planMessage(error))));
+      }
+
+      return false;
+    } finally {
+      if (mounted) {
+        setState(() {
+          _planBusy = false;
+          _writingPlan = false;
+        });
+      }
+    }
+  }
+
+  // Remove only the saved copy after explicit confirmation.
+  Future<void> _deletePlan() async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('Delete saved route plan?'),
+        content: const Text('Your current draft will stay on this screen.'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext, false),
+            child: const Text('Cancel'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext, true),
+            child: const Text('Delete'),
+          ),
+        ],
+      ),
+    );
+
+    if (!mounted || confirmed != true || _busy) return;
+
+    setState(() {
+      _planBusy = true;
+      _writingPlan = true;
+    });
+
+    try {
+      await _planService.delete(widget.trip);
+
+      if (!mounted) return;
+
+      setState(() {
+        _savedPlan = null;
+        _edited = _visits.isNotEmpty;
+      });
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Saved plan deleted. Your draft is still here.'),
+        ),
+      );
+    } catch (error) {
+      if (mounted) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text(_planMessage(error))));
+      }
+    } finally {
+      if (mounted) {
+        setState(() {
+          _planBusy = false;
+          _writingPlan = false;
+        });
+      }
+    }
+  }
+
+  // Prevent accidental loss of edited choices when leaving the planner.
+  Future<void> _confirmLeave() async {
+    if (_writingPlan || _leaveDialog) return;
+
+    _leaveDialog = true;
+
+    final choice = await showDialog<String>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('Unsaved route changes'),
+        content: const Text('Save your changes before leaving?'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext),
+            child: const Text('Keep editing'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext, 'discard'),
+            child: const Text('Discard changes'),
+          ),
+          if (_origin != null && _destination != null)
+            FilledButton(
+              onPressed: _busy
+                  ? null
+                  : () => Navigator.pop(dialogContext, 'save'),
+              child: const Text('Save and leave'),
+            ),
+        ],
+      ),
+    );
+
+    _leaveDialog = false;
+
+    if (!mounted || choice == null) return;
+    if (choice == 'save' && !await _savePlan()) return;
+    if (!mounted) return;
+
+    setState(() => _allowPop = true);
+
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) Navigator.of(context).pop();
+    });
+  }
+
+  // ---------------------------------------------------------------------------
+  // PLACE AND ROUTE ACTIONS
+  // ---------------------------------------------------------------------------
+  // Keep visit numbers stable while endpoints are being selected.
   List<(int, TravelPlace)> get _visits => [
     if (_origin != null) (1, _origin!),
     for (int i = 0; i < _stops.length; i++) (i + 2, _stops[i]),
@@ -132,7 +408,7 @@ class _TripMapScreenState extends State<TripMapScreen> {
 
   // Select an endpoint, add a stop, or replace an existing stop.
   Future<void> _choosePlace({bool? startingPoint, int? stopIndex}) async {
-    if (_loading || _picking) return;
+    if (_busy) return;
 
     if (startingPoint == null &&
         stopIndex == null &&
@@ -177,7 +453,7 @@ class _TripMapScreenState extends State<TripMapScreen> {
         _stops.add(place);
       }
 
-      _clearRoutes();
+      _markChanged();
     });
 
     if (place != null) {
@@ -186,7 +462,7 @@ class _TripMapScreenState extends State<TripMapScreen> {
     }
   }
 
-  // Move or remove a stop without automatically making another API request.
+  // Move or remove a stop without another route request.
   void _changeStop(int index, {int? direction}) {
     setState(() {
       if (direction == null) {
@@ -196,13 +472,13 @@ class _TripMapScreenState extends State<TripMapScreen> {
         _stops.insert(index + direction, place);
       }
 
-      _clearRoutes();
+      _markChanged();
     });
 
     _refreshMarkers();
   }
 
-  // Reverse the complete journey, including the intermediate stops.
+  // Reverse the complete journey and mark it as edited.
   void _swap() {
     setState(() {
       final previous = _origin;
@@ -215,28 +491,30 @@ class _TripMapScreenState extends State<TripMapScreen> {
         ..clear()
         ..addAll(reversed);
 
-      _clearRoutes();
+      _markChanged();
     });
 
     _refreshMarkers();
   }
 
-  // Clear the draft route and restore the destination-country view.
+  // Clear only the draft; the saved copy remains available.
   void _reset() {
     setState(() {
       _origin = null;
       _destination = null;
       _stops.clear();
-      _clearRoutes();
+      _markChanged();
     });
 
     _refreshMarkers();
     _move(CameraUpdate.newCameraPosition(_camera));
   }
 
-  // Calculate the journey and initially focus its first section when stops exist.
+  // Calculate the journey and initially focus its first section.
   Future<void> _findRoutes() async {
-    if (_loading || _origin == null || _destination == null) return;
+    if (_busy || _origin == null || _destination == null) {
+      return;
+    }
 
     final places = _visits.map((visit) => visit.$2).toList();
 
@@ -303,7 +581,7 @@ class _TripMapScreenState extends State<TripMapScreen> {
     }
   }
 
-  // Show the complete route without requesting new data.
+  // Show the complete route using the existing response.
   void _selectRoute(int index) {
     setState(() {
       _selected = index;
@@ -314,7 +592,7 @@ class _TripMapScreenState extends State<TripMapScreen> {
     _showRoute();
   }
 
-  // Focus one section of the existing journey.
+  // Focus one section using the existing response.
   void _selectLeg(int index) {
     setState(() => _selectedLeg = index);
 
@@ -322,7 +600,7 @@ class _TripMapScreenState extends State<TripMapScreen> {
     _showRoute();
   }
 
-  // Keep original visit numbers while showing the selected section's endpoints.
+  // Keep original visit numbers for the selected section.
   List<(int, TravelPlace)> get _mapVisits {
     final visits = _visits;
 
@@ -331,7 +609,7 @@ class _TripMapScreenState extends State<TripMapScreen> {
     return visits.sublist(_selectedLeg!, _selectedLeg! + 2);
   }
 
-  // Return the geometry currently displayed on the map.
+  // Return the geometry currently displayed.
   List<LatLng> get _mapPoints {
     if (_routes.isEmpty) return const [];
 
@@ -342,7 +620,7 @@ class _TripMapScreenState extends State<TripMapScreen> {
         : route.legs[_selectedLeg!].points;
   }
 
-  // Hide other sections when a segment card is selected.
+  // Hide other sections when one segment is selected.
   Set<Polyline> get _polylines {
     if (_routes.isEmpty) return {};
 
@@ -374,7 +652,7 @@ class _TripMapScreenState extends State<TripMapScreen> {
   // ---------------------------------------------------------------------------
   // NUMBERED MARKERS
   // ---------------------------------------------------------------------------
-  // Combine repeat visits only when they belong to the current map selection.
+  // Combine repeat visits within the current map selection.
   Map<String, List<(int, TravelPlace)>> get _markerGroups {
     final groups = <String, List<(int, TravelPlace)>>{};
 
@@ -385,7 +663,7 @@ class _TripMapScreenState extends State<TripMapScreen> {
     return groups;
   }
 
-  // Draw numbered PNGs locally without another dependency or API request.
+  // Draw numbered PNGs locally without an API request.
   Future<BitmapDescriptor> _numberIcon(String label, double ratio) async {
     const size = 48.0;
 
@@ -443,7 +721,7 @@ class _TripMapScreenState extends State<TripMapScreen> {
     }
   }
 
-  // Cache icons and discard updates from an older map selection.
+  // Cache icons and discard updates from an older selection.
   Future<void> _refreshMarkers() async {
     final revision = ++_markerRevision;
     final ratio = MediaQuery.devicePixelRatioOf(context);
@@ -468,7 +746,7 @@ class _TripMapScreenState extends State<TripMapScreen> {
     }
   }
 
-  // Keep visit numbers in titles while marker images are being prepared.
+  // Keep visit numbers available while marker images are prepared.
   Set<Marker> get _markers {
     final ratio = MediaQuery.devicePixelRatioOf(context);
 
@@ -490,7 +768,7 @@ class _TripMapScreenState extends State<TripMapScreen> {
   }
 
   // ---------------------------------------------------------------------------
-  // MAP CAMERA AND LABELS
+  // MAP CAMERA AND DISPLAY HELPERS
   // ---------------------------------------------------------------------------
   // Bring the selected section or complete route into view.
   Future<void> _showRoute() async {
@@ -508,7 +786,7 @@ class _TripMapScreenState extends State<TripMapScreen> {
     if (mounted) await _fitRoute();
   }
 
-  // Keep manual map controls usable if automatic positioning fails.
+  // Preserve manual controls if automatic positioning fails.
   Future<void> _move(CameraUpdate update) async {
     try {
       if (mounted) await _map?.animateCamera(update);
@@ -557,11 +835,13 @@ class _TripMapScreenState extends State<TripMapScreen> {
       ? '${meters.round()} m'
       : '${(meters / 1000).toStringAsFixed(1)} km';
 
-  // Open provider attribution links using only web URL schemes.
+  // Open attribution links using web URL schemes only.
   Future<void> _openCredit(String? value) async {
     final uri = Uri.tryParse(value ?? '');
 
-    if (uri == null || !['https', 'http'].contains(uri.scheme)) return;
+    if (uri == null || !['https', 'http'].contains(uri.scheme)) {
+      return;
+    }
 
     try {
       if (await launchUrl(uri, mode: LaunchMode.externalApplication)) {
@@ -589,218 +869,285 @@ class _TripMapScreenState extends State<TripMapScreen> {
           '${item['provider']}|${item['providerUri']}': item,
     }.values;
 
-    return Scaffold(
-      appBar: AppBar(
-        title: const Text('Route Planning'),
-        actions: [
-          IconButton(
-            tooltip: 'Clear route',
-            onPressed: _reset,
-            icon: const Icon(Icons.restart_alt_rounded),
-          ),
-        ],
-      ),
-      body: SafeArea(
-        top: false,
-        child: !supportsMap
-            ? const Center(
-                child: Padding(
-                  padding: EdgeInsets.all(24),
-                  child: Text(
-                    'Open the Android app to plan a route.',
-                    textAlign: TextAlign.center,
+    return PopScope(
+      canPop: !_writingPlan && (_allowPop || !_hasChanges),
+      onPopInvokedWithResult: (didPop, result) {
+        if (!didPop) _confirmLeave();
+      },
+      child: Scaffold(
+        appBar: AppBar(
+          title: const Text('Route Planning'),
+          actions: [
+            IconButton(
+              tooltip: 'Clear draft',
+              onPressed: _planBusy || !_planLoaded ? null : _reset,
+              icon: const Icon(Icons.restart_alt_rounded),
+            ),
+          ],
+        ),
+        body: SafeArea(
+          top: false,
+          child: !supportsMap
+              ? const Center(
+                  child: Padding(
+                    padding: EdgeInsets.all(24),
+                    child: Text(
+                      'Open the Android app to plan a route.',
+                      textAlign: TextAlign.center,
+                    ),
                   ),
-                ),
-              )
-            : SingleChildScrollView(
-                padding: const EdgeInsets.fromLTRB(18, 18, 18, 28),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
-                  children: [
-                    Text(
-                      _countryName,
-                      style: Theme.of(context).textTheme.headlineSmall,
-                    ),
-                    const SizedBox(height: 6),
-                    const Text(
-                      'Choose your start and destination. Add up to five stops in the order you want to visit them.',
-                    ),
-                    const SizedBox(height: 18),
-                    _placeButton(
-                      'Starting point',
-                      _origin,
-                      1,
-                      () => _choosePlace(startingPoint: true),
-                    ),
-                    const SizedBox(height: 12),
-                    for (int i = 0; i < _stops.length; i++) _stopCard(i),
-                    OutlinedButton.icon(
-                      onPressed:
-                          _loading ||
-                              _picking ||
-                              _stops.length >= _maxStops ||
-                              !_views.containsKey(_countryId)
-                          ? null
-                          : () => _choosePlace(),
-                      icon: const Icon(Icons.add_location_alt_outlined),
-                      label: Text('Add stop (${_stops.length}/$_maxStops)'),
-                    ),
-                    const SizedBox(height: 12),
-                    _placeButton(
-                      'Destination',
-                      _destination,
-                      _stops.length + 2,
-                      () => _choosePlace(startingPoint: false),
-                    ),
-                    const SizedBox(height: 12),
-                    Wrap(
-                      spacing: 10,
-                      runSpacing: 6,
-                      crossAxisAlignment: WrapCrossAlignment.center,
-                      children: [
-                        for (final mode in [
-                          ('DRIVE', 'Drive', Icons.directions_car_outlined),
-                          ('WALK', 'Walk', Icons.directions_walk_rounded),
-                        ])
-                          ChoiceChip(
-                            label: Text(mode.$2),
-                            avatar: Icon(mode.$3, size: 20),
-                            selected: _mode == mode.$1,
-                            showCheckmark: false,
-                            onSelected: _loading || _picking
-                                ? null
-                                : (_) => setState(() {
-                                    _mode = mode.$1;
-                                    _clearRoutes();
-                                  }),
-                          ),
-                        IconButton(
-                          tooltip: 'Reverse route',
-                          onPressed:
-                              _loading ||
-                                  _picking ||
-                                  (_origin == null &&
-                                      _destination == null &&
-                                      _stops.isEmpty)
-                              ? null
-                              : _swap,
-                          icon: const Icon(Icons.swap_vert_rounded),
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 12),
-                    FilledButton.icon(
-                      onPressed:
-                          _loading ||
-                              _picking ||
-                              _origin == null ||
-                              _destination == null
-                          ? null
-                          : _findRoutes,
-                      icon: const Icon(Icons.alt_route_rounded),
-                      label: Text(_loading ? 'Finding routes…' : 'Find routes'),
-                    ),
-                    if (_loading) ...[
-                      const SizedBox(height: 12),
-                      const LinearProgressIndicator(),
-                    ],
-                    if (_error != null)
-                      Padding(
-                        padding: const EdgeInsets.only(top: 12),
-                        child: Text(
-                          _error!,
-                          style: const TextStyle(color: AppColors.danger),
-                        ),
-                      ),
-                    const SizedBox(height: 18),
-                    ClipRRect(
-                      key: _mapKey,
-                      borderRadius: BorderRadius.circular(18),
-                      child: SizedBox(
-                        height: (MediaQuery.sizeOf(context).height * 0.4).clamp(
-                          240.0,
-                          360.0,
-                        ),
-                        child: GoogleMap(
-                          initialCameraPosition: _camera,
-                          mapToolbarEnabled: false,
-                          myLocationButtonEnabled: false,
-                          compassEnabled: true,
-                          zoomControlsEnabled: true,
-                          gestureRecognizers: {
-                            Factory<OneSequenceGestureRecognizer>(
-                              () => EagerGestureRecognizer(),
-                            ),
-                          },
-                          onMapCreated: (controller) {
-                            _map = controller;
-
-                            if (_routes.isNotEmpty) {
-                              _fitRoute();
-                            }
-                          },
-                          markers: _markers,
-                          polylines: _polylines,
-                        ),
-                      ),
-                    ),
-                    if (_routes.isNotEmpty && _stops.isNotEmpty)
-                      _mapSelectionSummary(),
-                    for (final credit in credits)
-                      TextButton(
-                        onPressed: () =>
-                            _openCredit(credit['providerUri'] as String?),
-                        child: Text(
-                          credit['provider'] as String? ?? 'Map data provider',
-                        ),
-                      ),
-                    if (_routes.isNotEmpty) ...[
-                      const SizedBox(height: 20),
+                )
+              : SingleChildScrollView(
+                  padding: const EdgeInsets.fromLTRB(18, 18, 18, 28),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
                       Text(
-                        _stops.isEmpty
-                            ? '${_routes.length} route option${_routes.length == 1 ? '' : 's'}'
-                            : 'Your complete route',
-                        style: Theme.of(context).textTheme.titleLarge,
+                        _countryName,
+                        style: Theme.of(context).textTheme.headlineSmall,
                       ),
                       const SizedBox(height: 6),
-                      Text(
-                        _stops.isEmpty
-                            ? 'Compare distance and estimated time. Live traffic is not included.'
-                            : 'Follows your stop order. Travel estimates exclude time spent at stops and live traffic.',
+                      const Text(
+                        'Choose your start and destination. Add up to five stops in the order you want to visit them.',
                       ),
-                      const Padding(
-                        padding: EdgeInsets.symmetric(vertical: 8),
-                        child: Text(
-                          'Google Maps',
-                          style: TextStyle(
-                            fontFamily: 'Roboto',
-                            fontSize: 14,
-                            fontWeight: FontWeight.w400,
-                            color: Color(0xFF5E5E5E),
+                      const SizedBox(height: 12),
+                      _planPanel(),
+                      const SizedBox(height: 18),
+                      _placeButton(
+                        'Starting point',
+                        _origin,
+                        1,
+                        () => _choosePlace(startingPoint: true),
+                      ),
+                      const SizedBox(height: 12),
+                      for (int i = 0; i < _stops.length; i++) _stopCard(i),
+                      OutlinedButton.icon(
+                        onPressed:
+                            _busy ||
+                                _stops.length >= _maxStops ||
+                                !_views.containsKey(_countryId)
+                            ? null
+                            : () => _choosePlace(),
+                        icon: const Icon(Icons.add_location_alt_outlined),
+                        label: Text('Add stop (${_stops.length}/$_maxStops)'),
+                      ),
+                      const SizedBox(height: 12),
+                      _placeButton(
+                        'Destination',
+                        _destination,
+                        _stops.length + 2,
+                        () => _choosePlace(startingPoint: false),
+                      ),
+                      const SizedBox(height: 12),
+                      Wrap(
+                        spacing: 10,
+                        runSpacing: 6,
+                        crossAxisAlignment: WrapCrossAlignment.center,
+                        children: [
+                          for (final mode in [
+                            ('DRIVE', 'Drive', Icons.directions_car_outlined),
+                            ('WALK', 'Walk', Icons.directions_walk_rounded),
+                          ])
+                            ChoiceChip(
+                              label: Text(mode.$2),
+                              avatar: Icon(mode.$3, size: 20),
+                              selected: _mode == mode.$1,
+                              showCheckmark: false,
+                              onSelected: _busy
+                                  ? null
+                                  : (_) => setState(() {
+                                      _mode = mode.$1;
+                                      _markChanged();
+                                    }),
+                            ),
+                          IconButton(
+                            tooltip: 'Reverse route',
+                            onPressed:
+                                _busy ||
+                                    (_origin == null &&
+                                        _destination == null &&
+                                        _stops.isEmpty)
+                                ? null
+                                : _swap,
+                            icon: const Icon(Icons.swap_vert_rounded),
                           ),
+                        ],
+                      ),
+                      const SizedBox(height: 12),
+                      FilledButton.icon(
+                        onPressed:
+                            _busy || _origin == null || _destination == null
+                            ? null
+                            : _findRoutes,
+                        icon: const Icon(Icons.alt_route_rounded),
+                        label: Text(
+                          _loading ? 'Finding routes…' : 'Find routes',
                         ),
                       ),
-                      for (int i = 0; i < _routes.length; i++) _routeCard(i),
-                      if (_stops.isNotEmpty) _journeyDetails(),
-                      if (_mode == 'WALK')
-                        const Padding(
-                          padding: EdgeInsets.symmetric(vertical: 10),
-                          child: Text(
-                            'Walking routes are in beta and may omit sidewalks or pedestrian paths. Use caution.',
-                          ),
-                        ),
-                      for (final warning in _routes[_selected].warnings)
+                      if (_loading) ...[
+                        const SizedBox(height: 12),
+                        const LinearProgressIndicator(),
+                      ],
+                      if (_error != null)
                         Padding(
-                          padding: const EdgeInsets.only(top: 8),
-                          child: Text(warning),
+                          padding: const EdgeInsets.only(top: 12),
+                          child: Text(
+                            _error!,
+                            style: const TextStyle(color: AppColors.danger),
+                          ),
                         ),
+                      const SizedBox(height: 18),
+                      ClipRRect(
+                        key: _mapKey,
+                        borderRadius: BorderRadius.circular(18),
+                        child: SizedBox(
+                          height: (MediaQuery.sizeOf(context).height * 0.4)
+                              .clamp(240.0, 360.0),
+                          child: GoogleMap(
+                            initialCameraPosition: _camera,
+                            mapToolbarEnabled: false,
+                            myLocationButtonEnabled: false,
+                            compassEnabled: true,
+                            zoomControlsEnabled: true,
+                            gestureRecognizers: {
+                              Factory<OneSequenceGestureRecognizer>(
+                                () => EagerGestureRecognizer(),
+                              ),
+                            },
+                            onMapCreated: (controller) {
+                              _map = controller;
+
+                              if (_routes.isNotEmpty) {
+                                _fitRoute();
+                              }
+                            },
+                            markers: _markers,
+                            polylines: _polylines,
+                          ),
+                        ),
+                      ),
+                      if (_routes.isNotEmpty && _stops.isNotEmpty)
+                        _mapSelectionSummary(),
+                      for (final credit in credits)
+                        TextButton(
+                          onPressed: () =>
+                              _openCredit(credit['providerUri'] as String?),
+                          child: Text(
+                            credit['provider'] as String? ??
+                                'Map data provider',
+                          ),
+                        ),
+                      if (_routes.isNotEmpty) ...[
+                        const SizedBox(height: 20),
+                        Text(
+                          _stops.isEmpty
+                              ? '${_routes.length} route option${_routes.length == 1 ? '' : 's'}'
+                              : 'Your complete route',
+                          style: Theme.of(context).textTheme.titleLarge,
+                        ),
+                        const SizedBox(height: 6),
+                        Text(
+                          _stops.isEmpty
+                              ? 'Compare distance and estimated time. Live traffic is not included.'
+                              : 'Follows your stop order. Travel estimates exclude time spent at stops and live traffic.',
+                        ),
+                        const Padding(
+                          padding: EdgeInsets.symmetric(vertical: 8),
+                          child: Text(
+                            'Google Maps',
+                            style: TextStyle(
+                              fontFamily: 'Roboto',
+                              fontSize: 14,
+                              fontWeight: FontWeight.w400,
+                              color: Color(0xFF5E5E5E),
+                            ),
+                          ),
+                        ),
+                        for (int i = 0; i < _routes.length; i++) _routeCard(i),
+                        if (_stops.isNotEmpty) _journeyDetails(),
+                        if (_mode == 'WALK')
+                          const Padding(
+                            padding: EdgeInsets.symmetric(vertical: 10),
+                            child: Text(
+                              'Walking routes are in beta and may omit sidewalks or pedestrian paths. Use caution.',
+                            ),
+                          ),
+                        for (final warning in _routes[_selected].warnings)
+                          Padding(
+                            padding: const EdgeInsets.only(top: 8),
+                            child: Text(warning),
+                          ),
+                      ],
                     ],
-                  ],
+                  ),
                 ),
-              ),
+        ),
       ),
     );
   }
+
+  Widget _planPanel() => Card(
+    child: Padding(
+      padding: const EdgeInsets.all(14),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            _planBusy
+                ? (_writingPlan ? 'Saving changes…' : 'Loading saved plan…')
+                : _savedPlan == null
+                ? 'Save your route'
+                : 'Saved route plan',
+            style: Theme.of(context).textTheme.titleMedium,
+          ),
+          const SizedBox(height: 8),
+          if (_planBusy) const LinearProgressIndicator(),
+          if (_planError != null) ...[
+            Text(_planError!, style: const TextStyle(color: AppColors.danger)),
+            TextButton(
+              onPressed: _planBusy ? null : _loadPlan,
+              child: const Text('Retry'),
+            ),
+          ] else if (!_planBusy)
+            Text(
+              _hasChanges
+                  ? 'You have unsaved changes.'
+                  : _savedPlan == null
+                  ? 'Save your places and visit order for this trip.'
+                  : 'Saved for this trip. Find routes to refresh travel estimates.',
+            ),
+          if (_planLoaded && !_planBusy) ...[
+            const SizedBox(height: 8),
+            Wrap(
+              spacing: 8,
+              runSpacing: 6,
+              children: [
+                OutlinedButton.icon(
+                  onPressed:
+                      _busy ||
+                          !_hasChanges ||
+                          _origin == null ||
+                          _destination == null
+                      ? null
+                      : _savePlan,
+                  icon: const Icon(Icons.bookmark_add_outlined),
+                  label: Text(
+                    _savedPlan == null ? 'Save plan' : 'Save changes',
+                  ),
+                ),
+                if (_savedPlan != null)
+                  TextButton.icon(
+                    onPressed: _busy ? null : _deletePlan,
+                    icon: const Icon(Icons.delete_outline_rounded),
+                    label: const Text('Delete saved plan'),
+                  ),
+              ],
+            ),
+          ],
+        ],
+      ),
+    ),
+  );
 
   Widget _placeButton(
     String label,
@@ -808,9 +1155,7 @@ class _TripMapScreenState extends State<TripMapScreen> {
     int number,
     VoidCallback onTap,
   ) => OutlinedButton(
-    onPressed: _loading || _picking || !_views.containsKey(_countryId)
-        ? null
-        : onTap,
+    onPressed: _busy || !_views.containsKey(_countryId) ? null : onTap,
     child: Padding(
       padding: const EdgeInsets.symmetric(vertical: 8),
       child: Row(
@@ -859,23 +1204,21 @@ class _TripMapScreenState extends State<TripMapScreen> {
             children: [
               IconButton(
                 tooltip: 'Move stop ${index + 1} up',
-                onPressed: _loading || _picking || index == 0
+                onPressed: _busy || index == 0
                     ? null
                     : () => _changeStop(index, direction: -1),
                 icon: const Icon(Icons.arrow_upward_rounded),
               ),
               IconButton(
                 tooltip: 'Move stop ${index + 1} down',
-                onPressed: _loading || _picking || index == _stops.length - 1
+                onPressed: _busy || index == _stops.length - 1
                     ? null
                     : () => _changeStop(index, direction: 1),
                 icon: const Icon(Icons.arrow_downward_rounded),
               ),
               IconButton(
                 tooltip: 'Remove stop ${index + 1}',
-                onPressed: _loading || _picking
-                    ? null
-                    : () => _changeStop(index),
+                onPressed: _busy ? null : () => _changeStop(index),
                 icon: const Icon(Icons.delete_outline_rounded),
               ),
             ],

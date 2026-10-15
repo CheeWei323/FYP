@@ -223,6 +223,47 @@ class TravelRouteService {
     );
   }
 
+  // Refresh saved IDs using existing Places fields and reuse return-trip places.
+  Future<List<TravelPlace>> restorePlaces({
+    required String countryId,
+    required List<String> placeIds,
+  }) async {
+    if (placeIds.length < 2 || placeIds.length > 7) {
+      throw const TravelRouteException(
+        'This saved route plan cannot be opened.',
+      );
+    }
+
+    final ids = placeIds.toSet().toList();
+    final resolved = <String, TravelPlace>{};
+
+    // Limit simultaneous requests and preserve the original visit order.
+    for (int offset = 0; offset < ids.length; offset += 3) {
+      await Future.wait(
+        ids.skip(offset).take(3).map((id) async {
+          final data = await _post('places/details', {
+            'countryId': countryId,
+            'placeId': id,
+          });
+
+          final address = (data['address'] as String? ?? '').trim();
+
+          resolved[id] = TravelPlace(
+            id: data['placeId'] as String,
+            label: address.isEmpty ? 'Saved place' : address,
+            position: LatLng(
+              (data['latitude'] as num).toDouble(),
+              (data['longitude'] as num).toDouble(),
+            ),
+            credits: _objects(data['attributions'] ?? []),
+          );
+        }),
+      );
+    }
+
+    return placeIds.map((id) => resolved[id]!).toList();
+  }
+
   // Request a complete route through the traveller's ordered intermediate stops.
   Future<List<TravelRoute>> computeRoutes({
     required TravelPlace origin,
