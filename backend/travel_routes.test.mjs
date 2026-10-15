@@ -400,3 +400,147 @@ test('User limits stop repeated requests before more Google calls', async (t) =>
   );
   assert.equal(calls.length, 60);
 });
+
+// -----------------------------------------------------------------------------
+// JOURNEYS WITH SEVERAL STOPS
+// -----------------------------------------------------------------------------
+// Check stop order, return trips and complete segments without Google calls.
+const journeyResult = {
+  routes: [{
+    distanceMeters: 3000,
+    duration: '900s',
+    polyline: { encodedPolyline: 'encoded-shape' },
+    legs: [
+      { distanceMeters: 1000, duration: '300s' },
+      { distanceMeters: 2000, duration: '600s' },
+    ],
+  }],
+};
+
+for (const travelMode of ['DRIVE', 'WALK']) {
+  test(`Ordered stops are forwarded for ${travelMode}`, async (t) => {
+    const { request, calls } = await setup(t, {
+      data: {
+        routes: [{
+          ...journeyResult.routes[0],
+          legs: [
+            ...journeyResult.routes[0].legs,
+            { distanceMeters: 0, duration: '0s' },
+          ],
+        }],
+      },
+    });
+
+    const result = await request('/routes/compute', {
+      ...routeInput,
+      travelMode,
+      intermediatePlaceIds: ['StopB', 'StopA'],
+    });
+
+    assert.equal(result.status, 200);
+    assert.equal(result.body.routes[0].legs.length, 3);
+
+    assert.deepEqual(result.body.routes[0].legs[1], {
+      distanceMeters: 2000,
+      durationSeconds: 600,
+    });
+
+    const sent = JSON.parse(calls[0].options.body);
+
+    assert.deepEqual(sent.intermediates, [
+      { placeId: 'StopB' },
+      { placeId: 'StopA' },
+    ]);
+
+    assert.equal(sent.computeAlternativeRoutes, false);
+    assert.equal(sent.optimizeWaypointOrder, false);
+
+    assert.match(
+      calls[0].options.headers['X-Goog-FieldMask'],
+      /routes\.legs\.duration/,
+    );
+  });
+}
+
+test('A return trip is allowed with a different intermediate stop', async (t) => {
+  const { request } = await setup(t, { data: journeyResult });
+
+  const result = await request('/routes/compute', {
+    originPlaceId: 'Hotel',
+    destinationPlaceId: 'Hotel',
+    intermediatePlaceIds: ['Museum'],
+  });
+
+  assert.equal(result.status, 200);
+});
+
+for (const intermediatePlaceIds of [
+  null,
+  'Museum',
+  ['../unsafe'],
+  Array.from({ length: 6 }, (_, i) => `Stop${i}`),
+  ['TokyoStation'],
+  ['Museum', 'Museum'],
+  ['TokyoTower'],
+]) {
+  test(`Invalid stops are rejected: ${JSON.stringify(intermediatePlaceIds)}`, async (t) => {
+    const { request, calls } = await setup(t);
+
+    const result = await request('/routes/compute', {
+      ...routeInput,
+      intermediatePlaceIds,
+    });
+
+    assert.equal(result.status, 400);
+    assert.equal(calls.length, 0);
+  });
+}
+
+test('Five intermediate stops are accepted', async (t) => {
+  const { request, calls } = await setup(t, {
+    data: {
+      routes: [{
+        ...journeyResult.routes[0],
+        legs: Array.from(
+          { length: 6 },
+          () => ({ distanceMeters: 100, duration: '10s' }),
+        ),
+      }],
+    },
+  });
+
+  const result = await request('/routes/compute', {
+    ...routeInput,
+    intermediatePlaceIds: ['A', 'B', 'C', 'D', 'E'],
+  });
+
+  assert.equal(result.status, 200);
+  assert.equal(
+    JSON.parse(calls[0].options.body).intermediates.length,
+    5,
+  );
+});
+
+for (const legs of [
+  undefined,
+  [{ distanceMeters: 100, duration: '10s' }],
+  [
+    { distanceMeters: -1, duration: '10s' },
+    { distanceMeters: 1, duration: '10s' },
+  ],
+]) {
+  test(`Incomplete or invalid segments are rejected: ${JSON.stringify(legs)}`, async (t) => {
+    const { request } = await setup(t, {
+      data: {
+        routes: [{ ...journeyResult.routes[0], legs }],
+      },
+    });
+
+    const result = await request('/routes/compute', {
+      ...routeInput,
+      intermediatePlaceIds: ['Museum'],
+    });
+
+    assert.equal(result.status, 502);
+  });
+}

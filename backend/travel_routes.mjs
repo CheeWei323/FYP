@@ -337,85 +337,132 @@ export function createTravelRouter({
         });
   });
 
-  // ---------------------------------------------------------------------------
-  // ROUTE CALCULATION
-  // ---------------------------------------------------------------------------
-  // Return driving or walking options with distance, estimated time and geometry.
-  router.post('/routes/compute', async (req, res) => {
-    const body = req.body ?? {};
-    const origin = placeId(body.originPlaceId);
-    const destination = placeId(body.destinationPlaceId);
-    const travelMode = body.travelMode ?? 'DRIVE';
+    // ---------------------------------------------------------------------------
+    // ROUTE CALCULATION
+    // ---------------------------------------------------------------------------
+    // Preserve the traveller's stop order and compare alternatives for two places.
+    router.post('/routes/compute', async (req, res) => {
+      const body = req.body ?? {};
+      const origin = placeId(body.originPlaceId);
+      const destination = placeId(body.destinationPlaceId);
+      const travelMode = body.travelMode ?? 'DRIVE';
 
-    if (origin === destination) {
-      throw apiError(400, 'Choose two different places.');
-    }
+      const requestedStops = body.intermediatePlaceIds === undefined
+        ? []
+        : body.intermediatePlaceIds;
 
-    if (!['DRIVE', 'WALK'].includes(travelMode)) {
-      throw apiError(400, 'Choose driving or walking.');
-    }
+      if (!Array.isArray(requestedStops) || requestedStops.length > 5) {
+        throw apiError(400, 'Choose up to five intermediate stops.');
+      }
 
-    const data = await googleJson(
-      'https://routes.googleapis.com/directions/v2:computeRoutes',
-      'routes.distanceMeters,routes.duration,routes.polyline.encodedPolyline,routes.description,routes.warnings',
-      {
-        origin: { placeId: origin },
-        destination: { placeId: destination },
-        travelMode,
-        ...(travelMode === 'DRIVE'
-          ? { routingPreference: 'TRAFFIC_UNAWARE' }
-          : {}),
-        computeAlternativeRoutes: true,
-        languageCode: 'en-US',
-        units: 'METRIC',
-      },
-    );
+      const stops = requestedStops.map((value) => placeId(value));
+      const journey = [origin, ...stops, destination];
 
-    if (
-      !Array.isArray(data.routes) ||
-      data.routes.length === 0
-    ) {
-      throw apiError(
-        404,
-        'No route was found. Try different places or a different travel mode.',
-      );
-    }
-
-    const routes = data.routes.map((route) => {
-      const duration = /^(\d+(?:\.\d+)?)s$/.exec(
-        route.duration ?? '0s',
-      );
-
-      const distanceMeters = route.distanceMeters ?? 0;
-      const encodedPolyline = route.polyline?.encodedPolyline;
-
+      // Allow return trips, but reject duplicate places next to each other.
       if (
-        !duration ||
-        !Number.isFinite(distanceMeters) ||
-        distanceMeters < 0 ||
-        !encodedPolyline
+        journey.some(
+          (id, index) => index > 0 && id === journey[index - 1],
+        )
       ) {
+        throw apiError(400, 'Consecutive places must be different.');
+      }
+
+      if (!['DRIVE', 'WALK'].includes(travelMode)) {
+        throw apiError(400, 'Choose driving or walking.');
+      }
+
+      const data = await googleJson(
+        'https://routes.googleapis.com/directions/v2:computeRoutes',
+        'routes.distanceMeters,routes.duration,routes.polyline.encodedPolyline,routes.description,routes.warnings,routes.legs.distanceMeters,routes.legs.duration',
+        {
+          origin: { placeId: origin },
+          destination: { placeId: destination },
+
+          ...(stops.length
+            ? {
+                intermediates: stops.map((id) => ({
+                  placeId: id,
+                })),
+              }
+            : {}),
+
+          travelMode,
+
+          ...(travelMode === 'DRIVE'
+            ? { routingPreference: 'TRAFFIC_UNAWARE' }
+            : {}),
+
+          computeAlternativeRoutes: stops.length === 0,
+          optimizeWaypointOrder: false,
+          languageCode: 'en-US',
+          units: 'METRIC',
+        },
+      );
+
+      if (!Array.isArray(data.routes) || data.routes.length === 0) {
         throw apiError(
-          502,
-          'The map service returned incomplete route information.',
+          404,
+          'No route was found. Try different places or a different travel mode.',
         );
       }
 
-      return {
-        distanceMeters,
-        durationSeconds: Number(duration[1]),
-        encodedPolyline,
-        description: route.description ?? '',
-        warnings: route.warnings ?? [],
-      };
-    });
+      // Validate totals and every segment before returning a complete journey.
+      function estimates(value) {
+        const duration = /^(\d+(?:\.\d+)?)s$/.exec(
+          value?.duration ?? '',
+        );
 
-    res.json({
-      routes,
-      travelMode,
-      trafficAware: false,
+        const distanceMeters = value?.distanceMeters ?? 0;
+        const durationSeconds = duration
+          ? Number(duration[1])
+          : NaN;
+
+        if (
+          !Number.isFinite(durationSeconds) ||
+          !Number.isFinite(distanceMeters) ||
+          distanceMeters < 0
+        ) {
+          throw apiError(
+            502,
+            'The map service returned incomplete route information.',
+          );
+        }
+
+        return { distanceMeters, durationSeconds };
+      }
+
+      const routes = data.routes.map((route) => {
+        const encodedPolyline = route.polyline?.encodedPolyline;
+
+        const legs = Array.isArray(route.legs)
+          ? route.legs.map(estimates)
+          : [];
+
+        if (
+          !encodedPolyline ||
+          (stops.length > 0 && legs.length !== stops.length + 1)
+        ) {
+          throw apiError(
+            502,
+            'The map service returned an incomplete journey. Please try again.',
+          );
+        }
+
+        return {
+          ...estimates(route),
+          encodedPolyline,
+          description: route.description ?? '',
+          warnings: route.warnings ?? [],
+          legs,
+        };
+      });
+
+      res.json({
+        routes,
+        travelMode,
+        trafficAware: false,
+      });
     });
-  });
 
   // ---------------------------------------------------------------------------
   // ERROR RESPONSES
