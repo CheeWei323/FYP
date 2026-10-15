@@ -301,7 +301,7 @@ export function createTravelRouter({
 
     const data = await googleJson(
       url,
-      'id,formattedAddress,location,addressComponents',
+            'id,formattedAddress,location,addressComponents,attributions',
     );
 
     const country = data.addressComponents?.find(
@@ -328,12 +328,13 @@ export function createTravelRouter({
       );
     }
 
-    res.json({
-      placeId: data.id,
-      address: data.formattedAddress ?? '',
-      latitude,
-      longitude,
-    });
+        res.json({
+          placeId: data.id,
+          address: data.formattedAddress ?? '',
+          latitude,
+          longitude,
+          attributions: data.attributions ?? [],
+        });
   });
 
   // ---------------------------------------------------------------------------
