@@ -223,7 +223,7 @@ class TravelRouteService {
     );
   }
 
-  // Refresh saved IDs using existing Places fields and reuse return-trip places.
+  // Refresh saved place names and reuse repeated places in return journeys.
   Future<List<TravelPlace>> restorePlaces({
     required String countryId,
     required List<String> placeIds,
@@ -244,13 +244,21 @@ class TravelRouteService {
           final data = await _post('places/details', {
             'countryId': countryId,
             'placeId': id,
+            'includeDisplayName': true,
           });
 
+          // Prefer the place name and retain an address fallback when unavailable.
+          final name = (data['displayName'] as String? ?? '').trim();
           final address = (data['address'] as String? ?? '').trim();
+          final label = name.isNotEmpty
+              ? name
+              : address.isNotEmpty
+              ? address
+              : 'Saved place';
 
           resolved[id] = TravelPlace(
             id: data['placeId'] as String,
-            label: address.isEmpty ? 'Saved place' : address,
+            label: label,
             position: LatLng(
               (data['latitude'] as num).toDouble(),
               (data['longitude'] as num).toDouble(),
