@@ -951,9 +951,10 @@ class _TripDetailsScreenState extends State<TripDetailsScreen> {
 
             _buildFeatureCard(
               icon: Icons.map_outlined,
-              title: 'Destination Map',
-              description: 'Explore your destination on an interactive map.',
-              actionText: 'Open Map',
+              title: 'Route Planning',
+              description:
+                  'Choose places and compare route options by distance and estimated travel time.',
+              actionText: 'Plan a Route',
               onTap: _openDestinationMap,
             ),
 
