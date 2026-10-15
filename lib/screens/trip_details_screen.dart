@@ -953,7 +953,7 @@ class _TripDetailsScreenState extends State<TripDetailsScreen> {
               icon: Icons.map_outlined,
               title: 'Route Planning',
               description:
-                  'Choose places and compare route options by distance and estimated travel time.',
+                  'Choose places, add stops and plan your journey by distance and estimated travel time',
               actionText: 'Plan a Route',
               onTap: _openDestinationMap,
             ),

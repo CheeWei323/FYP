@@ -30,6 +30,19 @@ class TravelPlace {
   final List<Map<String, dynamic>> credits;
 }
 
+// Store the estimates and map geometry between consecutive selected places.
+class TravelRouteLeg {
+  const TravelRouteLeg({
+    required this.distanceMeters,
+    required this.durationSeconds,
+    this.points = const [],
+  });
+
+  final double distanceMeters;
+  final double durationSeconds;
+  final List<LatLng> points;
+}
+
 class TravelRoute {
   const TravelRoute({
     required this.distanceMeters,
@@ -37,6 +50,7 @@ class TravelRoute {
     required this.points,
     this.description = '',
     this.warnings = const [],
+    this.legs = const [],
   });
 
   final double distanceMeters;
@@ -44,6 +58,7 @@ class TravelRoute {
   final List<LatLng> points;
   final String description;
   final List<String> warnings;
+  final List<TravelRouteLeg> legs;
 }
 
 class TravelRouteException implements Exception {
@@ -208,29 +223,53 @@ class TravelRouteService {
     );
   }
 
-  // Request route options only after the traveller confirms both places.
+  // Request a complete route through the traveller's ordered intermediate stops.
   Future<List<TravelRoute>> computeRoutes({
     required TravelPlace origin,
     required TravelPlace destination,
     required String travelMode,
+    List<TravelPlace> stops = const [],
   }) async {
     final data = await _post('routes/compute', {
       'originPlaceId': origin.id,
       'destinationPlaceId': destination.id,
       'travelMode': travelMode,
+      if (stops.isNotEmpty)
+        'intermediatePlaceIds': stops.map((place) => place.id).toList(),
     });
 
-    return _objects(data['routes'])
-        .map(
-          (item) => TravelRoute(
-            distanceMeters: (item['distanceMeters'] as num).toDouble(),
-            durationSeconds: (item['durationSeconds'] as num).toDouble(),
-            points: decodePolyline(item['encodedPolyline'] as String),
-            description: item['description'] as String? ?? '',
-            warnings: List<String>.from(item['warnings'] as List? ?? []),
-          ),
-        )
-        .toList();
+    return _objects(data['routes']).map((item) {
+      // Decode each section separately so the map can display it independently.
+      final legs = _objects(item['legs'] ?? [])
+          .map(
+            (leg) => TravelRouteLeg(
+              distanceMeters: (leg['distanceMeters'] as num).toDouble(),
+              durationSeconds: (leg['durationSeconds'] as num).toDouble(),
+              points: leg['encodedPolyline'] is String
+                  ? decodePolyline(leg['encodedPolyline'] as String)
+                  : const [],
+            ),
+          )
+          .toList();
+
+      // Require complete segment geometry before displaying a journey with stops.
+      if (stops.isNotEmpty &&
+          (legs.length != stops.length + 1 ||
+              legs.any((leg) => leg.points.isEmpty))) {
+        throw const TravelRouteException(
+          'The complete journey is unavailable. Please try again after the travel service updates.',
+        );
+      }
+
+      return TravelRoute(
+        distanceMeters: (item['distanceMeters'] as num).toDouble(),
+        durationSeconds: (item['durationSeconds'] as num).toDouble(),
+        points: decodePolyline(item['encodedPolyline'] as String),
+        description: item['description'] as String? ?? '',
+        warnings: List<String>.from(item['warnings'] as List? ?? []),
+        legs: legs,
+      );
+    }).toList();
   }
 
   // Decode Google's standard five-decimal polyline and reject broken geometry.
