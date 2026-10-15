@@ -1,3 +1,5 @@
+import java.util.Properties
+
 plugins {
     id("com.android.application")
     // START: FlutterFire Configuration
@@ -6,6 +8,25 @@ plugins {
     id("kotlin-android")
     // The Flutter Gradle Plugin must be applied after the Android and Kotlin Gradle plugins.
     id("dev.flutter.flutter-gradle-plugin")
+}
+
+// -----------------------------------------------------------------------------
+// LOCAL MAPS CONFIGURATION
+// -----------------------------------------------------------------------------
+// Read the Android map key from a file excluded from Git.
+val mapsProperties = Properties()
+val mapsPropertiesFile = rootProject.file("../backend/.env")
+
+if (mapsPropertiesFile.exists()) {
+    mapsPropertiesFile.inputStream().use { mapsProperties.load(it) }
+}
+
+val mapsApiKey = mapsProperties.getProperty("MAPS_API_KEY", "").trim()
+
+if (mapsApiKey.isBlank()) {
+    throw GradleException(
+        "Add MAPS_API_KEY to backend/.env before building."
+    )
 }
 
 android {
@@ -26,6 +47,7 @@ android {
     defaultConfig {
         // TODO: Specify your own unique Application ID (https://developer.android.com/studio/build/application-id.html).
         applicationId = "com.fyp.fyp"
+        manifestPlaceholders["MAPS_API_KEY"] = mapsApiKey
         // You can update the following values to match your application needs.
         // For more information, see: https://flutter.dev/to/review-gradle-config.
         minSdk = flutter.minSdkVersion

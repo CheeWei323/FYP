@@ -10,6 +10,7 @@ import '../services/notification_service.dart';
 import '../theme/app_theme.dart';
 import '../widgets/trip_overview_card.dart';
 import '../widgets/trip_preparation_widgets.dart';
+import 'trip_map_screen.dart';
 
 class TripDetailsScreen extends StatefulWidget {
   final Trip trip;
@@ -94,6 +95,17 @@ class _TripDetailsScreenState extends State<TripDetailsScreen> {
     await Navigator.push(
       context,
       MaterialPageRoute(builder: (context) => PackingScreen(trip: _trip)),
+    );
+  }
+
+  // ---------------------------------------------------------------------------
+  // OPEN DESTINATION MAP
+  // ---------------------------------------------------------------------------
+  // Keep the map tied to the selected trip, including any saved destination edits.
+  Future<void> _openDestinationMap() async {
+    await Navigator.push<void>(
+      context,
+      MaterialPageRoute<void>(builder: (context) => TripMapScreen(trip: _trip)),
     );
   }
 
@@ -875,10 +887,7 @@ class _TripDetailsScreenState extends State<TripDetailsScreen> {
         elevation: 0,
         title: const Text(
           'Trip Details',
-          style: TextStyle(
-            color: _darkTextColor,
-            fontWeight: FontWeight.w700,
-          ),
+          style: TextStyle(color: _darkTextColor, fontWeight: FontWeight.w700),
         ),
       ),
       body: RefreshIndicator(
@@ -937,6 +946,16 @@ class _TripDetailsScreenState extends State<TripDetailsScreen> {
                   'Use the same saved packing list available from your Packing tab.',
               actionText: 'Open Packing List',
               onTap: _openPackingList,
+            ),
+
+            const SizedBox(height: 12),
+
+            _buildFeatureCard(
+              icon: Icons.map_outlined,
+              title: 'Destination Map',
+              description: 'Explore your destination on an interactive map.',
+              actionText: 'Open Map',
+              onTap: _openDestinationMap,
             ),
 
             const SizedBox(height: 12),
