@@ -9,6 +9,7 @@ import '../services/reminder_service.dart';
 import '../services/notification_service.dart';
 import '../theme/app_theme.dart';
 import '../widgets/trip_overview_card.dart';
+import '../widgets/trip_preparation_widgets.dart';
 
 class TripDetailsScreen extends StatefulWidget {
   final Trip trip;
@@ -23,8 +24,6 @@ class _TripDetailsScreenState extends State<TripDetailsScreen> {
   final TripService _tripService = TripService();
 
   final ReminderService _reminderService = ReminderService();
-
-  static const Color _primaryColor = AppColors.primary;
 
   static const Color _darkTextColor = AppColors.navy;
 
@@ -45,18 +44,37 @@ class _TripDetailsScreenState extends State<TripDetailsScreen> {
     _progressFuture = _loadProgress();
   }
 
+  // ---------------------------------------------------------------------------
+  // LOAD READINESS
+  // ---------------------------------------------------------------------------
+  // Listen immediately; the card still receives any error when it builds.
   Future<Map<String, int>> _loadProgress() {
-    return _tripService.getChecklistProgress(_trip.id);
+    final Future<Map<String, int>> progress = _tripService.getChecklistProgress(
+      _trip.id,
+    );
+
+    progress.ignore();
+    return progress;
   }
 
+  // ---------------------------------------------------------------------------
+  // REFRESH READINESS
+  // ---------------------------------------------------------------------------
+  // Let the card show read failures without throwing from pull-to-refresh.
   Future<void> _refreshProgress() async {
+    if (!mounted) return;
+
     final Future<Map<String, int>> refreshed = _loadProgress();
 
     setState(() {
       _progressFuture = refreshed;
     });
 
-    await refreshed;
+    try {
+      await refreshed;
+    } catch (error) {
+      debugPrint('READINESS REFRESH ERROR: $error');
+    }
   }
 
   Future<void> _openChecklist() async {
@@ -850,26 +868,18 @@ class _TripDetailsScreenState extends State<TripDetailsScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: _backgroundColor,
+      // Keep reminder creation in the clearly labelled preparation card.
       appBar: AppBar(
         backgroundColor: Colors.white,
         surfaceTintColor: Colors.white,
         elevation: 0,
         title: const Text(
           'Trip Details',
-          style: TextStyle(color: _darkTextColor, fontWeight: FontWeight.w700),
-        ),
-        actions: [
-          IconButton(
-            tooltip: _isPastTrip
-                ? 'Reminders unavailable for past trips'
-                : 'Add trip reminder',
-            onPressed: _isPastTrip || _isDeleting ? null : _addReminder,
-            icon: const Icon(Icons.add_alert_outlined),
-            color: _primaryColor,
+          style: TextStyle(
+            color: _darkTextColor,
+            fontWeight: FontWeight.w700,
           ),
-
-          const SizedBox(width: 6),
-        ],
+        ),
       ),
       body: RefreshIndicator(
         onRefresh: _refreshProgress,
@@ -907,12 +917,13 @@ class _TripDetailsScreenState extends State<TripDetailsScreen> {
 
             const SizedBox(height: 12),
 
+            // Open the existing preparation tools for this selected trip.
             _buildFeatureCard(
               icon: Icons.fact_check_outlined,
               title: 'Travel Requirements',
               description:
-                  'Review your personalised regulatory '
-                  'checklist and mark completed requirements.',
+                  'Review the requirements that apply to this trip. '
+                  'Checking or unchecking an item updates your readiness score.',
               actionText: 'View Requirements',
               onTap: _openChecklist,
             ),
@@ -923,11 +934,27 @@ class _TripDetailsScreenState extends State<TripDetailsScreen> {
               icon: Icons.luggage_outlined,
               title: 'Packing List',
               description:
-                  'Manage your packing items and get '
-                  'contextual recommendations for this trip.',
+                  'Use the same saved packing list available from your Packing tab.',
               actionText: 'Open Packing List',
               onTap: _openPackingList,
             ),
+
+            const SizedBox(height: 12),
+
+            _buildFeatureCard(
+              icon: Icons.add_alert_outlined,
+              title: 'Trip Reminder',
+              description: _isPastTrip
+                  ? 'New reminders are unavailable for past trips.'
+                  : 'Set a personal reminder for a preparation task before departure.',
+              actionText: _isPastTrip
+                  ? 'Unavailable for past trips'
+                  : 'Add Reminder',
+              enabled: !_isPastTrip,
+              onTap: _addReminder,
+            ),
+
+            const SizedBox(height: 12),
 
             const SizedBox(height: 26),
 
@@ -969,437 +996,37 @@ class _TripDetailsScreenState extends State<TripDetailsScreen> {
     );
   }
 
+  // ---------------------------------------------------------------------------
+  // READINESS CARD
+  // ---------------------------------------------------------------------------
+  // Display progress from the existing checklist service with a retry action.
   Widget _buildProgressCard() {
-    return FutureBuilder<Map<String, int>>(
-      future: _progressFuture,
-      builder: (context, snapshot) {
-        // Show loading state while retrieving checklist progress.
-        if (snapshot.connectionState == ConnectionState.waiting) {
-          return Container(
-            height: 185,
-            alignment: Alignment.center,
-            decoration: BoxDecoration(
-              color: Colors.white,
-              borderRadius: BorderRadius.circular(20),
-              border: Border.all(color: AppColors.border),
-            ),
-            child: const CircularProgressIndicator(),
-          );
-        }
-
-        // Show error state without affecting other trip features.
-        if (snapshot.hasError) {
-          return Container(
-            width: double.infinity,
-            padding: const EdgeInsets.all(20),
-            decoration: BoxDecoration(
-              color: Colors.white,
-              borderRadius: BorderRadius.circular(20),
-              border: Border.all(color: AppColors.border),
-            ),
-            child: const Column(
-              children: [
-                Icon(
-                  Icons.error_outline_rounded,
-                  color: AppColors.danger,
-                  size: 30,
-                ),
-                SizedBox(height: 12),
-                Text(
-                  'Unable to load travel readiness.',
-                  textAlign: TextAlign.center,
-                  style: TextStyle(
-                    color: AppColors.navy,
-                    fontWeight: FontWeight.w700,
-                  ),
-                ),
-              ],
-            ),
-          );
-        }
-
-        final Map<String, int> progress = snapshot.data ?? {};
-
-        final int completed = progress['completed'] ?? 0;
-        final int total = progress['total'] ?? 0;
-
-        // Preserve the existing readiness calculation.
-        final double value = total == 0
-            ? 0
-            : (completed / total).clamp(0.0, 1.0).toDouble();
-
-        final int percentage = (value * 100).round();
-
-        final int remaining = total > completed ? total - completed : 0;
-
-        final bool reduceMotion = MediaQuery.disableAnimationsOf(context);
-
-        return Container(
-          width: double.infinity,
-          padding: const EdgeInsets.all(19),
-          decoration: BoxDecoration(
-            color: Colors.white,
-            borderRadius: BorderRadius.circular(20),
-            border: Border.all(color: AppColors.border),
-            boxShadow: const [
-              BoxShadow(
-                color: Color(0x08000000),
-                blurRadius: 12,
-                offset: Offset(0, 4),
-              ),
-            ],
-          ),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              // -------------------------------------------------
-              // SECTION HEADING
-              // -------------------------------------------------
-              Row(
-                children: [
-                  Container(
-                    width: 42,
-                    height: 42,
-                    decoration: BoxDecoration(
-                      color: AppColors.primaryLight,
-                      borderRadius: BorderRadius.circular(13),
-                    ),
-                    child: const Icon(
-                      Icons.speed_outlined,
-                      color: AppColors.primary,
-                      size: 23,
-                    ),
-                  ),
-
-                  const SizedBox(width: 12),
-
-                  const Expanded(
-                    child: Text(
-                      'Travel Readiness Score',
-                      style: TextStyle(
-                        color: AppColors.navy,
-                        fontSize: 16,
-                        fontWeight: FontWeight.w800,
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-
-              const SizedBox(height: 23),
-
-              // -------------------------------------------------
-              // ANIMATED READINESS DISPLAY
-              // -------------------------------------------------
-              TweenAnimationBuilder<double>(
-                tween: Tween<double>(begin: 0, end: value),
-                duration: reduceMotion
-                    ? Duration.zero
-                    : const Duration(milliseconds: 550),
-                curve: Curves.easeOutCubic,
-                builder: (context, animatedValue, child) {
-                  final Widget progressCircle = SizedBox(
-                    width: 96,
-                    height: 96,
-                    child: Stack(
-                      alignment: Alignment.center,
-                      children: [
-                        SizedBox(
-                          width: 96,
-                          height: 96,
-                          child: CircularProgressIndicator(
-                            value: animatedValue,
-                            strokeWidth: 9,
-                            strokeCap: StrokeCap.round,
-                            backgroundColor: const Color(0xFFE5EEF0),
-                            color: AppColors.primary,
-                          ),
-                        ),
-
-                        Column(
-                          mainAxisAlignment: MainAxisAlignment.center,
-                          children: [
-                            Text(
-                              total == 0 ? '--' : '$percentage%',
-                              style: const TextStyle(
-                                color: AppColors.primary,
-                                fontSize: 23,
-                                fontWeight: FontWeight.w800,
-                              ),
-                            ),
-
-                            const Text(
-                              'COMPLETE',
-                              style: TextStyle(
-                                color: AppColors.secondaryText,
-                                fontSize: 8,
-                                fontWeight: FontWeight.w700,
-                                letterSpacing: 0.7,
-                              ),
-                            ),
-                          ],
-                        ),
-                      ],
-                    ),
-                  );
-
-                  final Widget progressDetails = Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        total == 0
-                            ? 'No requirements available'
-                            : remaining == 0
-                            ? 'All requirements completed'
-                            : '$remaining requirements remaining',
-                        style: const TextStyle(
-                          color: AppColors.navy,
-                          fontSize: 15,
-                          fontWeight: FontWeight.w800,
-                        ),
-                      ),
-
-                      const SizedBox(height: 7),
-
-                      Text(
-                        total == 0
-                            ? 'Your readiness score will appear '
-                                  'when applicable requirements '
-                                  'are available.'
-                            : '$completed of $total applicable '
-                                  'requirements completed.',
-                        style: const TextStyle(
-                          color: AppColors.secondaryText,
-                          fontSize: 13,
-                          height: 1.45,
-                        ),
-                      ),
-                    ],
-                  );
-
-                  return Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      // Stack vertically on narrow physical phones.
-                      LayoutBuilder(
-                        builder: (context, constraints) {
-                          if (constraints.maxWidth < 300) {
-                            return Column(
-                              children: [
-                                progressCircle,
-                                const SizedBox(height: 18),
-                                Align(
-                                  alignment: Alignment.centerLeft,
-                                  child: progressDetails,
-                                ),
-                              ],
-                            );
-                          }
-
-                          return Row(
-                            crossAxisAlignment: CrossAxisAlignment.center,
-                            children: [
-                              progressCircle,
-                              const SizedBox(width: 19),
-                              Expanded(child: progressDetails),
-                            ],
-                          );
-                        },
-                      ),
-
-                      if (total > 0) ...[
-                        const SizedBox(height: 23),
-
-                        ClipRRect(
-                          borderRadius: BorderRadius.circular(20),
-                          child: LinearProgressIndicator(
-                            value: animatedValue,
-                            minHeight: 9,
-                            backgroundColor: const Color(0xFFE5EEF0),
-                            color: AppColors.primary,
-                          ),
-                        ),
-
-                        const SizedBox(height: 9),
-
-                        Row(
-                          children: [
-                            Expanded(
-                              child: Text(
-                                '$completed completed',
-                                style: const TextStyle(
-                                  color: AppColors.secondaryText,
-                                  fontSize: 12,
-                                ),
-                              ),
-                            ),
-
-                            Text(
-                              '$total total',
-                              style: const TextStyle(
-                                color: AppColors.secondaryText,
-                                fontSize: 12,
-                              ),
-                            ),
-                          ],
-                        ),
-                      ],
-                    ],
-                  );
-                },
-              ),
-
-              const SizedBox(height: 22),
-
-              // -------------------------------------------------
-              // READINESS DISCLAIMER
-              // -------------------------------------------------
-              Container(
-                width: double.infinity,
-                padding: const EdgeInsets.all(13),
-                decoration: BoxDecoration(
-                  color: const Color(0xFFF1F6FA),
-                  borderRadius: BorderRadius.circular(13),
-                ),
-                child: const Row(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Icon(
-                      Icons.info_outline_rounded,
-                      color: Color(0xFF0A5B83),
-                      size: 19,
-                    ),
-
-                    SizedBox(width: 10),
-
-                    Expanded(
-                      child: Text(
-                        'Your readiness score reflects '
-                        'checklist completion only. '
-                        'It does not guarantee visa approval, '
-                        'entry permission or travel eligibility.',
-                        style: TextStyle(
-                          color: AppColors.secondaryText,
-                          fontSize: 11.5,
-                          height: 1.5,
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ],
-          ),
-        );
-      },
+    return TripReadinessCard(
+      progressFuture: _progressFuture,
+      onRetry: _refreshProgress,
     );
   }
 
+  // ---------------------------------------------------------------------------
+  // PREPARATION ACTIONS
+  // ---------------------------------------------------------------------------
+  // Disable actions during deletion and unavailable reminders for past trips.
   Widget _buildFeatureCard({
     required IconData icon,
     required String title,
     required String description,
     required String actionText,
     required VoidCallback onTap,
+    bool enabled = true,
+    Color iconBackground = AppColors.primaryLight,
   }) {
-    return Material(
-      color: Colors.white,
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(18),
-        side: const BorderSide(color: AppColors.border),
-      ),
-      clipBehavior: Clip.antiAlias,
-      child: InkWell(
-        onTap: _isDeleting ? null : onTap,
-        child: Padding(
-          padding: const EdgeInsets.all(17),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              // Feature icon and information.
-              Row(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Container(
-                    width: 48,
-                    height: 48,
-                    decoration: BoxDecoration(
-                      color: AppColors.primaryLight,
-                      borderRadius: BorderRadius.circular(14),
-                    ),
-                    child: Icon(icon, size: 25, color: AppColors.primary),
-                  ),
-
-                  const SizedBox(width: 14),
-
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          title,
-                          style: const TextStyle(
-                            color: AppColors.navy,
-                            fontSize: 16,
-                            fontWeight: FontWeight.w800,
-                          ),
-                        ),
-
-                        const SizedBox(height: 6),
-
-                        Text(
-                          description,
-                          style: const TextStyle(
-                            color: AppColors.secondaryText,
-                            fontSize: 12.5,
-                            height: 1.5,
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                ],
-              ),
-
-              const SizedBox(height: 16),
-
-              const Divider(height: 1, color: AppColors.border),
-
-              const SizedBox(height: 13),
-
-              // Entire card remains tappable.
-              Row(
-                children: [
-                  Expanded(
-                    child: Text(
-                      actionText,
-                      style: const TextStyle(
-                        color: AppColors.primary,
-                        fontSize: 13,
-                        fontWeight: FontWeight.w800,
-                      ),
-                    ),
-                  ),
-
-                  Container(
-                    width: 30,
-                    height: 30,
-                    decoration: BoxDecoration(
-                      color: AppColors.primaryLight,
-                      borderRadius: BorderRadius.circular(9),
-                    ),
-                    child: const Icon(
-                      Icons.arrow_forward_rounded,
-                      size: 18,
-                      color: AppColors.primary,
-                    ),
-                  ),
-                ],
-              ),
-            ],
-          ),
-        ),
-      ),
+    return TripActionCard(
+      icon: icon,
+      title: title,
+      description: description,
+      actionText: actionText,
+      iconBackground: iconBackground,
+      onTap: _isDeleting || !enabled ? null : onTap,
     );
   }
 
