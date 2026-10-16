@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../../services/analyst_service.dart';
 import '../../theme/app_theme.dart';
+import '../../widgets/role_ui_widgets.dart';
 import '../../widgets/analyst/analytics_filter_card.dart';
 
 class PreparationRequirementsScreen extends StatefulWidget {
@@ -426,86 +427,11 @@ class _PreparationRequirementsScreenState
           '${analysedTrips == 1 ? 'trip' : 'trips'}.';
     }
 
-    return Container(
-      width: double.infinity,
-      padding: const EdgeInsets.all(20),
-      decoration: _cardDecoration(),
-
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-
-        children: [
-          Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
-
-            children: [
-              const _RequirementIcon(icon: Icons.insights_outlined, size: 52),
-
-              const SizedBox(width: 14),
-
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-
-                  children: [
-                    const Text(
-                      'Requirement Insights',
-                      style: TextStyle(
-                        color: AppColors.navy,
-                        fontSize: 19,
-                        fontWeight: FontWeight.w800,
-                      ),
-                    ),
-
-                    const SizedBox(height: 7),
-
-                    Text(
-                      description,
-                      style: const TextStyle(
-                        color: AppColors.secondaryText,
-                        fontSize: 12.5,
-                        height: 1.5,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ],
-          ),
-
-          const SizedBox(height: 18),
-
-          const Divider(height: 1, color: AppColors.border),
-
-          const SizedBox(height: 13),
-
-          const Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
-
-            children: [
-              Icon(
-                Icons.fact_check_outlined,
-                color: AppColors.primary,
-                size: 19,
-              ),
-
-              SizedBox(width: 9),
-
-              Expanded(
-                child: Text(
-                  'Identify frequently generated travel '
-                  'requirements across traveller segments.',
-                  style: TextStyle(
-                    color: AppColors.secondaryText,
-                    fontSize: 12,
-                    height: 1.5,
-                  ),
-                ),
-              ),
-            ],
-          ),
-        ],
-      ),
+    return RoleIntroCard(
+      eyebrow: 'TRAVEL ANALYTICS',
+      title: "Preparation requirements",
+      description: description,
+      icon: Icons.fact_check_outlined,
     );
   }
 
@@ -917,9 +843,9 @@ class _PreparationRequirementsScreenState
       padding: const EdgeInsets.all(17),
 
       decoration: BoxDecoration(
-        color: const Color(0xFFF1F6FA),
+        color: AppColors.primaryLight,
         borderRadius: BorderRadius.circular(18),
-        border: Border.all(color: const Color(0xFFD8E6EE)),
+        border: Border.all(color: AppColors.border),
       ),
 
       child: const Row(
@@ -989,69 +915,14 @@ class _PreparationRequirementsScreenState
     double minimumHeight = 180,
     VoidCallback? onRetry,
   }) {
-    return Container(
-      width: double.infinity,
-
+    return ConstrainedBox(
       constraints: BoxConstraints(minHeight: minimumHeight),
-
-      padding: const EdgeInsets.all(20),
-      decoration: _cardDecoration(),
-
-      child: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
-
-        children: [
-          _RequirementIcon(icon: icon, size: 52),
-
-          const SizedBox(height: 13),
-
-          Text(
-            title,
-            textAlign: TextAlign.center,
-
-            style: const TextStyle(
-              color: AppColors.navy,
-              fontSize: 14.5,
-              fontWeight: FontWeight.w800,
-            ),
-          ),
-
-          const SizedBox(height: 7),
-
-          Text(
-            message,
-            textAlign: TextAlign.center,
-
-            style: const TextStyle(
-              color: AppColors.secondaryText,
-              fontSize: 12,
-              height: 1.5,
-            ),
-          ),
-
-          if (isLoading) ...[
-            const SizedBox(height: 17),
-
-            const CircularProgressIndicator(
-              color: AppColors.primary,
-              strokeWidth: 3,
-            ),
-          ],
-
-          if (onRetry != null) ...[
-            const SizedBox(height: 15),
-
-            OutlinedButton.icon(
-              onPressed: onRetry,
-              icon: const Icon(Icons.refresh_rounded, size: 18),
-              label: const Text('Try Again'),
-
-              style: OutlinedButton.styleFrom(
-                foregroundColor: AppColors.primary,
-              ),
-            ),
-          ],
-        ],
+      child: RoleStatusCard(
+        title: title,
+        message: message,
+        icon: icon,
+        loading: isLoading,
+        onRetry: onRetry,
       ),
     );
   }
@@ -1060,25 +931,3 @@ class _PreparationRequirementsScreenState
 // -----------------------------------------------------------------------------
 // REUSABLE REQUIREMENT ICON
 // -----------------------------------------------------------------------------
-
-class _RequirementIcon extends StatelessWidget {
-  final IconData icon;
-  final double size;
-
-  const _RequirementIcon({required this.icon, required this.size});
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      width: size,
-      height: size,
-
-      decoration: BoxDecoration(
-        color: AppColors.primaryLight,
-        borderRadius: BorderRadius.circular(13),
-      ),
-
-      child: Icon(icon, color: AppColors.primary, size: size * 0.51),
-    );
-  }
-}

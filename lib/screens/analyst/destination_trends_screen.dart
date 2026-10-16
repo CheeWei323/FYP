@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 
 import '../../services/analyst_service.dart';
 import '../../theme/app_theme.dart';
+import '../../widgets/role_ui_widgets.dart';
 
 class DestinationTrendsScreen extends StatefulWidget {
   const DestinationTrendsScreen({super.key});
@@ -128,10 +129,6 @@ class _DestinationTrendsScreenState extends State<DestinationTrendsScreen> {
     }
 
     return 0;
-  }
-
-  int _getTotalTrips(List<Map<String, dynamic>> destinations) {
-    return destinations.fold<int>(0, (total, item) => total + _getCount(item));
   }
 
   Map<String, dynamic>? _getTopDestination(
@@ -278,103 +275,12 @@ class _DestinationTrendsScreenState extends State<DestinationTrendsScreen> {
   // ---------------------------------------------------------------------------
 
   Widget _buildHeader() {
-    final List<Map<String, dynamic>>? destinations = _destinations;
-
-    final int totalTrips = destinations == null
-        ? 0
-        : _getTotalTrips(destinations);
-
-    String description;
-
-    if (destinations == null && !_destinationError) {
-      description = 'Loading aggregated destination analytics...';
-    } else if (destinations == null) {
-      description = 'Destination analytics are temporarily unavailable.';
-    } else if (totalTrips == 0) {
-      description = 'No stored trip data is currently available.';
-    } else {
-      description =
-          '$totalTrips stored '
-          '${totalTrips == 1 ? 'trip is' : 'trips are'} '
-          'included in the destination analysis.';
-    }
-
-    return Container(
-      width: double.infinity,
-      padding: const EdgeInsets.all(20),
-      decoration: _cardDecoration(),
-
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-
-        children: [
-          Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
-
-            children: [
-              const _TrendsIcon(icon: Icons.travel_explore_outlined, size: 52),
-
-              const SizedBox(width: 14),
-
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-
-                  children: [
-                    const Text(
-                      'Destination Insights',
-                      style: TextStyle(
-                        color: AppColors.navy,
-                        fontSize: 19,
-                        fontWeight: FontWeight.w800,
-                      ),
-                    ),
-
-                    const SizedBox(height: 7),
-
-                    Text(
-                      description,
-                      style: const TextStyle(
-                        color: AppColors.secondaryText,
-                        fontSize: 12.5,
-                        height: 1.5,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ],
-          ),
-
-          const SizedBox(height: 18),
-
-          const Divider(height: 1, color: AppColors.border),
-
-          const SizedBox(height: 13),
-
-          const Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
-
-            children: [
-              Icon(Icons.bar_chart_rounded, color: AppColors.primary, size: 19),
-
-              SizedBox(width: 9),
-
-              Expanded(
-                child: Text(
-                  'Explore destination popularity and '
-                  'monthly departure patterns.',
-                  style: TextStyle(
-                    color: AppColors.secondaryText,
-                    fontSize: 12,
-                    height: 1.5,
-                  ),
-                ),
-              ),
-            ],
-          ),
-        ],
-      ),
+    return const RoleIntroCard(
+      eyebrow: 'TRAVEL ANALYTICS',
+      title: "Destination trends",
+      description:
+          "Compare destination popularity and monthly departure patterns.",
+      icon: Icons.public_rounded,
     );
   }
 
@@ -496,100 +402,35 @@ class _DestinationTrendsScreenState extends State<DestinationTrendsScreen> {
     required Map<String, dynamic> destination,
     required int maximum,
   }) {
-    final String name = destination['name'] as String? ?? 'Unknown';
-
-    final int count = _getCount(destination);
-
-    final double percentage = _getPercentage(destination);
-
-    final double barFactor = maximum <= 0
-        ? 0
-        : (count / maximum).clamp(0.0, 1.0);
-
+    final name = destination['name'] as String? ?? 'Unknown';
+    final count = _getCount(destination);
+    final percentage = _getPercentage(destination);
+    final factor = maximum <= 0 ? 0.0 : (count / maximum).clamp(0.0, 1.0);
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
-
       children: [
-        Row(
-          children: [
-            SizedBox(
-              width: 94,
-
-              child: Text(
-                name,
-                maxLines: 2,
-                overflow: TextOverflow.ellipsis,
-
-                style: const TextStyle(
-                  color: AppColors.navy,
-                  fontSize: 11.5,
-                  fontWeight: FontWeight.w700,
-                ),
-              ),
-            ),
-
-            const SizedBox(width: 10),
-
-            Expanded(
-              child: LayoutBuilder(
-                builder: (context, constraints) {
-                  return Stack(
-                    children: [
-                      Container(
-                        height: 22,
-
-                        decoration: BoxDecoration(
-                          color: AppColors.primaryLight,
-                          borderRadius: BorderRadius.circular(7),
-                        ),
-                      ),
-
-                      Container(
-                        height: 22,
-                        width: constraints.maxWidth * barFactor,
-
-                        decoration: BoxDecoration(
-                          color: AppColors.primary,
-                          borderRadius: BorderRadius.circular(7),
-                        ),
-                      ),
-                    ],
-                  );
-                },
-              ),
-            ),
-
-            const SizedBox(width: 9),
-
-            SizedBox(
-              width: 32,
-
-              child: Text(
-                '$count',
-                textAlign: TextAlign.right,
-
-                style: const TextStyle(
-                  color: AppColors.primary,
-                  fontSize: 12,
-                  fontWeight: FontWeight.w800,
-                ),
-              ),
-            ),
-          ],
-        ),
-
-        const SizedBox(height: 6),
-
-        Padding(
-          padding: const EdgeInsets.only(left: 104),
-
-          child: Text(
-            '${percentage.toStringAsFixed(1)}% of all trips',
-            style: const TextStyle(
-              color: AppColors.secondaryText,
-              fontSize: 10,
-            ),
+        Text(
+          name,
+          style: const TextStyle(
+            fontSize: 14,
+            fontWeight: FontWeight.w700,
+            color: AppColors.navy,
           ),
+        ),
+        const SizedBox(height: 9),
+        ClipRRect(
+          borderRadius: BorderRadius.circular(8),
+          child: LinearProgressIndicator(
+            value: factor,
+            minHeight: 12,
+            backgroundColor: AppColors.primaryLight,
+            color: AppColors.primary,
+          ),
+        ),
+        const SizedBox(height: 8),
+        Text(
+          '$count trips · ${percentage.toStringAsFixed(1)}% of all trips',
+          style: const TextStyle(fontSize: 12),
         ),
       ],
     );
@@ -611,9 +452,9 @@ class _DestinationTrendsScreenState extends State<DestinationTrendsScreen> {
       padding: const EdgeInsets.all(17),
 
       decoration: BoxDecoration(
-        color: const Color(0xFFF1F6FA),
+        color: AppColors.primaryLight,
         borderRadius: BorderRadius.circular(18),
-        border: Border.all(color: const Color(0xFFD8E6EE)),
+        border: Border.all(color: AppColors.border),
       ),
 
       child: Row(
@@ -864,9 +705,9 @@ class _DestinationTrendsScreenState extends State<DestinationTrendsScreen> {
       padding: const EdgeInsets.all(17),
 
       decoration: BoxDecoration(
-        color: const Color(0xFFF1F6FA),
+        color: AppColors.primaryLight,
         borderRadius: BorderRadius.circular(18),
-        border: Border.all(color: const Color(0xFFD8E6EE)),
+        border: Border.all(color: AppColors.border),
       ),
 
       child: const Row(
@@ -922,68 +763,12 @@ class _DestinationTrendsScreenState extends State<DestinationTrendsScreen> {
     bool isLoading = false,
     VoidCallback? onRetry,
   }) {
-    return Container(
-      width: double.infinity,
-      constraints: const BoxConstraints(minHeight: 215),
-
-      padding: const EdgeInsets.all(22),
-      decoration: _cardDecoration(),
-
-      child: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
-
-        children: [
-          _TrendsIcon(icon: icon, size: 52),
-
-          const SizedBox(height: 13),
-
-          Text(
-            title,
-            textAlign: TextAlign.center,
-
-            style: const TextStyle(
-              color: AppColors.navy,
-              fontSize: 14.5,
-              fontWeight: FontWeight.w800,
-            ),
-          ),
-
-          const SizedBox(height: 7),
-
-          Text(
-            message,
-            textAlign: TextAlign.center,
-
-            style: const TextStyle(
-              color: AppColors.secondaryText,
-              fontSize: 12,
-              height: 1.5,
-            ),
-          ),
-
-          if (isLoading) ...[
-            const SizedBox(height: 17),
-
-            const CircularProgressIndicator(
-              color: AppColors.primary,
-              strokeWidth: 3,
-            ),
-          ],
-
-          if (onRetry != null) ...[
-            const SizedBox(height: 15),
-
-            OutlinedButton.icon(
-              onPressed: onRetry,
-              icon: const Icon(Icons.refresh_rounded, size: 18),
-              label: const Text('Try Again'),
-              style: OutlinedButton.styleFrom(
-                foregroundColor: AppColors.primary,
-              ),
-            ),
-          ],
-        ],
-      ),
+    return RoleStatusCard(
+      title: title,
+      message: message,
+      icon: icon,
+      loading: isLoading,
+      onRetry: onRetry,
     );
   }
 }

@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 
 import '../../services/analyst_service.dart';
 import '../../theme/app_theme.dart';
+import '../../widgets/role_ui_widgets.dart';
 import '../../widgets/analyst/analytics_filter_card.dart';
 
 class PurposeDistributionScreen extends StatefulWidget {
@@ -18,8 +19,8 @@ class _PurposeDistributionScreenState extends State<PurposeDistributionScreen> {
   final AnalystService _analystService = AnalystService();
 
   static const Color _tourismColor = AppColors.primary;
-  static const Color _businessColor = Color(0xFF3E6C9E);
-  static const Color _studyColor = Color(0xFF8AA9B8);
+  static const Color _businessColor = Color(0xFFB07542);
+  static const Color _studyColor = Color(0xFF567F7A);
 
   String? _selectedDestinationId;
 
@@ -355,86 +356,11 @@ class _PurposeDistributionScreenState extends State<PurposeDistributionScreen> {
           'included in the current distribution.';
     }
 
-    return Container(
-      width: double.infinity,
-      padding: const EdgeInsets.all(20),
-      decoration: _cardDecoration(),
-
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-
-        children: [
-          Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
-
-            children: [
-              const _PurposeIcon(icon: Icons.donut_large_outlined, size: 52),
-
-              const SizedBox(width: 14),
-
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-
-                  children: [
-                    const Text(
-                      'Travel Purpose Insights',
-                      style: TextStyle(
-                        color: AppColors.navy,
-                        fontSize: 19,
-                        fontWeight: FontWeight.w800,
-                      ),
-                    ),
-
-                    const SizedBox(height: 7),
-
-                    Text(
-                      description,
-                      style: const TextStyle(
-                        color: AppColors.secondaryText,
-                        fontSize: 12.5,
-                        height: 1.5,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ],
-          ),
-
-          const SizedBox(height: 18),
-
-          const Divider(height: 1, color: AppColors.border),
-
-          const SizedBox(height: 13),
-
-          const Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
-
-            children: [
-              Icon(
-                Icons.pie_chart_outline_rounded,
-                color: AppColors.primary,
-                size: 18,
-              ),
-
-              SizedBox(width: 9),
-
-              Expanded(
-                child: Text(
-                  'Compare Tourism, Business and Study '
-                  'travel using aggregated trip records.',
-                  style: TextStyle(
-                    color: AppColors.secondaryText,
-                    fontSize: 12,
-                    height: 1.5,
-                  ),
-                ),
-              ),
-            ],
-          ),
-        ],
-      ),
+    return RoleIntroCard(
+      eyebrow: 'TRAVEL ANALYTICS',
+      title: "Travel purpose distribution",
+      description: description,
+      icon: Icons.donut_large_rounded,
     );
   }
 
@@ -523,135 +449,80 @@ class _PurposeDistributionScreenState extends State<PurposeDistributionScreen> {
     required int total,
     required bool isLoading,
   }) {
-    final List<_PurposeSlice> slices = [
+    final slices = [
       _PurposeSlice(
         purpose: 'tourism',
         count: counts['tourism'] ?? 0,
         color: _tourismColor,
       ),
-
       _PurposeSlice(
         purpose: 'business',
         count: counts['business'] ?? 0,
         color: _businessColor,
       ),
-
       _PurposeSlice(
         purpose: 'study',
         count: counts['study'] ?? 0,
         color: _studyColor,
       ),
     ];
-
     return Container(
       width: double.infinity,
       padding: const EdgeInsets.all(20),
       decoration: _cardDecoration(),
-
       child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          const Row(
-            children: [
-              Expanded(
-                child: Text(
-                  'Travel Purpose Breakdown',
-                  style: TextStyle(
-                    color: AppColors.navy,
-                    fontSize: 14,
-                    fontWeight: FontWeight.w800,
-                  ),
-                ),
-              ),
-
-              Icon(
-                Icons.donut_large_outlined,
-                color: AppColors.primary,
-                size: 22,
-              ),
-            ],
-          ),
-
-          const SizedBox(height: 5),
-
-          const Align(
-            alignment: Alignment.centerLeft,
-            child: Text(
-              'Distribution of stored trips by purpose',
-              style: TextStyle(color: AppColors.secondaryText, fontSize: 11),
+          const Text(
+            'Travel purpose breakdown',
+            style: TextStyle(
+              fontSize: 17,
+              fontWeight: FontWeight.w700,
+              color: AppColors.navy,
             ),
           ),
-
-          const SizedBox(height: 22),
-
-          SizedBox(
-            width: 190,
-            height: 190,
-
-            child: Stack(
-              alignment: Alignment.center,
-
-              children: [
-                RepaintBoundary(
-                  child: CustomPaint(
-                    size: const Size(190, 190),
-                    painter: _DonutChartPainter(slices: slices, total: total),
-                  ),
-                ),
-
-                Column(
-                  mainAxisSize: MainAxisSize.min,
-
-                  children: [
-                    if (isLoading)
-                      const SizedBox(
-                        width: 28,
-                        height: 28,
-
-                        child: CircularProgressIndicator(
-                          color: AppColors.primary,
-                          strokeWidth: 3,
-                        ),
-                      )
-                    else
-                      Text(
-                        '$total',
-                        style: const TextStyle(
-                          color: AppColors.navy,
-                          fontSize: 30,
-                          fontWeight: FontWeight.w800,
-                        ),
-                      ),
-
-                    const SizedBox(height: 3),
-
-                    Text(
-                      isLoading
-                          ? 'Loading'
-                          : total == 1
-                          ? 'Trip'
-                          : 'Trips',
-                      style: const TextStyle(
-                        color: AppColors.secondaryText,
-                        fontSize: 11,
-                      ),
-                    ),
-                  ],
-                ),
-              ],
-            ),
+          const SizedBox(height: 8),
+          Text(
+            isLoading
+                ? 'Loading trip distribution...'
+                : '$total stored ${total == 1 ? 'trip' : 'trips'} match these filters.',
           ),
-
           const SizedBox(height: 24),
-
-          for (int index = 0; index < slices.length; index++) ...[
-            _buildLegendRow(
-              slice: slices[index],
-              total: total,
-              isLoading: isLoading,
+          Center(
+            child: SizedBox.square(
+              dimension: 190,
+              child: Stack(
+                alignment: Alignment.center,
+                children: [
+                  RepaintBoundary(
+                    child: CustomPaint(
+                      size: const Size(190, 190),
+                      painter: _DonutChartPainter(slices: slices, total: total),
+                    ),
+                  ),
+                  if (isLoading)
+                    const SizedBox.square(
+                      dimension: 24,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    )
+                  else
+                    const Icon(
+                      Icons.travel_explore_rounded,
+                      size: 36,
+                      color: AppColors.primary,
+                    ),
+                ],
+              ),
             ),
-
-            if (index != slices.length - 1)
-              const Divider(height: 23, color: AppColors.border),
+          ),
+          const SizedBox(height: 24),
+          for (final slice in slices) ...[
+            _buildLegendRow(slice: slice, total: total, isLoading: isLoading),
+            if (slice != slices.last)
+              const Padding(
+                padding: EdgeInsets.symmetric(vertical: 14),
+                child: Divider(height: 1),
+              ),
           ],
         ],
       ),
@@ -667,53 +538,37 @@ class _PurposeDistributionScreenState extends State<PurposeDistributionScreen> {
     required int total,
     required bool isLoading,
   }) {
-    final double percentage = _percentage(slice.count, total);
-
-    return Row(
+    final percentage = _percentage(slice.count, total);
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Container(
-          width: 12,
-          height: 12,
-
-          decoration: BoxDecoration(color: slice.color, shape: BoxShape.circle),
-        ),
-
-        const SizedBox(width: 11),
-
-        Expanded(
-          child: Text(
-            _purposeLabel(slice.purpose),
-            style: const TextStyle(
-              color: AppColors.navy,
-              fontSize: 13,
-              fontWeight: FontWeight.w700,
+        Row(
+          children: [
+            Container(
+              width: 12,
+              height: 12,
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                color: slice.color,
+              ),
             ),
-          ),
+            const SizedBox(width: 10),
+            Expanded(
+              child: Text(
+                _purposeLabel(slice.purpose),
+                style: const TextStyle(
+                  fontWeight: FontWeight.w700,
+                  color: AppColors.navy,
+                ),
+              ),
+            ),
+          ],
         ),
-
+        const SizedBox(height: 6),
         Text(
-          isLoading ? '—' : '${slice.count}',
-          style: const TextStyle(
-            color: AppColors.navy,
-            fontSize: 13,
-            fontWeight: FontWeight.w800,
-          ),
-        ),
-
-        const SizedBox(width: 12),
-
-        SizedBox(
-          width: 59,
-
-          child: Text(
-            isLoading ? '—' : '${percentage.toStringAsFixed(1)}%',
-            textAlign: TextAlign.right,
-
-            style: const TextStyle(
-              color: AppColors.secondaryText,
-              fontSize: 11,
-            ),
-          ),
+          isLoading
+              ? 'Loading...'
+              : '${slice.count} trips · ${percentage.toStringAsFixed(1)}%',
         ),
       ],
     );
@@ -784,9 +639,9 @@ class _PurposeDistributionScreenState extends State<PurposeDistributionScreen> {
       padding: const EdgeInsets.all(17),
 
       decoration: BoxDecoration(
-        color: const Color(0xFFF1F6FA),
+        color: AppColors.primaryLight,
         borderRadius: BorderRadius.circular(18),
-        border: Border.all(color: const Color(0xFFD8E6EE)),
+        border: Border.all(color: AppColors.border),
       ),
 
       child: Row(
@@ -862,9 +717,9 @@ class _PurposeDistributionScreenState extends State<PurposeDistributionScreen> {
       padding: const EdgeInsets.all(17),
 
       decoration: BoxDecoration(
-        color: const Color(0xFFF1F6FA),
+        color: AppColors.primaryLight,
         borderRadius: BorderRadius.circular(18),
-        border: Border.all(color: const Color(0xFFD8E6EE)),
+        border: Border.all(color: AppColors.border),
       ),
 
       child: const Row(
@@ -923,68 +778,14 @@ class _PurposeDistributionScreenState extends State<PurposeDistributionScreen> {
     double minimumHeight = 180,
     VoidCallback? onRetry,
   }) {
-    return Container(
-      width: double.infinity,
-
+    return ConstrainedBox(
       constraints: BoxConstraints(minHeight: minimumHeight),
-
-      padding: const EdgeInsets.all(20),
-      decoration: _cardDecoration(),
-
-      child: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
-
-        children: [
-          _PurposeIcon(icon: icon, size: 52),
-
-          const SizedBox(height: 13),
-
-          Text(
-            title,
-            textAlign: TextAlign.center,
-
-            style: const TextStyle(
-              color: AppColors.navy,
-              fontSize: 14.5,
-              fontWeight: FontWeight.w800,
-            ),
-          ),
-
-          const SizedBox(height: 7),
-
-          Text(
-            message,
-            textAlign: TextAlign.center,
-
-            style: const TextStyle(
-              color: AppColors.secondaryText,
-              fontSize: 12,
-              height: 1.5,
-            ),
-          ),
-
-          if (isLoading) ...[
-            const SizedBox(height: 17),
-
-            const CircularProgressIndicator(
-              color: AppColors.primary,
-              strokeWidth: 3,
-            ),
-          ],
-
-          if (onRetry != null) ...[
-            const SizedBox(height: 15),
-
-            OutlinedButton.icon(
-              onPressed: onRetry,
-              icon: const Icon(Icons.refresh_rounded, size: 18),
-              label: const Text('Try Again'),
-              style: OutlinedButton.styleFrom(
-                foregroundColor: AppColors.primary,
-              ),
-            ),
-          ],
-        ],
+      child: RoleStatusCard(
+        title: title,
+        message: message,
+        icon: icon,
+        loading: isLoading,
+        onRetry: onRetry,
       ),
     );
   }
@@ -1055,7 +856,7 @@ class _DonutChartPainter extends CustomPainter {
     final Rect chartRect = Rect.fromCircle(center: center, radius: radius);
 
     final Paint backgroundPaint = Paint()
-      ..color = const Color(0xFFEAF0F3)
+      ..color = AppColors.primaryLight
       ..style = PaintingStyle.stroke
       ..strokeWidth = strokeWidth
       ..strokeCap = StrokeCap.butt;

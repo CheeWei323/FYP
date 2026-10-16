@@ -60,10 +60,10 @@ class AnalystService {
     final Future<QuerySnapshot<Map<String, dynamic>>> countriesFuture =
         _firestore.collection('countries').get();
 
-    final QuerySnapshot<Map<String, dynamic>> tripsSnapshot = await tripsFuture;
-
-    final QuerySnapshot<Map<String, dynamic>> countriesSnapshot =
-        await countriesFuture;
+    // Join both reads so a failed refresh handles either query's error.
+    final snapshots = await Future.wait([tripsFuture, countriesFuture]);
+    final tripsSnapshot = snapshots[0];
+    final countriesSnapshot = snapshots[1];
 
     final int totalTrips = tripsSnapshot.docs.length;
 
@@ -139,11 +139,15 @@ class AnalystService {
     final Future<QuerySnapshot<Map<String, dynamic>>> countriesFuture =
         _firestore.collection('countries').get();
 
-    final List<QueryDocumentSnapshot<Map<String, dynamic>>> tripDocuments =
-        await tripsFuture;
-
-    final QuerySnapshot<Map<String, dynamic>> countriesSnapshot =
-        await countriesFuture;
+    // Join both reads so a failed refresh handles either query's error.
+    final readResults = await Future.wait<Object>([
+      tripsFuture,
+      countriesFuture,
+    ]);
+    final tripDocuments =
+        readResults[0] as List<QueryDocumentSnapshot<Map<String, dynamic>>>;
+    final countriesSnapshot =
+        readResults[1] as QuerySnapshot<Map<String, dynamic>>;
 
     final Map<String, int> tripCounts = <String, int>{};
 
@@ -624,11 +628,15 @@ class AnalystService {
     final Future<QuerySnapshot<Map<String, dynamic>>> countriesFuture =
         _firestore.collection('countries').get();
 
-    final List<QueryDocumentSnapshot<Map<String, dynamic>>> tripDocuments =
-        await tripsFuture;
-
-    final QuerySnapshot<Map<String, dynamic>> countriesSnapshot =
-        await countriesFuture;
+    // Join both reads so a failed refresh handles either query's error.
+    final readResults = await Future.wait<Object>([
+      tripsFuture,
+      countriesFuture,
+    ]);
+    final tripDocuments =
+        readResults[0] as List<QueryDocumentSnapshot<Map<String, dynamic>>>;
+    final countriesSnapshot =
+        readResults[1] as QuerySnapshot<Map<String, dynamic>>;
 
     // -------------------------------------------------------------------------
     // COUNTRY NAMES

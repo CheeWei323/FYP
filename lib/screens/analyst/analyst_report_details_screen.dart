@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 
 import '../../services/analyst_report_service.dart';
 import '../../theme/app_theme.dart';
+import '../../widgets/role_ui_widgets.dart';
 
 class AnalystReportDetailsScreen extends StatefulWidget {
   final Map<String, dynamic> report;
@@ -63,6 +64,16 @@ class _AnalystReportDetailsScreenState
 
   String _percentage(dynamic value) {
     return '${_readDouble(value).toStringAsFixed(1)}%';
+  }
+
+  // ---------------------------------------------------------------------------
+  // TRIP COUNT LABELS
+  // ---------------------------------------------------------------------------
+
+  // Keep the displayed count from the saved report and use the correct unit.
+  String _tripCount(dynamic value) {
+    final count = _readInt(value);
+    return '$count ${count == 1 ? 'trip' : 'trips'}';
   }
 
   // ---------------------------------------------------------------------------
@@ -227,40 +238,36 @@ class _AnalystReportDetailsScreenState
             border: Border(top: BorderSide(color: AppColors.border)),
           ),
 
-          child: SizedBox(
-            height: 50,
+          child: FilledButton.icon(
+            onPressed: _isExporting ? null : _exportReport,
 
-            child: FilledButton.icon(
-              onPressed: _isExporting ? null : _exportReport,
+            style: FilledButton.styleFrom(
+              backgroundColor: AppColors.primary,
+              foregroundColor: Colors.white,
 
-              style: FilledButton.styleFrom(
-                backgroundColor: AppColors.primary,
-                foregroundColor: Colors.white,
-
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(13),
-                ),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(13),
               ),
+            ),
 
-              icon: _isExporting
-                  ? const SizedBox(
-                      width: 18,
-                      height: 18,
+            icon: _isExporting
+                ? const SizedBox(
+                    width: 18,
+                    height: 18,
 
-                      child: CircularProgressIndicator(
-                        strokeWidth: 2,
-                        color: Colors.white,
-                      ),
-                    )
-                  : const Icon(Icons.file_download_outlined, size: 20),
+                    child: CircularProgressIndicator(
+                      strokeWidth: 2,
+                      color: Colors.white,
+                    ),
+                  )
+                : const Icon(Icons.file_download_outlined, size: 20),
 
-              label: Text(
-                _isExporting ? 'Exporting Report...' : 'Export Excel',
+            label: Text(
+              _isExporting ? 'Exporting Report...' : 'Export Excel',
 
-                style: const TextStyle(
-                  fontSize: 13.5,
-                  fontWeight: FontWeight.w800,
-                ),
+              style: const TextStyle(
+                fontSize: 13.5,
+                fontWeight: FontWeight.w800,
               ),
             ),
           ),
@@ -274,87 +281,12 @@ class _AnalystReportDetailsScreenState
   // ---------------------------------------------------------------------------
 
   Widget _buildHeader(String title) {
-    return Container(
-      width: double.infinity,
-      padding: const EdgeInsets.all(20),
-      decoration: _cardDecoration(),
-
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-
-        children: [
-          Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
-
-            children: [
-              const _ReportDetailsIcon(
-                icon: Icons.table_chart_outlined,
-                size: 52,
-              ),
-
-              const SizedBox(width: 14),
-
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-
-                  children: [
-                    Text(
-                      title,
-
-                      style: const TextStyle(
-                        color: AppColors.navy,
-                        fontSize: 19,
-                        fontWeight: FontWeight.w800,
-                        height: 1.3,
-                      ),
-                    ),
-
-                    const SizedBox(height: 7),
-
-                    const Text(
-                      'Historical aggregated analytics snapshot.',
-                      style: TextStyle(
-                        color: AppColors.secondaryText,
-                        fontSize: 12.5,
-                        height: 1.5,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ],
-          ),
-
-          const SizedBox(height: 18),
-
-          const Divider(height: 1, color: AppColors.border),
-
-          const SizedBox(height: 13),
-
-          const Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
-
-            children: [
-              Icon(Icons.history_rounded, color: AppColors.primary, size: 19),
-
-              SizedBox(width: 9),
-
-              Expanded(
-                child: Text(
-                  'This report displays the analytics '
-                  'captured at the time it was generated.',
-                  style: TextStyle(
-                    color: AppColors.secondaryText,
-                    fontSize: 12,
-                    height: 1.5,
-                  ),
-                ),
-              ),
-            ],
-          ),
-        ],
-      ),
+    return RoleIntroCard(
+      eyebrow: 'SAVED REPORT',
+      title: title,
+      description:
+          "These figures reflect the data captured when this report was generated.",
+      icon: Icons.description_outlined,
     );
   }
 
@@ -508,6 +440,12 @@ class _AnalystReportDetailsScreenState
       _data['monthlyActivity'],
     );
 
+    // Scale monthly bars to the busiest month; the saved counts stay unchanged.
+    final maximumMonthlyTrips = monthlyActivity.fold<int>(0, (maximum, item) {
+      final count = _readInt(item['count']);
+      return count > maximum ? count : maximum;
+    });
+
     final int totalTrips = destinations.fold<int>(
       0,
       (total, item) => total + _readInt(item['count']),
@@ -545,9 +483,11 @@ class _AnalystReportDetailsScreenState
                 _buildValueRow(
                   title: destinations[index]['name'] as String? ?? 'Unknown',
 
-                  value: '${_readInt(destinations[index]['count'])} trips',
+                  value: _tripCount(destinations[index]['count']),
 
                   trailing: _percentage(destinations[index]['percentage']),
+                  progress:
+                      _readDouble(destinations[index]['percentage']) / 100,
                 ),
 
                 if (index != destinations.length - 1)
@@ -559,6 +499,11 @@ class _AnalystReportDetailsScreenState
         const SizedBox(height: 25),
 
         _buildSubheading('Monthly Departure Activity'),
+        const SizedBox(height: 6),
+        const Text(
+          'Bars compare trip counts against the busiest month in this report.',
+          style: TextStyle(fontSize: 12, color: AppColors.secondaryText),
+        ),
 
         const SizedBox(height: 11),
 
@@ -573,7 +518,11 @@ class _AnalystReportDetailsScreenState
                       monthlyActivity[index]['label'] as String? ??
                       'Unknown Month',
 
-                  value: '${_readInt(monthlyActivity[index]['count'])} trips',
+                  value: _tripCount(monthlyActivity[index]['count']),
+                  progress: maximumMonthlyTrips <= 0
+                      ? 0.0
+                      : _readInt(monthlyActivity[index]['count']) /
+                            maximumMonthlyTrips,
                 ),
 
                 if (index != monthlyActivity.length - 1)
@@ -627,7 +576,10 @@ class _AnalystReportDetailsScreenState
               _buildValueRow(
                 title: _purposeLabel(purposes[index]),
 
-                value: '${_readInt(counts[purposes[index]])} trips',
+                value: _tripCount(counts[purposes[index]]),
+                progress: total <= 0
+                    ? 0.0
+                    : _readInt(counts[purposes[index]]) / total,
 
                 trailing: _percentage(
                   total <= 0
@@ -731,12 +683,16 @@ class _AnalystReportDetailsScreenState
                       destinationComparison[index]['name'] as String? ??
                       'Unknown',
 
-                  value:
-                      '${_readInt(destinationComparison[index]['tripCount'])} trips',
+                  value: _tripCount(destinationComparison[index]['tripCount']),
 
                   trailing: _percentage(
                     destinationComparison[index]['completionRate'],
                   ),
+                  progress:
+                      _readDouble(
+                        destinationComparison[index]['completionRate'],
+                      ) /
+                      100,
                 ),
 
                 if (index != destinationComparison.length - 1)
@@ -765,12 +721,14 @@ class _AnalystReportDetailsScreenState
                     purposeComparison[index]['purpose'] as String?,
                   ),
 
-                  value:
-                      '${_readInt(purposeComparison[index]['tripCount'])} trips',
+                  value: _tripCount(purposeComparison[index]['tripCount']),
 
                   trailing: _percentage(
                     purposeComparison[index]['completionRate'],
                   ),
+                  progress:
+                      _readDouble(purposeComparison[index]['completionRate']) /
+                      100,
                 ),
 
                 if (index != purposeComparison.length - 1)
@@ -1220,8 +1178,10 @@ class _AnalystReportDetailsScreenState
       width: double.infinity,
       padding: const EdgeInsets.all(17),
       decoration: _cardDecoration(),
-
-      child: Column(children: children),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: children,
+      ),
     );
   }
 
@@ -1233,63 +1193,79 @@ class _AnalystReportDetailsScreenState
     required String title,
     required String value,
     String? trailing,
+    double? progress,
   }) {
-    return Row(
-      crossAxisAlignment: CrossAxisAlignment.center,
-
+    final details = Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        Expanded(
-          flex: 5,
-
-          child: Text(
-            title,
+        Text(
+          title,
+          style: const TextStyle(
+            fontSize: 14,
+            fontWeight: FontWeight.w700,
+            color: AppColors.navy,
+          ),
+        ),
+        if (trailing != null) ...[
+          const SizedBox(height: 5),
+          Text(
+            value,
             style: const TextStyle(
-              color: AppColors.navy,
-              fontSize: 12.5,
-              fontWeight: FontWeight.w700,
-              height: 1.35,
+              fontSize: 12,
+              color: AppColors.secondaryText,
             ),
           ),
-        ),
+        ],
+      ],
+    );
+    final figure = Text(
+      trailing ?? value,
+      style: const TextStyle(
+        color: AppColors.primary,
+        fontSize: 14,
+        fontWeight: FontWeight.w800,
+      ),
+    );
 
-        const SizedBox(width: 9),
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final useStackedLayout =
+            constraints.maxWidth < 260 ||
+            MediaQuery.textScalerOf(context).scale(14) > 20;
 
-        Flexible(
-          flex: 4,
-
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.end,
-
-            children: [
-              Text(
-                value,
-                textAlign: TextAlign.right,
-
-                style: const TextStyle(
-                  color: AppColors.secondaryText,
-                  fontSize: 11.5,
-                  fontWeight: FontWeight.w600,
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            if (useStackedLayout)
+              Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [details, const SizedBox(height: 8), figure],
+              )
+            else
+              Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Expanded(child: details),
+                  const SizedBox(width: 16),
+                  figure,
+                ],
+              ),
+            if (progress != null) ...[
+              const SizedBox(height: 12),
+              ClipRRect(
+                borderRadius: BorderRadius.circular(8),
+                child: LinearProgressIndicator(
+                  value: progress.clamp(0.0, 1.0),
+                  minHeight: 9,
+                  color: AppColors.primary,
+                  backgroundColor: AppColors.primaryLight,
+                  semanticsLabel: title,
                 ),
               ),
-
-              if (trailing != null) ...[
-                const SizedBox(height: 4),
-
-                Text(
-                  trailing,
-                  textAlign: TextAlign.right,
-
-                  style: const TextStyle(
-                    color: AppColors.primary,
-                    fontSize: 11.5,
-                    fontWeight: FontWeight.w800,
-                  ),
-                ),
-              ],
             ],
-          ),
-        ),
-      ],
+          ],
+        );
+      },
     );
   }
 
@@ -1382,9 +1358,9 @@ class _AnalystReportDetailsScreenState
       padding: const EdgeInsets.all(17),
 
       decoration: BoxDecoration(
-        color: const Color(0xFFF1F6FA),
+        color: AppColors.primaryLight,
         borderRadius: BorderRadius.circular(18),
-        border: Border.all(color: const Color(0xFFD8E6EE)),
+        border: Border.all(color: AppColors.border),
       ),
 
       child: const Row(

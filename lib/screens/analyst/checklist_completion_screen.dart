@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../../services/analyst_service.dart';
 import '../../theme/app_theme.dart';
+import '../../widgets/role_ui_widgets.dart';
 import '../../widgets/analyst/analytics_filter_card.dart';
 
 class ChecklistCompletionScreen extends StatefulWidget {
@@ -420,89 +421,12 @@ class _ChecklistCompletionScreenState extends State<ChecklistCompletionScreen> {
   // ---------------------------------------------------------------------------
 
   Widget _buildHeader() {
-    return Container(
-      width: double.infinity,
-      padding: const EdgeInsets.all(20),
-      decoration: _cardDecoration(),
-
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-
-        children: [
-          const Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
-
-            children: [
-              _ChecklistIcon(icon: Icons.task_alt_outlined, size: 52),
-
-              SizedBox(width: 14),
-
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-
-                  children: [
-                    Text(
-                      'Checklist Insights',
-                      style: TextStyle(
-                        color: AppColors.navy,
-                        fontSize: 19,
-                        fontWeight: FontWeight.w800,
-                      ),
-                    ),
-
-                    SizedBox(height: 7),
-
-                    Text(
-                      'Understand how travellers complete '
-                      'their generated travel preparation '
-                      'requirements.',
-                      style: TextStyle(
-                        color: AppColors.secondaryText,
-                        fontSize: 12.5,
-                        height: 1.5,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ],
-          ),
-
-          const SizedBox(height: 18),
-
-          const Divider(height: 1, color: AppColors.border),
-
-          const SizedBox(height: 13),
-
-          const Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
-
-            children: [
-              Icon(
-                Icons.analytics_outlined,
-                color: AppColors.primary,
-                size: 19,
-              ),
-
-              SizedBox(width: 9),
-
-              Expanded(
-                child: Text(
-                  'Compare completion rates across '
-                  'destinations, travel purposes and '
-                  'individual requirements.',
-                  style: TextStyle(
-                    color: AppColors.secondaryText,
-                    fontSize: 12,
-                    height: 1.5,
-                  ),
-                ),
-              ),
-            ],
-          ),
-        ],
-      ),
+    return const RoleIntroCard(
+      eyebrow: 'TRAVEL ANALYTICS',
+      title: "Checklist completion",
+      description:
+          "Explore preparation progress by destination, travel purpose and individual requirement.",
+      icon: Icons.task_alt_rounded,
     );
   }
 
@@ -629,180 +553,83 @@ class _ChecklistCompletionScreenState extends State<ChecklistCompletionScreen> {
     required int incompleteItems,
     required int tripCount,
   }) {
-    final double progress = (completionRate / 100).clamp(0.0, 1.0);
-
+    final progress = (completionRate / 100).clamp(0.0, 1.0);
     return Container(
       width: double.infinity,
-
-      padding: const EdgeInsets.fromLTRB(19, 20, 19, 18),
-
+      padding: const EdgeInsets.all(20),
       decoration: _cardDecoration(),
-
       child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          const Row(
-            children: [
-              Expanded(
-                child: Text(
-                  'Overall Preparation Completion',
-                  style: TextStyle(
-                    color: AppColors.navy,
-                    fontSize: 16,
-                    fontWeight: FontWeight.w800,
+          const Text(
+            'Overall preparation completion',
+            style: TextStyle(
+              fontSize: 17,
+              fontWeight: FontWeight.w700,
+              color: AppColors.navy,
+            ),
+          ),
+          const SizedBox(height: 8),
+          Text(
+            tripCount == 0
+                ? 'No generated checklists match these filters.'
+                : 'Average completion across $tripCount ${tripCount == 1 ? 'trip' : 'trips'} with generated checklists.',
+          ),
+          const SizedBox(height: 20),
+          Center(
+            child: SizedBox.square(
+              dimension: 150,
+              child: Stack(
+                alignment: Alignment.center,
+                children: [
+                  SizedBox.square(
+                    dimension: 136,
+                    child: CircularProgressIndicator(
+                      value: progress,
+                      strokeWidth: 15,
+                      backgroundColor: AppColors.primaryLight,
+                      color: AppColors.primary,
+                    ),
                   ),
-                ),
+                  const Icon(
+                    Icons.task_alt_rounded,
+                    color: AppColors.primary,
+                    size: 36,
+                  ),
+                ],
               ),
-
-              Icon(
-                Icons.donut_large_outlined,
-                color: AppColors.primary,
-                size: 23,
+            ),
+          ),
+          const SizedBox(height: 20),
+          Text(
+            '${completionRate.toStringAsFixed(1)}%',
+            textAlign: TextAlign.center,
+            style: const TextStyle(
+              fontSize: 28,
+              fontWeight: FontWeight.w800,
+              color: AppColors.navy,
+            ),
+          ),
+          const Text('Average completion', textAlign: TextAlign.center),
+          const SizedBox(height: 20),
+          RoleMetricGrid(
+            metrics: [
+              RoleMetric(
+                label: 'Completed items',
+                value: '$completedItems',
+                icon: Icons.check_circle_outline_rounded,
+              ),
+              RoleMetric(
+                label: 'Incomplete items',
+                value: '$incompleteItems',
+                icon: Icons.pending_actions_outlined,
               ),
             ],
           ),
-
-          const SizedBox(height: 6),
-
-          Align(
-            alignment: Alignment.centerLeft,
-
-            child: Text(
-              tripCount == 0
-                  ? 'No checklist data is available '
-                        'for the selected filters.'
-                  : 'Average completion across $tripCount '
-                        '${tripCount == 1 ? 'trip' : 'trips'} '
-                        'with generated checklists.',
-              style: const TextStyle(
-                color: AppColors.secondaryText,
-                fontSize: 11.5,
-                height: 1.45,
-              ),
-            ),
-          ),
-
-          const SizedBox(height: 24),
-
-          SizedBox(
-            width: 174,
-            height: 174,
-
-            child: Stack(
-              alignment: Alignment.center,
-
-              children: [
-                SizedBox(
-                  width: 154,
-                  height: 154,
-
-                  child: CircularProgressIndicator(
-                    value: progress,
-                    strokeWidth: 18,
-                    backgroundColor: AppColors.primaryLight,
-                    color: AppColors.primary,
-                    strokeCap: StrokeCap.butt,
-                  ),
-                ),
-
-                Column(
-                  mainAxisSize: MainAxisSize.min,
-
-                  children: [
-                    Text(
-                      '${completionRate.toStringAsFixed(1)}%',
-                      style: const TextStyle(
-                        color: AppColors.navy,
-                        fontSize: 28,
-                        fontWeight: FontWeight.w800,
-                      ),
-                    ),
-
-                    const SizedBox(height: 3),
-
-                    const Text(
-                      'Average completion',
-                      style: TextStyle(
-                        color: AppColors.secondaryText,
-                        fontSize: 10.5,
-                      ),
-                    ),
-                  ],
-                ),
-              ],
-            ),
-          ),
-
-          const SizedBox(height: 22),
-
-          Container(
-            padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 7),
-
-            decoration: BoxDecoration(
-              color: AppColors.background,
-              borderRadius: BorderRadius.circular(14),
-              border: Border.all(color: AppColors.border),
-            ),
-
-            child: Row(
-              children: [
-                Expanded(
-                  child: _buildSupportingStat(
-                    icon: Icons.check_circle_outline_rounded,
-                    label: 'Completed',
-                    value: completedItems,
-                  ),
-                ),
-
-                Container(width: 1, height: 46, color: AppColors.border),
-
-                Expanded(
-                  child: _buildSupportingStat(
-                    icon: Icons.pending_actions_outlined,
-                    label: 'Incomplete',
-                    value: incompleteItems,
-                  ),
-                ),
-              ],
-            ),
-          ),
-
           const SizedBox(height: 16),
-
-          Container(
-            width: double.infinity,
-            padding: const EdgeInsets.all(13),
-
-            decoration: BoxDecoration(
-              color: const Color(0xFFF1F6FA),
-              borderRadius: BorderRadius.circular(13),
-            ),
-
-            child: const Row(
-              crossAxisAlignment: CrossAxisAlignment.start,
-
-              children: [
-                Icon(
-                  Icons.info_outline_rounded,
-                  color: AppColors.primary,
-                  size: 18,
-                ),
-
-                SizedBox(width: 9),
-
-                Expanded(
-                  child: Text(
-                    'Completion indicates how much of '
-                    'the generated preparation checklist '
-                    'travellers have marked as completed.',
-                    style: TextStyle(
-                      color: AppColors.secondaryText,
-                      fontSize: 11,
-                      height: 1.45,
-                    ),
-                  ),
-                ),
-              ],
-            ),
+          const Text(
+            'Completion records the checklist items travellers have marked as complete.',
+            style: TextStyle(fontSize: 12),
           ),
         ],
       ),
@@ -812,36 +639,6 @@ class _ChecklistCompletionScreenState extends State<ChecklistCompletionScreen> {
   // ---------------------------------------------------------------------------
   // SUPPORTING STATISTIC
   // ---------------------------------------------------------------------------
-
-  Widget _buildSupportingStat({
-    required IconData icon,
-    required String label,
-    required int value,
-  }) {
-    return Column(
-      children: [
-        Icon(icon, color: AppColors.primary, size: 21),
-
-        const SizedBox(height: 6),
-
-        Text(
-          '$value',
-          style: const TextStyle(
-            color: AppColors.navy,
-            fontSize: 19,
-            fontWeight: FontWeight.w800,
-          ),
-        ),
-
-        const SizedBox(height: 3),
-
-        Text(
-          label,
-          style: const TextStyle(color: AppColors.secondaryText, fontSize: 11),
-        ),
-      ],
-    );
-  }
 
   // ---------------------------------------------------------------------------
   // COMPLETION COMPARISON
@@ -905,104 +702,22 @@ class _ChecklistCompletionScreenState extends State<ChecklistCompletionScreen> {
   // ---------------------------------------------------------------------------
 
   Widget _buildComparisonSelector() {
-    return Container(
-      width: double.infinity,
-      padding: const EdgeInsets.all(4),
-
-      decoration: BoxDecoration(
-        color: const Color(0xFFEAF0F3),
-        borderRadius: BorderRadius.circular(14),
-      ),
-
-      child: Row(
-        children: [
-          Expanded(
-            child: _buildComparisonOption(
-              value: 'destination',
-              label: 'Destination',
-              icon: Icons.public_outlined,
-            ),
+    return Wrap(
+      spacing: 8,
+      runSpacing: 6,
+      children: [
+        for (final option in [
+          ('destination', 'Destination'),
+          ('purpose', 'Purpose'),
+        ])
+          ChoiceChip(
+            label: Text(option.$2),
+            selected: _comparisonMode == option.$1,
+            onSelected: (_) => setState(() {
+              _comparisonMode = option.$1;
+            }),
           ),
-
-          Expanded(
-            child: _buildComparisonOption(
-              value: 'purpose',
-              label: 'Purpose',
-              icon: Icons.work_outline_rounded,
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildComparisonOption({
-    required String value,
-    required String label,
-    required IconData icon,
-  }) {
-    final bool selected = _comparisonMode == value;
-
-    return Material(
-      color: Colors.transparent,
-
-      child: InkWell(
-        borderRadius: BorderRadius.circular(11),
-
-        onTap: () {
-          if (_comparisonMode == value) {
-            return;
-          }
-
-          setState(() {
-            _comparisonMode = value;
-          });
-        },
-
-        child: AnimatedContainer(
-          duration: const Duration(milliseconds: 180),
-
-          padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 8),
-
-          decoration: BoxDecoration(
-            color: selected ? Colors.white : Colors.transparent,
-            borderRadius: BorderRadius.circular(11),
-
-            boxShadow: selected
-                ? const [
-                    BoxShadow(
-                      color: Color(0x10000000),
-                      blurRadius: 5,
-                      offset: Offset(0, 2),
-                    ),
-                  ]
-                : null,
-          ),
-
-          child: Row(
-            mainAxisAlignment: MainAxisAlignment.center,
-
-            children: [
-              Icon(
-                icon,
-                size: 17,
-                color: selected ? AppColors.primary : AppColors.secondaryText,
-              ),
-
-              const SizedBox(width: 7),
-
-              Text(
-                label,
-                style: TextStyle(
-                  color: selected ? AppColors.navy : AppColors.secondaryText,
-                  fontSize: 12,
-                  fontWeight: FontWeight.w700,
-                ),
-              ),
-            ],
-          ),
-        ),
-      ),
+      ],
     );
   }
 
@@ -1366,68 +1081,14 @@ class _ChecklistCompletionScreenState extends State<ChecklistCompletionScreen> {
     double minimumHeight = 180,
     VoidCallback? onRetry,
   }) {
-    return Container(
-      width: double.infinity,
-
+    return ConstrainedBox(
       constraints: BoxConstraints(minHeight: minimumHeight),
-
-      padding: const EdgeInsets.all(20),
-      decoration: _cardDecoration(),
-
-      child: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
-
-        children: [
-          _ChecklistIcon(icon: icon, size: 52),
-
-          const SizedBox(height: 13),
-
-          Text(
-            title,
-            textAlign: TextAlign.center,
-
-            style: const TextStyle(
-              color: AppColors.navy,
-              fontSize: 14.5,
-              fontWeight: FontWeight.w800,
-            ),
-          ),
-
-          const SizedBox(height: 7),
-
-          Text(
-            message,
-            textAlign: TextAlign.center,
-
-            style: const TextStyle(
-              color: AppColors.secondaryText,
-              fontSize: 12,
-              height: 1.5,
-            ),
-          ),
-
-          if (isLoading) ...[
-            const SizedBox(height: 17),
-
-            const CircularProgressIndicator(
-              color: AppColors.primary,
-              strokeWidth: 3,
-            ),
-          ],
-
-          if (onRetry != null) ...[
-            const SizedBox(height: 15),
-
-            OutlinedButton.icon(
-              onPressed: onRetry,
-              icon: const Icon(Icons.refresh_rounded, size: 18),
-              label: const Text('Try Again'),
-              style: OutlinedButton.styleFrom(
-                foregroundColor: AppColors.primary,
-              ),
-            ),
-          ],
-        ],
+      child: RoleStatusCard(
+        title: title,
+        message: message,
+        icon: icon,
+        loading: isLoading,
+        onRetry: onRetry,
       ),
     );
   }
@@ -1436,25 +1097,3 @@ class _ChecklistCompletionScreenState extends State<ChecklistCompletionScreen> {
 // -----------------------------------------------------------------------------
 // REUSABLE CHECKLIST ICON
 // -----------------------------------------------------------------------------
-
-class _ChecklistIcon extends StatelessWidget {
-  final IconData icon;
-  final double size;
-
-  const _ChecklistIcon({required this.icon, required this.size});
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      width: size,
-      height: size,
-
-      decoration: BoxDecoration(
-        color: AppColors.primaryLight,
-        borderRadius: BorderRadius.circular(13),
-      ),
-
-      child: Icon(icon, color: AppColors.primary, size: size * 0.51),
-    );
-  }
-}
