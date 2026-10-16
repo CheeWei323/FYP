@@ -22,10 +22,13 @@ class AdminService {
     final Future<QuerySnapshot<Map<String, dynamic>>> countriesFuture =
         _firestore.collection('countries').get();
 
-    final QuerySnapshot<Map<String, dynamic>> usersSnapshot = await usersFuture;
-
-    final QuerySnapshot<Map<String, dynamic>> countriesSnapshot =
-        await countriesFuture;
+    // Attach error handlers to both reads before awaiting either result.
+    final snapshots = await Future.wait<QuerySnapshot<Map<String, dynamic>>>([
+      usersFuture,
+      countriesFuture,
+    ]);
+    final usersSnapshot = snapshots[0];
+    final countriesSnapshot = snapshots[1];
 
     int countRole(String role) {
       return usersSnapshot.docs
