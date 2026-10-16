@@ -59,10 +59,13 @@ class ContentManagerService {
         .collection('travelRules')
         .get();
 
-    final QuerySnapshot<Map<String, dynamic>> countriesSnapshot =
-        await countriesFuture;
-
-    final QuerySnapshot<Map<String, dynamic>> rulesSnapshot = await rulesFuture;
+    // Handle both reads together so simultaneous failures remain recoverable.
+    final snapshots = await Future.wait<QuerySnapshot<Map<String, dynamic>>>([
+      countriesFuture,
+      rulesFuture,
+    ]);
+    final countriesSnapshot = snapshots[0];
+    final rulesSnapshot = snapshots[1];
 
     final int enabledCountries = countriesSnapshot.docs
         .where((document) => document.data()['enabled'] == true)
