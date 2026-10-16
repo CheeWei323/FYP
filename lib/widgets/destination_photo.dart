@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../theme/app_theme.dart';
 
 class DestinationPhoto extends StatelessWidget {
   final String countryId;
@@ -103,7 +104,7 @@ class _DestinationFallback extends StatelessWidget {
     return const DecoratedBox(
       decoration: BoxDecoration(
         gradient: LinearGradient(
-          colors: [Color(0xFF087F8C), Color(0xFF075267)],
+          colors: [AppColors.primary, AppColors.navy],
           begin: Alignment.topLeft,
           end: Alignment.bottomRight,
         ),
