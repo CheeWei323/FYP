@@ -862,7 +862,6 @@ class _TripMapScreenState extends State<TripMapScreen> {
   Widget build(BuildContext context) {
     final supportsMap =
         !kIsWeb && defaultTargetPlatform == TargetPlatform.android;
-
     final credits = <String, Map<String, dynamic>>{
       for (final visit in _visits)
         for (final item in visit.$2.credits)
@@ -875,16 +874,7 @@ class _TripMapScreenState extends State<TripMapScreen> {
         if (!didPop) _confirmLeave();
       },
       child: Scaffold(
-        appBar: AppBar(
-          title: const Text('Route Planning'),
-          actions: [
-            IconButton(
-              tooltip: 'Clear draft',
-              onPressed: _planBusy || !_planLoaded ? null : _reset,
-              icon: const Icon(Icons.restart_alt_rounded),
-            ),
-          ],
-        ),
+        appBar: AppBar(title: const Text('Route Planning')),
         body: SafeArea(
           top: false,
           child: !supportsMap
@@ -907,96 +897,167 @@ class _TripMapScreenState extends State<TripMapScreen> {
                         style: Theme.of(context).textTheme.headlineSmall,
                       ),
                       const SizedBox(height: 6),
-                      const Text(
-                        'Choose your start and destination. Add up to five stops in the order you want to visit them.',
-                      ),
-                      const SizedBox(height: 12),
+                      const Text('Plan your journey, one place at a time.'),
+                      const SizedBox(height: 14),
                       _planPanel(),
                       const SizedBox(height: 18),
-                      _placeButton(
-                        'Starting point',
-                        _origin,
-                        1,
-                        () => _choosePlace(startingPoint: true),
-                      ),
-                      const SizedBox(height: 12),
-                      for (int i = 0; i < _stops.length; i++) _stopCard(i),
-                      OutlinedButton.icon(
-                        onPressed:
-                            _busy ||
-                                _stops.length >= _maxStops ||
-                                !_views.containsKey(_countryId)
-                            ? null
-                            : () => _choosePlace(),
-                        icon: const Icon(Icons.add_location_alt_outlined),
-                        label: Text('Add stop (${_stops.length}/$_maxStops)'),
-                      ),
-                      const SizedBox(height: 12),
-                      _placeButton(
-                        'Destination',
-                        _destination,
-                        _stops.length + 2,
-                        () => _choosePlace(startingPoint: false),
-                      ),
-                      const SizedBox(height: 12),
-                      Wrap(
-                        spacing: 10,
-                        runSpacing: 6,
-                        crossAxisAlignment: WrapCrossAlignment.center,
-                        children: [
-                          for (final mode in [
-                            ('DRIVE', 'Drive', Icons.directions_car_outlined),
-                            ('WALK', 'Walk', Icons.directions_walk_rounded),
-                          ])
-                            ChoiceChip(
-                              label: Text(mode.$2),
-                              avatar: Icon(mode.$3, size: 20),
-                              selected: _mode == mode.$1,
-                              showCheckmark: false,
-                              onSelected: _busy
-                                  ? null
-                                  : (_) => setState(() {
-                                      _mode = mode.$1;
-                                      _markChanged();
-                                    }),
-                            ),
-                          IconButton(
-                            tooltip: 'Reverse route',
-                            onPressed:
-                                _busy ||
-                                    (_origin == null &&
-                                        _destination == null &&
-                                        _stops.isEmpty)
-                                ? null
-                                : _swap,
-                            icon: const Icon(Icons.swap_vert_rounded),
+                      Card(
+                        margin: EdgeInsets.zero,
+                        child: Padding(
+                          padding: const EdgeInsets.all(14),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.stretch,
+                            children: [
+                              Text(
+                                'Your places',
+                                style: Theme.of(context).textTheme.titleMedium,
+                              ),
+                              const SizedBox(height: 4),
+                              const Text(
+                                'Add up to five stops in your visit order.',
+                                style: TextStyle(fontSize: 12),
+                              ),
+                              const SizedBox(height: 14),
+                              _placeButton(
+                                'Starting point',
+                                _origin,
+                                1,
+                                () => _choosePlace(startingPoint: true),
+                              ),
+                              const SizedBox(height: 10),
+                              for (int i = 0; i < _stops.length; i++)
+                                _stopCard(i),
+                              OutlinedButton.icon(
+                                onPressed:
+                                    _busy ||
+                                        _stops.length >= _maxStops ||
+                                        !_views.containsKey(_countryId)
+                                    ? null
+                                    : () => _choosePlace(),
+                                icon: const Icon(
+                                  Icons.add_location_alt_outlined,
+                                ),
+                                label: Text(
+                                  'Add stop (${_stops.length}/$_maxStops)',
+                                ),
+                              ),
+                              const SizedBox(height: 10),
+                              _placeButton(
+                                'Destination',
+                                _destination,
+                                _stops.length + 2,
+                                () => _choosePlace(startingPoint: false),
+                              ),
+                              const SizedBox(height: 14),
+                              Wrap(
+                                spacing: 8,
+                                runSpacing: 6,
+                                crossAxisAlignment: WrapCrossAlignment.center,
+                                children: [
+                                  for (final mode in [
+                                    (
+                                      'DRIVE',
+                                      'Drive',
+                                      Icons.directions_car_outlined,
+                                    ),
+                                    (
+                                      'WALK',
+                                      'Walk',
+                                      Icons.directions_walk_rounded,
+                                    ),
+                                  ])
+                                    ChoiceChip(
+                                      label: Text(mode.$2),
+                                      avatar: Icon(mode.$3, size: 20),
+                                      selected: _mode == mode.$1,
+                                      showCheckmark: false,
+                                      onSelected: _busy
+                                          ? null
+                                          : (_) => setState(() {
+                                              _mode = mode.$1;
+                                              _markChanged();
+                                            }),
+                                    ),
+                                  Tooltip(
+                                    message: 'Reverse route',
+                                    child: TextButton.icon(
+                                      onPressed:
+                                          _busy ||
+                                              (_origin == null &&
+                                                  _destination == null &&
+                                                  _stops.isEmpty)
+                                          ? null
+                                          : _swap,
+                                      icon: const Icon(Icons.swap_vert_rounded),
+                                      label: const Text('Reverse route'),
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ],
                           ),
-                        ],
+                        ),
                       ),
-                      const SizedBox(height: 12),
+                      const SizedBox(height: 14),
                       FilledButton.icon(
                         onPressed:
                             _busy || _origin == null || _destination == null
                             ? null
                             : _findRoutes,
-                        icon: const Icon(Icons.alt_route_rounded),
+                        icon: _loading
+                            ? const SizedBox(
+                                width: 18,
+                                height: 18,
+                                child: CircularProgressIndicator(
+                                  strokeWidth: 2,
+                                  color: Colors.white,
+                                ),
+                              )
+                            : const Icon(Icons.alt_route_rounded),
                         label: Text(
                           _loading ? 'Finding routes…' : 'Find routes',
                         ),
                       ),
-                      if (_loading) ...[
+                      const SizedBox(height: 8),
+                      OutlinedButton.icon(
+                        onPressed:
+                            _busy ||
+                                !_hasChanges ||
+                                _origin == null ||
+                                _destination == null
+                            ? null
+                            : _savePlan,
+                        icon: const Icon(Icons.bookmark_add_outlined),
+                        label: Text(
+                          _savedPlan == null ? 'Save plan' : 'Save changes',
+                        ),
+                      ),
+                      const SizedBox(height: 8),
+                      const Text(
+                        'Saving keeps your places and visit order. '
+                        'Find routes refreshes distance and time estimates.',
+                        style: TextStyle(fontSize: 12),
+                      ),
+                      if (_error != null) ...[
                         const SizedBox(height: 12),
-                        const LinearProgressIndicator(),
-                      ],
-                      if (_error != null)
-                        Padding(
-                          padding: const EdgeInsets.only(top: 12),
+                        Container(
+                          padding: const EdgeInsets.all(14),
+                          decoration: BoxDecoration(
+                            color: Theme.of(context).colorScheme.errorContainer,
+                            borderRadius: BorderRadius.circular(14),
+                          ),
                           child: Text(
                             _error!,
                             style: const TextStyle(color: AppColors.danger),
                           ),
                         ),
-                      const SizedBox(height: 18),
+                      ],
+                      const SizedBox(height: 24),
+                      Text(
+                        'Route preview',
+                        style: Theme.of(context).textTheme.titleLarge,
+                      ),
+                      const SizedBox(height: 12),
                       ClipRRect(
                         key: _mapKey,
                         borderRadius: BorderRadius.circular(18),
@@ -1016,10 +1077,7 @@ class _TripMapScreenState extends State<TripMapScreen> {
                             },
                             onMapCreated: (controller) {
                               _map = controller;
-
-                              if (_routes.isNotEmpty) {
-                                _fitRoute();
-                              }
+                              if (_routes.isNotEmpty) _fitRoute();
                             },
                             markers: _markers,
                             polylines: _polylines,
@@ -1037,7 +1095,13 @@ class _TripMapScreenState extends State<TripMapScreen> {
                                 'Map data provider',
                           ),
                         ),
-                      if (_routes.isNotEmpty) ...[
+                      if (_routes.isEmpty) ...[
+                        const SizedBox(height: 12),
+                        const Text(
+                          'Choose your places, then find routes to see '
+                          'your journey on the map.',
+                        ),
+                      ] else ...[
                         const SizedBox(height: 20),
                         Text(
                           _stops.isEmpty
@@ -1049,10 +1113,10 @@ class _TripMapScreenState extends State<TripMapScreen> {
                         Text(
                           _stops.isEmpty
                               ? 'Compare distance and estimated time. Live traffic is not included.'
-                              : 'Follows your stop order. Travel estimates exclude time spent at stops and live traffic.',
+                              : 'Follows your stop order. Estimates exclude time spent at stops and live traffic.',
                         ),
                         const Padding(
-                          padding: EdgeInsets.symmetric(vertical: 8),
+                          padding: EdgeInsets.symmetric(vertical: 10),
                           child: Text(
                             'Google Maps',
                             style: TextStyle(
@@ -1065,19 +1129,37 @@ class _TripMapScreenState extends State<TripMapScreen> {
                         ),
                         for (int i = 0; i < _routes.length; i++) _routeCard(i),
                         if (_stops.isNotEmpty) _journeyDetails(),
-                        if (_mode == 'WALK')
-                          const Padding(
-                            padding: EdgeInsets.symmetric(vertical: 10),
-                            child: Text(
-                              'Walking routes are in beta and may omit sidewalks or pedestrian paths. Use caution.',
+                        if (_mode == 'WALK' ||
+                            _routes[_selected].warnings.isNotEmpty)
+                          Card(
+                            margin: const EdgeInsets.only(top: 14),
+                            color: const Color(0xFFFFF4E6),
+                            child: Padding(
+                              padding: const EdgeInsets.all(14),
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  if (_mode == 'WALK')
+                                    const Padding(
+                                      padding: EdgeInsets.only(bottom: 8),
+                                      child: Text(
+                                        'Walking routes are in beta and may omit '
+                                        'sidewalks or pedestrian paths. Use caution.',
+                                      ),
+                                    ),
+                                  for (final warning
+                                      in _routes[_selected].warnings)
+                                    Padding(
+                                      padding: const EdgeInsets.only(bottom: 6),
+                                      child: Text(warning),
+                                    ),
+                                ],
+                              ),
                             ),
                           ),
-                        for (final warning in _routes[_selected].warnings)
-                          Padding(
-                            padding: const EdgeInsets.only(top: 8),
-                            child: Text(warning),
-                          ),
                       ],
+                      const SizedBox(height: 24),
+                      _planOptions(),
                     ],
                   ),
                 ),
@@ -1086,66 +1168,67 @@ class _TripMapScreenState extends State<TripMapScreen> {
     );
   }
 
-  Widget _planPanel() => Card(
-    child: Padding(
-      padding: const EdgeInsets.all(14),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(
-            _planBusy
-                ? (_writingPlan ? 'Saving changes…' : 'Loading saved plan…')
-                : _savedPlan == null
-                ? 'Save your route'
-                : 'Saved route plan',
-            style: Theme.of(context).textTheme.titleMedium,
-          ),
-          const SizedBox(height: 8),
-          if (_planBusy) const LinearProgressIndicator(),
-          if (_planError != null) ...[
-            Text(_planError!, style: const TextStyle(color: AppColors.danger)),
-            TextButton(
-              onPressed: _planBusy ? null : _loadPlan,
-              child: const Text('Retry'),
-            ),
-          ] else if (!_planBusy)
-            Text(
+  Widget _planPanel() => Container(
+    padding: const EdgeInsets.all(14),
+    decoration: BoxDecoration(
+      color: AppColors.primaryLight,
+      borderRadius: BorderRadius.circular(16),
+    ),
+    child: Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Icon(
               _hasChanges
-                  ? 'You have unsaved changes.'
-                  : _savedPlan == null
-                  ? 'Save your places and visit order for this trip.'
-                  : 'Saved for this trip. Find routes to refresh travel estimates.',
+                  ? Icons.edit_note_rounded
+                  : Icons.bookmark_border_rounded,
+              color: AppColors.primary,
+              size: 22,
             ),
-          if (_planLoaded && !_planBusy) ...[
-            const SizedBox(height: 8),
-            Wrap(
-              spacing: 8,
-              runSpacing: 6,
-              children: [
-                OutlinedButton.icon(
-                  onPressed:
-                      _busy ||
-                          !_hasChanges ||
-                          _origin == null ||
-                          _destination == null
-                      ? null
-                      : _savePlan,
-                  icon: const Icon(Icons.bookmark_add_outlined),
-                  label: Text(
-                    _savedPlan == null ? 'Save plan' : 'Save changes',
-                  ),
+            const SizedBox(width: 10),
+            Expanded(
+              child: Text(
+                _planBusy
+                    ? (_writingPlan ? 'Saving changes…' : 'Loading saved plan…')
+                    : _planError != null
+                    ? 'Plan unavailable'
+                    : _hasChanges
+                    ? 'Unsaved changes'
+                    : _savedPlan == null
+                    ? 'New route plan'
+                    : 'Saved route plan',
+                style: const TextStyle(
+                  color: AppColors.primary,
+                  fontWeight: FontWeight.w800,
                 ),
-                if (_savedPlan != null)
-                  TextButton.icon(
-                    onPressed: _busy ? null : _deletePlan,
-                    icon: const Icon(Icons.delete_outline_rounded),
-                    label: const Text('Delete saved plan'),
-                  ),
-              ],
+              ),
             ),
           ],
+        ),
+        if (_planBusy) ...[
+          const SizedBox(height: 10),
+          const LinearProgressIndicator(),
+        ] else if (_planError != null) ...[
+          const SizedBox(height: 8),
+          Text(_planError!, style: const TextStyle(color: AppColors.danger)),
+          Align(
+            alignment: Alignment.centerLeft,
+            child: TextButton(onPressed: _loadPlan, child: const Text('Retry')),
+          ),
+        ] else ...[
+          const SizedBox(height: 6),
+          Text(
+            _hasChanges
+                ? 'Your latest place or travel-mode changes have not been saved.'
+                : _savedPlan == null
+                ? 'Choose places below to start planning.'
+                : 'Places restored. Find routes for current travel estimates.',
+            style: const TextStyle(fontSize: 12),
+          ),
         ],
-      ),
+      ],
     ),
   );
 
@@ -1156,196 +1239,325 @@ class _TripMapScreenState extends State<TripMapScreen> {
     VoidCallback onTap,
   ) => OutlinedButton(
     onPressed: _busy || !_views.containsKey(_countryId) ? null : onTap,
-    child: Padding(
-      padding: const EdgeInsets.symmetric(vertical: 8),
-      child: Row(
-        children: [
-          CircleAvatar(radius: 16, child: FittedBox(child: Text('$number'))),
-          const SizedBox(width: 12),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  label,
-                  style: const TextStyle(
-                    fontSize: 12,
-                    color: AppColors.secondaryText,
-                  ),
-                ),
-                Text(
-                  place?.label ?? 'Choose a place',
-                  maxLines: 3,
-                  overflow: TextOverflow.ellipsis,
-                ),
-              ],
-            ),
-          ),
-          const Icon(Icons.chevron_right_rounded),
-        ],
-      ),
-    ),
-  );
-
-  Widget _stopCard(int index) => Card(
-    margin: const EdgeInsets.only(bottom: 10),
-    child: Padding(
-      padding: const EdgeInsets.all(10),
-      child: Column(
-        children: [
-          _placeButton(
-            'Stop ${index + 1}',
-            _stops[index],
-            index + 2,
-            () => _choosePlace(stopIndex: index),
-          ),
-          Wrap(
-            spacing: 8,
+    style: OutlinedButton.styleFrom(padding: const EdgeInsets.all(12)),
+    child: Row(
+      children: [
+        CircleAvatar(
+          radius: 15,
+          backgroundColor: AppColors.primaryLight,
+          foregroundColor: AppColors.primary,
+          child: FittedBox(child: Text('$number')),
+        ),
+        const SizedBox(width: 10),
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              IconButton(
-                tooltip: 'Move stop ${index + 1} up',
-                onPressed: _busy || index == 0
-                    ? null
-                    : () => _changeStop(index, direction: -1),
-                icon: const Icon(Icons.arrow_upward_rounded),
+              Text(
+                label,
+                style: const TextStyle(
+                  fontSize: 12,
+                  color: AppColors.secondaryText,
+                ),
               ),
-              IconButton(
-                tooltip: 'Move stop ${index + 1} down',
-                onPressed: _busy || index == _stops.length - 1
-                    ? null
-                    : () => _changeStop(index, direction: 1),
-                icon: const Icon(Icons.arrow_downward_rounded),
-              ),
-              IconButton(
-                tooltip: 'Remove stop ${index + 1}',
-                onPressed: _busy ? null : () => _changeStop(index),
-                icon: const Icon(Icons.delete_outline_rounded),
+              const SizedBox(height: 3),
+              Text(
+                place?.label ?? 'Choose a place',
+                maxLines: 3,
+                overflow: TextOverflow.ellipsis,
               ),
             ],
           ),
+        ),
+        const SizedBox(width: 4),
+        const Icon(Icons.chevron_right_rounded, size: 20),
+      ],
+    ),
+  );
+
+  Widget _stopCard(int index) => Column(
+    crossAxisAlignment: CrossAxisAlignment.stretch,
+    children: [
+      _placeButton(
+        'Stop ${index + 1}',
+        _stops[index],
+        index + 2,
+        () => _choosePlace(stopIndex: index),
+      ),
+      Wrap(
+        alignment: WrapAlignment.end,
+        spacing: 4,
+        children: [
+          IconButton(
+            tooltip: 'Move stop ${index + 1} up',
+            onPressed: _busy || index == 0
+                ? null
+                : () => _changeStop(index, direction: -1),
+            icon: const Icon(Icons.arrow_upward_rounded, size: 20),
+          ),
+          IconButton(
+            tooltip: 'Move stop ${index + 1} down',
+            onPressed: _busy || index == _stops.length - 1
+                ? null
+                : () => _changeStop(index, direction: 1),
+            icon: const Icon(Icons.arrow_downward_rounded, size: 20),
+          ),
+          IconButton(
+            tooltip: 'Remove stop ${index + 1}',
+            onPressed: _busy ? null : () => _changeStop(index),
+            icon: const Icon(Icons.close_rounded, size: 20),
+          ),
         ],
       ),
-    ),
+    ],
   );
 
   Widget _mapSelectionSummary() {
     final leg = _selectedLeg;
     final places = _visits.map((visit) => visit.$2).toList();
 
-    return Padding(
-      padding: const EdgeInsets.only(top: 12),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(
-            leg == null
-                ? 'Showing the complete route'
-                : 'Showing ${leg + 1} → ${leg + 2}',
-            style: const TextStyle(fontWeight: FontWeight.w700),
-          ),
-          if (leg != null)
-            Text('${places[leg].label} → ${places[leg + 1].label}'),
-          TextButton.icon(
-            onPressed: leg == null ? null : () => _selectRoute(_selected),
-            icon: const Icon(Icons.route_outlined),
-            label: const Text('Show complete route'),
-          ),
-        ],
+    return Card(
+      margin: const EdgeInsets.only(top: 12),
+      color: AppColors.primaryLight,
+      child: Padding(
+        padding: const EdgeInsets.all(14),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              leg == null
+                  ? 'Showing the complete route'
+                  : 'Showing ${leg + 1} → ${leg + 2}',
+              style: const TextStyle(
+                color: AppColors.primary,
+                fontWeight: FontWeight.w800,
+              ),
+            ),
+            if (leg != null) ...[
+              const SizedBox(height: 8),
+              _legPlaces(places[leg], places[leg + 1]),
+            ],
+            TextButton.icon(
+              onPressed: leg == null ? null : () => _selectRoute(_selected),
+              icon: const Icon(Icons.route_outlined),
+              label: const Text('Show complete route'),
+            ),
+          ],
+        ),
       ),
     );
   }
+
+  Widget _legPlaces(TravelPlace start, TravelPlace end) => Column(
+    crossAxisAlignment: CrossAxisAlignment.start,
+    children: [
+      Text('From: ${start.label}', style: const TextStyle(fontSize: 13)),
+      const SizedBox(height: 4),
+      Text('To: ${end.label}', style: const TextStyle(fontSize: 13)),
+    ],
+  );
 
   Widget _journeyDetails() {
     final legs = _routes[_selected].legs;
     final places = _visits.map((visit) => visit.$2).toList();
 
     return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
+      crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        const SizedBox(height: 12),
+        const SizedBox(height: 18),
         Text(
           'Between your stops',
           style: Theme.of(context).textTheme.titleMedium,
         ),
         const SizedBox(height: 6),
         const Text('Tap a section to show only that part on the map.'),
+        const SizedBox(height: 8),
         for (int i = 0; i < legs.length; i++)
           Card(
+            margin: const EdgeInsets.only(bottom: 10),
             color: _selectedLeg == i ? AppColors.primaryLight : Colors.white,
-            child: ListTile(
+            clipBehavior: Clip.antiAlias,
+            child: Semantics(
+              button: true,
               selected: _selectedLeg == i,
-              leading: Icon(
-                _selectedLeg == i
-                    ? Icons.check_circle_rounded
-                    : Icons.radio_button_unchecked_rounded,
-              ),
-              title: Text('${i + 1} → ${i + 2}'),
-              subtitle: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text('${places[i].label} → ${places[i + 1].label}'),
-                  const SizedBox(height: 6),
-                  Text(
-                    '${_distance(legs[i].distanceMeters)} · ${_duration(legs[i].durationSeconds)}',
+              child: InkWell(
+                onTap: () => _selectLeg(i),
+                child: Padding(
+                  padding: const EdgeInsets.all(14),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      Row(
+                        children: [
+                          Icon(
+                            _selectedLeg == i
+                                ? Icons.check_circle_rounded
+                                : Icons.radio_button_unchecked_rounded,
+                            color: AppColors.primary,
+                            size: 22,
+                          ),
+                          const SizedBox(width: 10),
+                          Expanded(
+                            child: Text(
+                              '${i + 1} → ${i + 2}',
+                              style: const TextStyle(
+                                fontWeight: FontWeight.w800,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 10),
+                      _legPlaces(places[i], places[i + 1]),
+                      const SizedBox(height: 10),
+                      Text(
+                        '${_distance(legs[i].distanceMeters)} · '
+                        '${_duration(legs[i].durationSeconds)}',
+                        style: const TextStyle(
+                          color: AppColors.primary,
+                          fontWeight: FontWeight.w800,
+                        ),
+                      ),
+                    ],
                   ),
-                ],
+                ),
               ),
-              onTap: () => _selectLeg(i),
             ),
           ),
       ],
     );
   }
 
+  // Compare only the alternatives returned for the current request.
   Widget _routeCard(int index) {
     final route = _routes[index];
     final selected = index == _selected && _selectedLeg == null;
-
     final fastest = _routes.every(
       (item) => route.durationSeconds <= item.durationSeconds,
     );
-
     final shortest = _routes.every(
       (item) => route.distanceMeters <= item.distanceMeters,
     );
 
     return Card(
+      margin: const EdgeInsets.only(bottom: 10),
       color: selected ? AppColors.primaryLight : Colors.white,
-      child: ListTile(
+      clipBehavior: Clip.antiAlias,
+      child: Semantics(
+        button: true,
         selected: selected,
-        leading: Icon(
-          selected
-              ? Icons.check_circle_rounded
-              : Icons.radio_button_unchecked_rounded,
-        ),
-        title: Text(_stops.isEmpty ? 'Route ${index + 1}' : 'Journey total'),
-        subtitle: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            if (route.description.isNotEmpty) Text(route.description),
-            Text(
-              '${_distance(route.distanceMeters)} · ${_duration(route.durationSeconds)}',
-            ),
-            if (_routes.length > 1)
-              Wrap(
-                spacing: 12,
-                children: [
-                  if (fastest)
-                    const Text(
-                      'Shortest estimated time',
-                      style: TextStyle(fontWeight: FontWeight.w700),
+        child: InkWell(
+          onTap: () => _selectRoute(index),
+          child: Padding(
+            padding: const EdgeInsets.all(16),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Row(
+                  children: [
+                    Icon(
+                      selected
+                          ? Icons.check_circle_rounded
+                          : Icons.radio_button_unchecked_rounded,
+                      color: AppColors.primary,
+                      size: 22,
                     ),
-                  if (shortest)
-                    const Text(
-                      'Shortest distance',
-                      style: TextStyle(fontWeight: FontWeight.w700),
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: Text(
+                        _stops.isEmpty ? 'Route ${index + 1}' : 'Journey total',
+                        style: const TextStyle(fontWeight: FontWeight.w800),
+                      ),
                     ),
+                  ],
+                ),
+                const SizedBox(height: 12),
+                Text(
+                  '${_distance(route.distanceMeters)} · ${_duration(route.durationSeconds)}',
+                  style: const TextStyle(
+                    fontSize: 20,
+                    fontWeight: FontWeight.w800,
+                    color: AppColors.navy,
+                  ),
+                ),
+                if (route.description.isNotEmpty) ...[
+                  const SizedBox(height: 6),
+                  Text(
+                    route.description,
+                    style: const TextStyle(
+                      fontSize: 12,
+                      color: AppColors.secondaryText,
+                    ),
+                  ),
                 ],
-              ),
-          ],
+                if (_routes.length > 1 && (fastest || shortest)) ...[
+                  const SizedBox(height: 10),
+                  Wrap(
+                    spacing: 8,
+                    runSpacing: 6,
+                    children: [
+                      if (fastest) _routeBadge('Shortest estimated time'),
+                      if (shortest) _routeBadge('Shortest distance'),
+                    ],
+                  ),
+                ],
+              ],
+            ),
+          ),
         ),
-        onTap: () => _selectRoute(index),
       ),
     );
   }
+
+  Widget _routeBadge(String label) => Container(
+    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+    decoration: BoxDecoration(
+      color: AppColors.primaryLight,
+      borderRadius: BorderRadius.circular(10),
+    ),
+    child: Text(
+      label,
+      style: const TextStyle(
+        fontSize: 12,
+        fontWeight: FontWeight.w700,
+        color: AppColors.primary,
+      ),
+    ),
+  );
+
+  Widget _planOptions() => Card(
+    margin: EdgeInsets.zero,
+    child: Padding(
+      padding: const EdgeInsets.all(14),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Text('Plan options', style: Theme.of(context).textTheme.titleMedium),
+          const SizedBox(height: 6),
+          const Text(
+            'Clearing the draft keeps your saved plan.',
+            style: TextStyle(fontSize: 12),
+          ),
+          const SizedBox(height: 12),
+          Tooltip(
+            message: 'Clear draft',
+            child: OutlinedButton.icon(
+              onPressed: _planBusy || !_planLoaded ? null : _reset,
+              icon: const Icon(Icons.restart_alt_rounded),
+              label: const Text('Clear draft'),
+            ),
+          ),
+          if (_savedPlan != null) ...[
+            const SizedBox(height: 6),
+            TextButton.icon(
+              onPressed: _busy ? null : _deletePlan,
+              style: TextButton.styleFrom(foregroundColor: AppColors.danger),
+              icon: const Icon(Icons.delete_outline_rounded),
+              label: const Text('Delete saved plan'),
+            ),
+          ],
+        ],
+      ),
+    ),
+  );
 }

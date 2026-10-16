@@ -26,8 +26,6 @@ class _TripDetailsScreenState extends State<TripDetailsScreen> {
 
   final ReminderService _reminderService = ReminderService();
 
-  static const Color _darkTextColor = AppColors.navy;
-
   static const Color _backgroundColor = AppColors.background;
 
   late Trip _trip;
@@ -880,16 +878,7 @@ class _TripDetailsScreenState extends State<TripDetailsScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: _backgroundColor,
-      // Keep reminder creation in the clearly labelled preparation card.
-      appBar: AppBar(
-        backgroundColor: Colors.white,
-        surfaceTintColor: Colors.white,
-        elevation: 0,
-        title: const Text(
-          'Trip Details',
-          style: TextStyle(color: _darkTextColor, fontWeight: FontWeight.w700),
-        ),
-      ),
+      appBar: AppBar(title: const Text('Trip Details')),
       body: RefreshIndicator(
         onRefresh: _refreshProgress,
         child: ListView(
@@ -897,101 +886,53 @@ class _TripDetailsScreenState extends State<TripDetailsScreen> {
           padding: const EdgeInsets.fromLTRB(18, 18, 18, 36),
           children: [
             _buildTripHeader(),
-
-            const SizedBox(height: 24),
-
-            const Text(
-              'Travel Readiness',
-              style: TextStyle(
-                fontSize: 18,
-                fontWeight: FontWeight.w800,
-                color: _darkTextColor,
-              ),
-            ),
-
-            const SizedBox(height: 12),
-
+            const SizedBox(height: 20),
             _buildProgressCard(),
-
-            const SizedBox(height: 26),
-
-            const Text(
-              'Prepare for Your Trip',
-              style: TextStyle(
-                fontSize: 18,
-                fontWeight: FontWeight.w800,
-                color: _darkTextColor,
-              ),
+            const SizedBox(height: 24),
+            Text(
+              'Preparation tools',
+              style: Theme.of(context).textTheme.titleLarge,
             ),
-
             const SizedBox(height: 12),
-
-            // Open the existing preparation tools for this selected trip.
-            _buildFeatureCard(
-              icon: Icons.fact_check_outlined,
-              title: 'Travel Requirements',
-              description:
-                  'Review the requirements that apply to this trip. '
-                  'Checking or unchecking an item updates your readiness score.',
-              actionText: 'View Requirements',
-              onTap: _openChecklist,
-            ),
-
-            const SizedBox(height: 12),
-
             _buildFeatureCard(
               icon: Icons.luggage_outlined,
               title: 'Packing List',
-              description: 'Manage the packing list saved for this trip.',
+              description: 'Keep your travel essentials in one list.',
               actionText: 'Open Packing List',
               onTap: _openPackingList,
             ),
-
             const SizedBox(height: 12),
-
-            _buildFeatureCard(
-              icon: Icons.map_outlined,
-              title: 'Route Planning',
-              description:
-                  'Choose places, add stops and plan your journey by distance and estimated travel time',
-              actionText: 'Plan a Route',
-              onTap: _openDestinationMap,
-            ),
-
-            const SizedBox(height: 12),
-
             _buildFeatureCard(
               icon: Icons.add_alert_outlined,
               title: 'Trip Reminder',
               description: _isPastTrip
                   ? 'New reminders are unavailable for past trips.'
-                  : 'Set a personal reminder for a preparation task before departure.',
+                  : 'Set a personal reminder before departure.',
               actionText: _isPastTrip
                   ? 'Unavailable for past trips'
                   : 'Add Reminder',
               enabled: !_isPastTrip,
               onTap: _addReminder,
             ),
-
-            const SizedBox(height: 12),
-
-            const SizedBox(height: 26),
-
-            const Text(
-              'Manage Trip',
-              style: TextStyle(
-                fontSize: 18,
-                fontWeight: FontWeight.w800,
-                color: _darkTextColor,
-              ),
+            const SizedBox(height: 24),
+            Text(
+              'Plan your journey',
+              style: Theme.of(context).textTheme.titleLarge,
             ),
-
             const SizedBox(height: 12),
-
+            _buildFeatureCard(
+              icon: Icons.map_outlined,
+              title: 'Route Planning',
+              description:
+                  'Choose places, compare travel estimates and save your stop order.',
+              actionText: 'Plan a Route',
+              onTap: _openDestinationMap,
+            ),
+            const SizedBox(height: 24),
+            Text('Manage Trip', style: Theme.of(context).textTheme.titleLarge),
+            const SizedBox(height: 12),
             _buildManageTripCard(),
-
-            const SizedBox(height: 22),
-
+            const SizedBox(height: 20),
             _buildOfficialSourceNote(),
           ],
         ),
@@ -1023,6 +964,7 @@ class _TripDetailsScreenState extends State<TripDetailsScreen> {
     return TripReadinessCard(
       progressFuture: _progressFuture,
       onRetry: _refreshProgress,
+      onOpenRequirements: _isDeleting ? null : _openChecklist,
     );
   }
 
@@ -1037,14 +979,12 @@ class _TripDetailsScreenState extends State<TripDetailsScreen> {
     required String actionText,
     required VoidCallback onTap,
     bool enabled = true,
-    Color iconBackground = AppColors.primaryLight,
   }) {
     return TripActionCard(
       icon: icon,
       title: title,
       description: description,
       actionText: actionText,
-      iconBackground: iconBackground,
       onTap: _isDeleting || !enabled ? null : onTap,
     );
   }
