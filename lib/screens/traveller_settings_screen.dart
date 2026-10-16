@@ -5,6 +5,7 @@ import '../services/auth_service.dart';
 import '../services/user_service.dart';
 import 'login_screen.dart';
 import '../theme/app_theme.dart';
+import '../widgets/traveller_ui_widgets.dart';
 
 class TravellerSettingsScreen extends StatefulWidget {
   const TravellerSettingsScreen({super.key});
@@ -20,7 +21,7 @@ class _TravellerSettingsScreenState extends State<TravellerSettingsScreen> {
 
   bool _isLoggingOut = false;
 
-  late final Future<Map<String, dynamic>?> _profileFuture;
+  late Future<Map<String, dynamic>?> _profileFuture;
 
   @override
   void initState() {
@@ -36,6 +37,24 @@ class _TravellerSettingsScreenState extends State<TravellerSettingsScreen> {
     }
 
     return _userService.getUserProfile(user.uid);
+  }
+
+  // ---------------------------------------------------------------------------
+  // PROFILE REFRESH
+  // ---------------------------------------------------------------------------
+  // Retry the account read without changing the current sign-in session.
+  Future<void> _refreshProfile() async {
+    if (!mounted || _isLoggingOut) return;
+    final refreshed = _loadProfile();
+    refreshed.ignore();
+    setState(() {
+      _profileFuture = refreshed;
+    });
+    try {
+      await refreshed;
+    } catch (error) {
+      debugPrint('PROFILE REFRESH ERROR: $error');
+    }
   }
 
   Future<void> _confirmLogout() async {
@@ -285,12 +304,14 @@ class _TravellerSettingsScreenState extends State<TravellerSettingsScreen> {
 
                           SizedBox(width: 5),
 
-                          Text(
-                            'Traveller',
-                            style: TextStyle(
-                              color: AppColors.primary,
-                              fontSize: 11,
-                              fontWeight: FontWeight.w700,
+                          Flexible(
+                            child: Text(
+                              'Traveller',
+                              style: TextStyle(
+                                color: AppColors.primary,
+                                fontSize: 11,
+                                fontWeight: FontWeight.w700,
+                              ),
                             ),
                           ),
                         ],
@@ -500,73 +521,100 @@ class _TravellerSettingsScreenState extends State<TravellerSettingsScreen> {
             firebaseUser?.email ??
             'Not available';
 
-        return ListView(
-          padding: const EdgeInsets.fromLTRB(20, 20, 20, 110),
-          children: [
-            _buildSectionTitle('ACCOUNT'),
+        return RefreshIndicator(
+          onRefresh: _refreshProfile,
+          child: ListView(
+            physics: const AlwaysScrollableScrollPhysics(),
+            padding: const EdgeInsets.fromLTRB(18, 18, 18, 32),
+            children: [
+              _buildSectionTitle('ACCOUNT'),
 
-            _buildProfileCard(fullName: fullName, email: email),
-
-            const SizedBox(height: 28),
-
-            _buildSectionTitle('APPLICATION'),
-
-            _buildSettingsCard(
-              child: Column(
-                children: [
-                  _buildApplicationInfoRow(
-                    icon: Icons.info_outline_rounded,
-                    title: 'About TravelGuard MY',
-                    subtitle:
-                        'AI-Based Travel Preparation '
-                        'Decision Support System '
-                        'for Malaysian Travellers.',
+              if (snapshot.connectionState != ConnectionState.done)
+                const Card(
+                  child: Padding(
+                    padding: EdgeInsets.all(20),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
+                        Text('Loading your account...'),
+                        SizedBox(height: 12),
+                        LinearProgressIndicator(),
+                      ],
+                    ),
                   ),
-
-                  const Padding(
-                    padding: EdgeInsets.symmetric(vertical: 17),
-                    child: Divider(height: 1, color: AppColors.border),
-                  ),
-
-                  _buildApplicationInfoRow(
-                    icon: Icons.apps_rounded,
-                    title: 'App Version',
-                    subtitle: 'Current application version',
-                    trailing: '1.0.0',
-                  ),
-                ],
-              ),
-            ),
-
-            const SizedBox(height: 28),
-
-            _buildSectionTitle('ACCOUNT ACTIONS'),
-
-            SizedBox(
-              height: 52,
-              child: OutlinedButton.icon(
-                style: OutlinedButton.styleFrom(
-                  foregroundColor: const Color(0xFFC62828),
-                  side: const BorderSide(color: Color(0xFFC62828)),
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(14),
-                  ),
+                )
+              else if (snapshot.hasError)
+                TravellerStatusCard(
+                  icon: Icons.cloud_off_outlined,
+                  title: 'Unable to load your profile',
+                  message: 'Check your connection and try again.',
+                  actionText: 'Retry',
+                  onAction: _isLoggingOut ? null : _refreshProfile,
+                )
+              else
+                _buildProfileCard(
+                  fullName: fullName.isEmpty ? 'Traveller' : fullName,
+                  email: email.isEmpty ? 'Not available' : email,
                 ),
-                onPressed: _isLoggingOut ? null : _confirmLogout,
-                icon: _isLoggingOut
-                    ? const SizedBox(
-                        width: 18,
-                        height: 18,
-                        child: CircularProgressIndicator(
-                          strokeWidth: 2,
-                          color: AppColors.danger,
-                        ),
-                      )
-                    : const Icon(Icons.logout_rounded),
-                label: Text(_isLoggingOut ? 'Logging Out...' : 'Log Out'),
+
+              const SizedBox(height: 28),
+
+              _buildSectionTitle('APPLICATION'),
+
+              _buildSettingsCard(
+                child: Column(
+                  children: [
+                    _buildApplicationInfoRow(
+                      icon: Icons.info_outline_rounded,
+                      title: 'About TravelGuard MY',
+                      subtitle:
+                          'Travel requirements, packing and route planning for Malaysian travellers.',
+                    ),
+
+                    const Padding(
+                      padding: EdgeInsets.symmetric(vertical: 17),
+                      child: Divider(height: 1, color: AppColors.border),
+                    ),
+
+                    _buildApplicationInfoRow(
+                      icon: Icons.apps_rounded,
+                      title: 'App Version',
+                      subtitle: 'Current application version',
+                      trailing: '1.0.0',
+                    ),
+                  ],
+                ),
               ),
-            ),
-          ],
+
+              const SizedBox(height: 28),
+
+              _buildSectionTitle('ACCOUNT ACTIONS'),
+
+              SizedBox(
+                child: OutlinedButton.icon(
+                  style: OutlinedButton.styleFrom(
+                    foregroundColor: const Color(0xFFC62828),
+                    side: const BorderSide(color: Color(0xFFC62828)),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(14),
+                    ),
+                  ),
+                  onPressed: _isLoggingOut ? null : _confirmLogout,
+                  icon: _isLoggingOut
+                      ? const SizedBox(
+                          width: 18,
+                          height: 18,
+                          child: CircularProgressIndicator(
+                            strokeWidth: 2,
+                            color: AppColors.danger,
+                          ),
+                        )
+                      : const Icon(Icons.logout_rounded),
+                  label: Text(_isLoggingOut ? 'Logging Out...' : 'Log Out'),
+                ),
+              ),
+            ],
+          ),
         );
       },
     );

@@ -437,7 +437,7 @@ class _TravellerAlertsScreenState extends State<TravellerAlertsScreen>
               ),
               const SizedBox(height: 8),
               const Text(
-                'Your personal reminders and upcoming travel requirements, together.',
+                'Reminders are tasks you set. Preparation highlights requirements still to check.',
               ),
               const SizedBox(height: 22),
               if (_refreshing) ...[

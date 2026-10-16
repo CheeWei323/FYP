@@ -452,7 +452,7 @@ class _TravellerDashboardState extends State<TravellerDashboard>
           icon: Icons.flight_takeoff_rounded,
           title: 'Where are you heading next?',
           description:
-              'Create a trip to organise your requirements, packing and reminders.',
+              'Create a trip to organise your requirements, packing, route plan and reminders.',
           button: 'Create a trip',
           onPressed: () => _openPage(const AddTripScreen()),
         )
@@ -509,7 +509,7 @@ class _TravellerDashboardState extends State<TravellerDashboard>
         icon: Icons.fact_check_outlined,
         title: 'Manage trip preparation',
         subtitle:
-            'Choose a trip to open its requirements, packing, map and reminders.',
+            'Choose a trip to open its requirements, packing, route plan and reminders.',
         onTap: () => _changeTab(1),
       ),
     ];

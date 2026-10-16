@@ -6,6 +6,7 @@ import '../models/trip.dart';
 import '../services/packing_ai_service.dart';
 import '../services/packing_service.dart';
 import '../theme/app_theme.dart';
+import '../widgets/traveller_ui_widgets.dart';
 
 class PackingScreen extends StatefulWidget {
   final Trip trip;
@@ -30,11 +31,7 @@ class _PackingScreenState extends State<PackingScreen> {
 
   String? _errorMessage;
 
-  static const Color _primaryColor = Color(0xFF087F8C);
-
-  static const Color _darkTextColor = Color(0xFF102A43);
-
-  static const Color _backgroundColor = Color(0xFFF7F9FB);
+  static const Color _primaryColor = AppColors.primary;
 
   static const List<String> _categories = [
     'clothing',
@@ -589,6 +586,7 @@ class _PackingScreenState extends State<PackingScreen> {
         const SizedBox(height: 9),
 
         DropdownButtonFormField<String>(
+          itemHeight: null,
           initialValue: selectedCategory,
           isExpanded: true,
           decoration: const InputDecoration(
@@ -1216,1167 +1214,334 @@ class _PackingScreenState extends State<PackingScreen> {
   // ---------------------------------------------------------------------------
 
   @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: _backgroundColor,
-
-      appBar: AppBar(
-        backgroundColor: Colors.white,
-        surfaceTintColor: Colors.white,
-        elevation: 0,
-        title: const Text(
-          'Packing List',
-          style: TextStyle(color: _darkTextColor, fontWeight: FontWeight.w700),
-        ),
-      ),
-
-      floatingActionButton: FloatingActionButton.extended(
-        backgroundColor: _primaryColor,
-        foregroundColor: Colors.white,
-        onPressed: _showAddItemDialog,
-        icon: const Icon(Icons.add_rounded),
-        label: const Text(
-          'Add Item',
-          style: TextStyle(fontWeight: FontWeight.w700),
-        ),
-      ),
-
-      body: SafeArea(child: _buildBody()),
-    );
-  }
-
-  Widget _buildBody() {
-    if (_isLoading) {
-      return const Center(child: CircularProgressIndicator());
-    }
-
-    if (_errorMessage != null) {
-      return _buildErrorState();
-    }
-
-    if (_packingItems.isEmpty) {
-      return _buildEmptyState();
-    }
-
-    final List<String> visibleCategories = _categories
-        .where(
-          (category) => _packingItems.any((item) => item.category == category),
-        )
-        .toList();
-
-    return RefreshIndicator(
-      onRefresh: () => _loadPackingItems(showLoading: false),
-      child: ListView(
-        physics: const AlwaysScrollableScrollPhysics(),
-        padding: const EdgeInsets.fromLTRB(16, 18, 16, 110),
-        children: [
-          _buildTripSummary(),
-
-          const SizedBox(height: 18),
-
-          _buildProgressCard(),
-
-          const SizedBox(height: 18),
-
-          _buildRecommendationCard(),
-
-          const SizedBox(height: 26),
-
-          Row(
-            children: [
-              const Expanded(
-                child: Text(
-                  'Packing Items',
-                  style: TextStyle(
-                    fontSize: 18,
-                    fontWeight: FontWeight.w800,
-                    color: _darkTextColor,
+  Widget build(BuildContext context) => Scaffold(
+    backgroundColor: AppColors.background,
+    appBar: AppBar(title: const Text('Packing List')),
+    floatingActionButton: FloatingActionButton.extended(
+      onPressed: _isLoading || _isGeneratingAi || _errorMessage != null
+          ? null
+          : _showAddItemDialog,
+      icon: const Icon(Icons.add_rounded),
+      label: const Text('Add Item'),
+      backgroundColor: AppColors.primary,
+      foregroundColor: Colors.white,
+    ),
+    body: SafeArea(
+      top: false,
+      child: RefreshIndicator(
+        onRefresh: () async {
+          if (!_isGeneratingAi) await _loadPackingItems(showLoading: false);
+        },
+        child: ListView(
+          physics: const AlwaysScrollableScrollPhysics(),
+          padding: const EdgeInsets.fromLTRB(18, 18, 18, 110),
+          children: [
+            TravellerIntroCard(
+              icon: Icons.luggage_outlined,
+              title:
+                  'Packing for ${_formatText(widget.trip.destinationCountryId)}',
+              message:
+                  '${_formatText(widget.trip.purpose)} · ${widget.trip.durationDays} days\n'
+                  'Departs ${_formatDate(widget.trip.departureDate)}',
+            ),
+            const SizedBox(height: 18),
+            if (_isLoading)
+              const Card(
+                child: Padding(
+                  padding: EdgeInsets.all(20),
+                  child: Column(
+                    children: [
+                      LinearProgressIndicator(),
+                      SizedBox(height: 12),
+                      Text('Loading your packing list...'),
+                    ],
                   ),
                 ),
               ),
-
-              Text(
-                '${_packingItems.length} items',
-                style: const TextStyle(fontSize: 12, color: Colors.black54),
+            if (!_isLoading && _errorMessage != null)
+              TravellerStatusCard(
+                icon: Icons.cloud_off_outlined,
+                title: 'Unable to load packing list',
+                message: 'Check your connection and try again.',
+                actionText: 'Retry',
+                onAction: () => _loadPackingItems(),
               ),
-            ],
-          ),
-
-          const SizedBox(height: 14),
-
-          for (final String category in visibleCategories) ...[
-            _buildCategoryHeader(category),
-
-            const SizedBox(height: 9),
-
-            ..._packingItems
-                .where((item) => item.category == category)
-                .map((item) => _buildPackingItemCard(item)),
-
-            const SizedBox(height: 20),
-          ],
-        ],
-      ),
-    );
-  }
-
-  Widget _buildErrorState() {
-    return RefreshIndicator(
-      onRefresh: () => _loadPackingItems(showLoading: false),
-      child: ListView(
-        physics: const AlwaysScrollableScrollPhysics(),
-        padding: const EdgeInsets.symmetric(horizontal: 24),
-        children: [
-          const SizedBox(height: 140),
-
-          const Icon(Icons.cloud_off_outlined, size: 58, color: Colors.black38),
-
-          const SizedBox(height: 18),
-
-          const Text(
-            'Unable to load packing list',
-            textAlign: TextAlign.center,
-            style: TextStyle(
-              fontSize: 20,
-              fontWeight: FontWeight.w700,
-              color: _darkTextColor,
-            ),
-          ),
-
-          const SizedBox(height: 8),
-
-          Text(
-            _errorMessage!,
-            textAlign: TextAlign.center,
-            style: const TextStyle(color: Colors.black54),
-          ),
-
-          const SizedBox(height: 8),
-
-          const Text(
-            'Pull down to try again.',
-            textAlign: TextAlign.center,
-            style: TextStyle(fontSize: 12, color: Colors.black45),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildEmptyState() {
-    return RefreshIndicator(
-      onRefresh: () => _loadPackingItems(showLoading: false),
-      child: ListView(
-        physics: const AlwaysScrollableScrollPhysics(),
-        padding: const EdgeInsets.fromLTRB(24, 50, 24, 110),
-        children: [
-          Center(
-            child: Container(
-              width: 84,
-              height: 84,
-              decoration: BoxDecoration(
-                color: const Color(0xFFE8F6F7),
-                borderRadius: BorderRadius.circular(24),
-              ),
-              child: const Icon(
-                Icons.luggage_outlined,
-                size: 42,
-                color: _primaryColor,
-              ),
-            ),
-          ),
-
-          const SizedBox(height: 22),
-
-          const Text(
-            'Start Your Packing List',
-            textAlign: TextAlign.center,
-            style: TextStyle(
-              fontSize: 21,
-              fontWeight: FontWeight.w800,
-              color: _darkTextColor,
-            ),
-          ),
-
-          const SizedBox(height: 8),
-
-          const Text(
-            'Add items manually or generate contextual '
-            'packing recommendations based on this trip.',
-            textAlign: TextAlign.center,
-            style: TextStyle(fontSize: 13, height: 1.5, color: Colors.black54),
-          ),
-
-          const SizedBox(height: 26),
-
-          _buildRecommendationCard(),
-
-          const SizedBox(height: 18),
-
-          SizedBox(
-            height: 50,
-            child: OutlinedButton.icon(
-              style: OutlinedButton.styleFrom(
-                foregroundColor: _primaryColor,
-                side: const BorderSide(color: Color(0xFF9BD2D7)),
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(14),
-                ),
-              ),
-              onPressed: _showAddItemDialog,
-              icon: const Icon(Icons.add_rounded),
-              label: const Text(
-                'Add Item Manually',
-                style: TextStyle(fontWeight: FontWeight.w700),
-              ),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildTripSummary() {
-    final Trip trip = widget.trip;
-
-    return Container(
-      width: double.infinity,
-      padding: const EdgeInsets.all(18),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(18),
-        border: Border.all(color: AppColors.border),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Container(
-                width: 46,
-                height: 46,
-                decoration: BoxDecoration(
-                  color: AppColors.primaryLight,
-                  borderRadius: BorderRadius.circular(14),
-                ),
-                child: const Icon(
-                  Icons.luggage_outlined,
-                  color: AppColors.primary,
-                  size: 25,
-                ),
-              ),
-
-              const SizedBox(width: 13),
-
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    const Text(
-                      'PACKING FOR',
-                      style: TextStyle(
-                        color: AppColors.secondaryText,
-                        fontSize: 10,
-                        fontWeight: FontWeight.w700,
-                        letterSpacing: 1.1,
-                      ),
-                    ),
-
-                    const SizedBox(height: 5),
-
-                    Text(
-                      _formatText(trip.destinationCountryId),
-                      style: const TextStyle(
-                        color: AppColors.navy,
-                        fontSize: 20,
-                        fontWeight: FontWeight.w800,
-                      ),
-                    ),
+            if (!_isLoading && _errorMessage == null) ...[
+              _buildProgressCard(),
+              const SizedBox(height: 16),
+              _buildRecommendationCard(),
+              const SizedBox(height: 24),
+              if (_packingItems.isEmpty)
+                TravellerStatusCard(
+                  icon: Icons.inventory_2_outlined,
+                  title: 'Start your packing list',
+                  message:
+                      'Add your own items or use optional AI suggestions for this trip.',
+                  actionText: 'Add Item Manually',
+                  onAction: _isGeneratingAi ? null : _showAddItemDialog,
+                )
+              else
+                for (final category in _categories)
+                  if (_packingItems.any(
+                    (item) => item.category == category,
+                  )) ...[
+                    _buildCategoryHeader(category),
+                    const SizedBox(height: 10),
+                    ..._packingItems
+                        .where((item) => item.category == category)
+                        .map(_buildPackingItemCard),
+                    const SizedBox(height: 18),
                   ],
-                ),
-              ),
             ],
-          ),
-
-          const SizedBox(height: 17),
-
-          Wrap(
-            spacing: 9,
-            runSpacing: 9,
-            children: [
-              _buildPackingSummaryChip(
-                Icons.explore_outlined,
-                _formatText(trip.purpose),
-              ),
-              _buildPackingSummaryChip(
-                Icons.schedule_outlined,
-                '${trip.durationDays} days',
-              ),
-            ],
-          ),
-
-          const SizedBox(height: 18),
-
-          const Divider(height: 1, color: AppColors.border),
-
-          const SizedBox(height: 14),
-
-          Row(
-            children: [
-              const Icon(
-                Icons.calendar_month_outlined,
-                color: AppColors.primary,
-                size: 19,
-              ),
-
-              const SizedBox(width: 10),
-
-              Expanded(
-                child: Text(
-                  'Departure: ${_formatDate(trip.departureDate)}',
-                  style: const TextStyle(
-                    color: AppColors.secondaryText,
-                    fontSize: 12.5,
-                    fontWeight: FontWeight.w600,
-                  ),
-                ),
-              ),
-            ],
-          ),
-        ],
+          ],
+        ),
       ),
-    );
-  }
-
-  // -----------------------------------------------------------------------------
-  // REUSABLE TRIP SUMMARY CHIP
-  // -----------------------------------------------------------------------------
-
-  Widget _buildPackingSummaryChip(IconData icon, String label) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 11, vertical: 8),
-      decoration: BoxDecoration(
-        color: AppColors.primaryLight,
-        borderRadius: BorderRadius.circular(10),
-      ),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Icon(icon, size: 16, color: AppColors.primary),
-
-          const SizedBox(width: 7),
-
-          Text(
-            label,
-            style: const TextStyle(
-              color: AppColors.primary,
-              fontSize: 12,
-              fontWeight: FontWeight.w700,
-            ),
-          ),
-        ],
-      ),
-    );
-  }
+    ),
+  );
 
   Widget _buildProgressCard() {
-    final int packed = _packedCount;
-    final int total = _packingItems.length;
-    final int remaining = _remainingCount;
+    final reduceMotion =
+        MediaQuery.disableAnimationsOf(context) ||
+        MediaQuery.accessibleNavigationOf(context);
 
-    final double progress = _packingProgress;
-    final int percentage = _packingPercentage;
-
-    final bool reduceMotion = MediaQuery.disableAnimationsOf(context);
-
-    return Container(
-      width: double.infinity,
-      padding: const EdgeInsets.all(19),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(20),
-        border: Border.all(color: AppColors.border),
-        boxShadow: const [
-          BoxShadow(
-            color: Color(0x08000000),
-            blurRadius: 12,
-            offset: Offset(0, 4),
-          ),
-        ],
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          // -----------------------------------------------------
-          // HEADER
-          // -----------------------------------------------------
-          Row(
-            children: [
-              Container(
-                width: 45,
-                height: 45,
-                decoration: BoxDecoration(
-                  color: AppColors.primaryLight,
-                  borderRadius: BorderRadius.circular(14),
-                ),
-                child: const Icon(
-                  Icons.inventory_2_outlined,
-                  color: AppColors.primary,
-                  size: 24,
-                ),
-              ),
-
-              const SizedBox(width: 13),
-
-              const Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      'Packing Progress',
-                      style: TextStyle(
-                        color: AppColors.navy,
-                        fontSize: 17,
-                        fontWeight: FontWeight.w800,
-                      ),
-                    ),
-
-                    SizedBox(height: 5),
-
-                    Text(
-                      'Keep track of the items prepared for your trip.',
-                      style: TextStyle(
-                        color: AppColors.secondaryText,
-                        fontSize: 12.5,
-                        height: 1.45,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ],
-          ),
-
-          const SizedBox(height: 22),
-
-          // -----------------------------------------------------
-          // PROGRESS SUMMARY
-          // -----------------------------------------------------
-          Row(
-            crossAxisAlignment: CrossAxisAlignment.end,
-            children: [
-              Text(
-                '$percentage%',
-                style: const TextStyle(
-                  color: AppColors.primary,
-                  fontSize: 35,
-                  fontWeight: FontWeight.w800,
-                  height: 1,
-                ),
-              ),
-
-              const SizedBox(width: 12),
-
-              Expanded(
-                child: Padding(
-                  padding: const EdgeInsets.only(bottom: 3),
-                  child: Text(
-                    remaining == 0
-                        ? 'All items packed'
-                        : '$remaining item'
-                              '${remaining == 1 ? '' : 's'} remaining',
-                    style: TextStyle(
-                      color: remaining == 0
-                          ? AppColors.success
-                          : AppColors.secondaryText,
-                      fontSize: 12.5,
-                      fontWeight: FontWeight.w700,
-                    ),
-                  ),
-                ),
-              ),
-            ],
-          ),
-
-          const SizedBox(height: 18),
-
-          // -----------------------------------------------------
-          // ANIMATED PROGRESS BAR
-          // -----------------------------------------------------
-          TweenAnimationBuilder<double>(
-            tween: Tween<double>(begin: 0, end: progress),
-            duration: reduceMotion
-                ? Duration.zero
-                : const Duration(milliseconds: 450),
-            curve: Curves.easeOutCubic,
-            builder: (context, animatedProgress, child) {
-              return ClipRRect(
-                borderRadius: BorderRadius.circular(20),
-                child: LinearProgressIndicator(
-                  value: animatedProgress,
-                  minHeight: 10,
-                  backgroundColor: const Color(0xFFE5EEF0),
-                  color: AppColors.primary,
-                ),
-              );
-            },
-          ),
-
-          const SizedBox(height: 12),
-
-          // -----------------------------------------------------
-          // PACKED AND TOTAL COUNTS
-          // -----------------------------------------------------
-          Row(
-            children: [
-              const Icon(
-                Icons.check_circle_outline_rounded,
+    return Card(
+      margin: EdgeInsets.zero,
+      child: Padding(
+        padding: const EdgeInsets.all(18),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Text(
+              'Packing progress',
+              style: Theme.of(context).textTheme.titleMedium,
+            ),
+            const SizedBox(height: 10),
+            Text(
+              _packingItems.isEmpty ? 'No items yet' : '$_packingPercentage%',
+              style: const TextStyle(
+                fontSize: 30,
+                fontWeight: FontWeight.w800,
                 color: AppColors.primary,
-                size: 17,
               ),
-
-              const SizedBox(width: 7),
-
-              Expanded(
-                child: Text(
-                  '$packed packed',
-                  style: const TextStyle(
-                    color: AppColors.secondaryText,
-                    fontSize: 12,
-                    fontWeight: FontWeight.w600,
-                  ),
-                ),
-              ),
-
-              Text(
-                '$total total',
-                style: const TextStyle(
-                  color: AppColors.secondaryText,
-                  fontSize: 12,
+            ),
+            const SizedBox(height: 6),
+            Text(
+              '$_packedCount of ${_packingItems.length} items packed · $_remainingCount remaining',
+            ),
+            if (_packingItems.isNotEmpty) ...[
+              const SizedBox(height: 14),
+              TweenAnimationBuilder<double>(
+                tween: Tween(begin: 0, end: _packingProgress),
+                duration: reduceMotion
+                    ? Duration.zero
+                    : const Duration(milliseconds: 350),
+                builder: (context, value, child) => LinearProgressIndicator(
+                  value: value,
+                  minHeight: 8,
+                  borderRadius: BorderRadius.circular(10),
+                  backgroundColor: AppColors.primaryLight,
+                  semanticsLabel: 'Packing completion',
                 ),
               ),
             ],
-          ),
-        ],
+            const SizedBox(height: 12),
+            const Text(
+              'Packing progress is separate from Travel Readiness.',
+              style: TextStyle(fontSize: 12),
+            ),
+          ],
+        ),
       ),
     );
   }
 
-  Widget _buildRecommendationCard() {
-    final bool alreadyGenerated = _hasAiGeneratedItems;
-    final bool reduceMotion = MediaQuery.disableAnimationsOf(context);
-
-    return Container(
-      width: double.infinity,
+  Widget _buildRecommendationCard() => Card(
+    margin: EdgeInsets.zero,
+    child: Padding(
       padding: const EdgeInsets.all(18),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(20),
-        border: Border.all(color: AppColors.border),
-        boxShadow: const [
-          BoxShadow(
-            color: Color(0x08000000),
-            blurRadius: 12,
-            offset: Offset(0, 4),
-          ),
-        ],
-      ),
       child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          // -----------------------------------------------------
-          // RECOMMENDATION HEADER
-          // -----------------------------------------------------
           Row(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Container(
-                width: 46,
-                height: 46,
-                decoration: BoxDecoration(
-                  color: AppColors.primaryLight,
-                  borderRadius: BorderRadius.circular(14),
-                ),
-                child: Icon(
-                  alreadyGenerated
-                      ? Icons.check_circle_outline_rounded
-                      : Icons.auto_awesome_outlined,
-                  color: AppColors.primary,
-                  size: 24,
-                ),
+              const Icon(
+                Icons.auto_awesome_outlined,
+                color: AppColors.primary,
+                size: 24,
               ),
-
-              const SizedBox(width: 13),
-
-              const Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      'Contextual Packing Recommendations',
-                      style: TextStyle(
-                        color: AppColors.navy,
-                        fontSize: 16,
-                        fontWeight: FontWeight.w800,
-                        height: 1.35,
-                      ),
-                    ),
-
-                    SizedBox(height: 6),
-
-                    Text(
-                      'AI-assisted suggestions tailored to your trip.',
-                      style: TextStyle(
-                        color: AppColors.secondaryText,
-                        fontSize: 12.5,
-                        height: 1.45,
-                      ),
-                    ),
-                  ],
+              const SizedBox(width: 10),
+              Expanded(
+                child: Text(
+                  'AI packing suggestions',
+                  style: Theme.of(context).textTheme.titleMedium,
                 ),
               ),
             ],
           ),
-
-          const SizedBox(height: 18),
-
-          const Divider(height: 1, color: AppColors.border),
-
-          const SizedBox(height: 16),
-
-          // -----------------------------------------------------
-          // PERSONALISATION INFORMATION
-          // -----------------------------------------------------
+          const SizedBox(height: 8),
           const Text(
-            'BASED ON YOUR TRIP',
-            style: TextStyle(
-              color: AppColors.secondaryText,
-              fontSize: 10,
-              fontWeight: FontWeight.w800,
-              letterSpacing: 1,
-            ),
+            'Optional suggestions based on your destination, purpose and travel dates.',
           ),
-
-          const SizedBox(height: 11),
-
-          Wrap(
-            spacing: 8,
-            runSpacing: 8,
-            children: const [
-              _RecommendationChip(
-                icon: Icons.location_on_outlined,
-                title: 'Destination',
+          const SizedBox(height: 14),
+          if (_isGeneratingAi) ...[
+            const LinearProgressIndicator(),
+            const SizedBox(height: 10),
+            const Text('Preparing your suggestions...'),
+          ] else if (_hasAiGeneratedItems)
+            const Text(
+              'Recommendations added. Review the items and quantities below.',
+              style: TextStyle(
+                color: AppColors.success,
+                fontWeight: FontWeight.w700,
               ),
-              _RecommendationChip(
-                icon: Icons.explore_outlined,
-                title: 'Purpose',
+            )
+          else
+            FilledButton.icon(
+              onPressed: _updatingItems.isNotEmpty
+                  ? null
+                  : _generateAiPackingList,
+              icon: const Icon(Icons.auto_awesome_outlined),
+              label: const Text(
+                'Generate Suggestions',
+                textAlign: TextAlign.center,
               ),
-              _RecommendationChip(
-                icon: Icons.schedule_outlined,
-                title: 'Duration',
-              ),
-              _RecommendationChip(
-                icon: Icons.calendar_month_outlined,
-                title: 'Departure',
-              ),
-            ],
-          ),
-
-          const SizedBox(height: 19),
-
-          // -----------------------------------------------------
-          // ANIMATED GENERATION STATUS
-          // -----------------------------------------------------
-          AnimatedSwitcher(
-            duration: reduceMotion
-                ? Duration.zero
-                : const Duration(milliseconds: 250),
-            switchInCurve: Curves.easeOutCubic,
-            switchOutCurve: Curves.easeInCubic,
-            child: _isGeneratingAi
-                ? Container(
-                    key: const ValueKey('generating'),
-                    width: double.infinity,
-                    padding: const EdgeInsets.all(15),
-                    decoration: BoxDecoration(
-                      color: AppColors.primaryLight,
-                      borderRadius: BorderRadius.circular(13),
-                    ),
-                    child: const Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          'Preparing your suggestions...',
-                          style: TextStyle(
-                            color: AppColors.navy,
-                            fontSize: 13,
-                            fontWeight: FontWeight.w700,
-                          ),
-                        ),
-
-                        SizedBox(height: 7),
-
-                        Text(
-                          'Generating items based on your trip. '
-                          'This may take a moment.',
-                          style: TextStyle(
-                            color: AppColors.secondaryText,
-                            fontSize: 12,
-                            height: 1.45,
-                          ),
-                        ),
-
-                        SizedBox(height: 13),
-
-                        ClipRRect(
-                          borderRadius: BorderRadius.all(Radius.circular(20)),
-                          child: LinearProgressIndicator(
-                            minHeight: 5,
-                            color: AppColors.primary,
-                          ),
-                        ),
-                      ],
-                    ),
-                  )
-                : alreadyGenerated
-                ? Container(
-                    key: const ValueKey('generated'),
-                    width: double.infinity,
-                    padding: const EdgeInsets.all(14),
-                    decoration: BoxDecoration(
-                      color: const Color(0xFFEAF7F1),
-                      borderRadius: BorderRadius.circular(13),
-                    ),
-                    child: const Row(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Icon(
-                          Icons.check_circle_outline_rounded,
-                          color: AppColors.success,
-                          size: 21,
-                        ),
-
-                        SizedBox(width: 10),
-
-                        Expanded(
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Text(
-                                'Recommendations Added',
-                                style: TextStyle(
-                                  color: AppColors.success,
-                                  fontSize: 13,
-                                  fontWeight: FontWeight.w800,
-                                ),
-                              ),
-
-                              SizedBox(height: 5),
-
-                              Text(
-                                'Your AI suggestions are available '
-                                'in the packing list below. '
-                                'Review the items and quantities.',
-                                style: TextStyle(
-                                  color: AppColors.secondaryText,
-                                  fontSize: 12,
-                                  height: 1.45,
-                                ),
-                              ),
-                            ],
-                          ),
-                        ),
-                      ],
-                    ),
-                  )
-                : SizedBox(
-                    key: const ValueKey('ready'),
-                    width: double.infinity,
-                    child: FilledButton.icon(
-                      onPressed: _generateAiPackingList,
-                      icon: const Icon(Icons.auto_awesome_outlined, size: 19),
-                      label: const Text('Generate Suggestions'),
-                    ),
-                  ),
-          ),
-
-          const SizedBox(height: 17),
-
-          // -----------------------------------------------------
-          // INFORMATION NOTE
-          // -----------------------------------------------------
-          Container(
-            width: double.infinity,
-            padding: const EdgeInsets.all(12),
-            decoration: BoxDecoration(
-              color: AppColors.background,
-              borderRadius: BorderRadius.circular(12),
             ),
-            child: const Row(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Icon(
-                  Icons.info_outline_rounded,
-                  color: AppColors.primary,
-                  size: 18,
-                ),
-
-                SizedBox(width: 9),
-
-                Expanded(
-                  child: Text(
-                    'AI-generated packing suggestions are '
-                    'optional and should be reviewed. '
-                    'They do not replace official travel requirements.',
-                    style: TextStyle(
-                      color: AppColors.secondaryText,
-                      fontSize: 11.5,
-                      height: 1.5,
-                    ),
-                  ),
-                ),
-              ],
-            ),
+          const SizedBox(height: 12),
+          const Text(
+            'Review AI suggestions before using them. '
+            'They do not replace official travel requirements.',
+            style: TextStyle(fontSize: 12),
           ),
         ],
       ),
-    );
-  }
+    ),
+  );
 
   Widget _buildCategoryHeader(String category) {
-    final List<PackingItem> categoryItems = _packingItems
+    final items = _packingItems
         .where((item) => item.category == category)
         .toList();
+    final packed = items.where((item) => item.packed).length;
 
-    final int total = categoryItems.length;
-
-    final int packed = categoryItems.where((item) => item.packed).length;
-
-    final bool allPacked = total > 0 && packed == total;
-
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 4),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.center,
-        children: [
-          // ---------------------------------------------------
-          // CATEGORY ICON
-          // ---------------------------------------------------
-          Container(
-            width: 42,
-            height: 42,
-            decoration: BoxDecoration(
-              color: AppColors.primaryLight,
-              borderRadius: BorderRadius.circular(13),
-            ),
-            child: Icon(
-              _categoryIcon(category),
-              size: 22,
-              color: AppColors.primary,
-            ),
+    return Row(
+      children: [
+        Icon(_categoryIcon(category), color: AppColors.primary, size: 22),
+        const SizedBox(width: 10),
+        Expanded(
+          child: Text(
+            _categoryLabel(category),
+            style: Theme.of(context).textTheme.titleMedium,
           ),
-
-          const SizedBox(width: 12),
-
-          // ---------------------------------------------------
-          // CATEGORY NAME AND COMPLETION STATUS
-          // ---------------------------------------------------
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  _categoryLabel(category),
-                  style: const TextStyle(
-                    color: AppColors.navy,
-                    fontSize: 16,
-                    fontWeight: FontWeight.w800,
-                  ),
-                ),
-
-                const SizedBox(height: 4),
-
-                Text(
-                  allPacked ? 'All items packed' : '$packed of $total packed',
-                  style: TextStyle(
-                    color: allPacked
-                        ? AppColors.success
-                        : AppColors.secondaryText,
-                    fontSize: 12,
-                    fontWeight: FontWeight.w600,
-                  ),
-                ),
-              ],
-            ),
-          ),
-
-          const SizedBox(width: 8),
-
-          // ---------------------------------------------------
-          // CATEGORY ITEM COUNT
-          // ---------------------------------------------------
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 11, vertical: 7),
-            decoration: BoxDecoration(
-              color: allPacked
-                  ? const Color(0xFFEAF7F1)
-                  : AppColors.primaryLight,
-              borderRadius: BorderRadius.circular(20),
-            ),
-            child: Text(
-              '$packed/$total',
-              style: TextStyle(
-                color: allPacked ? AppColors.success : AppColors.primary,
-                fontSize: 12,
-                fontWeight: FontWeight.w800,
-              ),
-            ),
-          ),
-        ],
-      ),
+        ),
+        const SizedBox(width: 8),
+        Text(
+          '$packed/${items.length}',
+          style: const TextStyle(color: AppColors.secondaryText),
+        ),
+      ],
     );
   }
 
   Widget _buildPackingItemCard(PackingItem item) {
-    final bool isUpdating = _updatingItems.contains(item.id);
-    final bool isRecommendation = item.source == 'ai';
-    final bool isPacked = item.packed;
+    final busy = _isGeneratingAi || _updatingItems.contains(item.id);
 
-    final bool reduceMotion = MediaQuery.disableAnimationsOf(context);
-
-    return AnimatedContainer(
-      duration: reduceMotion
-          ? Duration.zero
-          : const Duration(milliseconds: 200),
-      curve: Curves.easeOutCubic,
+    return Card(
       margin: const EdgeInsets.only(bottom: 10),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(
-          color: isPacked ? const Color(0xFFB9E2D0) : AppColors.border,
-          width: isPacked ? 1.3 : 1,
-        ),
-      ),
       child: Padding(
-        padding: const EdgeInsets.fromLTRB(9, 12, 6, 12),
-        child: Row(
-          crossAxisAlignment: CrossAxisAlignment.center,
+        padding: const EdgeInsets.fromLTRB(4, 10, 4, 14),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            // -------------------------------------------------
-            // PACKED CHECKBOX
-            // -------------------------------------------------
-            SizedBox(
-              width: 46,
-              height: 48,
-              child: Checkbox(
-                value: isPacked,
-                activeColor: AppColors.primary,
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(6),
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Semantics(
+                  label: 'Packed: ${item.name}',
+                  child: Checkbox(
+                    value: item.packed,
+                    onChanged: busy
+                        ? null
+                        : (value) {
+                            if (value != null) _updatePackedStatus(item, value);
+                          },
+                  ),
                 ),
-                onChanged: isUpdating
-                    ? null
-                    : (bool? value) {
-                        if (value == null) return;
-
-                        _updatePackedStatus(item, value);
-                      },
-              ),
-            ),
-
-            const SizedBox(width: 8),
-
-            // -------------------------------------------------
-            // ITEM DETAILS
-            // -------------------------------------------------
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    item.name,
-                    style: TextStyle(
-                      color: isPacked
-                          ? AppColors.secondaryText
-                          : AppColors.navy,
-                      fontSize: 14.5,
-                      fontWeight: FontWeight.w700,
-                      height: 1.4,
-                      decoration: isPacked
-                          ? TextDecoration.lineThrough
-                          : TextDecoration.none,
-                      decorationColor: AppColors.secondaryText,
+                Expanded(
+                  child: Padding(
+                    padding: const EdgeInsets.only(top: 12),
+                    child: Text(
+                      item.name,
+                      style: TextStyle(
+                        color: item.packed
+                            ? AppColors.secondaryText
+                            : AppColors.navy,
+                        fontWeight: FontWeight.w700,
+                        decoration: item.packed
+                            ? TextDecoration.lineThrough
+                            : null,
+                      ),
                     ),
                   ),
-
-                  const SizedBox(height: 9),
-
-                  // Badges automatically wrap on narrow phones.
-                  Wrap(
-                    spacing: 7,
-                    runSpacing: 7,
-                    children: [
-                      _buildPackingItemBadge(
-                        label: 'Qty ${item.quantity}',
-                        icon: Icons.inventory_2_outlined,
-                        backgroundColor: const Color(0xFFF0F4F6),
-                        foregroundColor: AppColors.secondaryText,
-                      ),
-
-                      _buildPackingItemBadge(
-                        label: isRecommendation ? 'AI Suggested' : 'Manual',
-                        icon: isRecommendation
-                            ? Icons.auto_awesome_outlined
-                            : Icons.edit_note_rounded,
-                        backgroundColor: isRecommendation
-                            ? AppColors.primaryLight
-                            : const Color(0xFFF4F1FA),
-                        foregroundColor: isRecommendation
-                            ? AppColors.primary
-                            : const Color(0xFF654C87),
+                ),
+                if (_updatingItems.contains(item.id))
+                  const Padding(
+                    padding: EdgeInsets.all(14),
+                    child: SizedBox(
+                      width: 20,
+                      height: 20,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    ),
+                  )
+                else
+                  PopupMenuButton<String>(
+                    tooltip: 'Item options',
+                    enabled: !busy,
+                    onSelected: (value) {
+                      if (value == 'edit') _showEditItemDialog(item);
+                      if (value == 'delete') _confirmDelete(item);
+                    },
+                    itemBuilder: (context) => const [
+                      PopupMenuItem(value: 'edit', child: Text('Edit Item')),
+                      PopupMenuItem(
+                        value: 'delete',
+                        child: Text(
+                          'Delete Item',
+                          style: TextStyle(color: AppColors.danger),
+                        ),
                       ),
                     ],
+                  ),
+              ],
+            ),
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 14),
+              child: Wrap(
+                spacing: 8,
+                runSpacing: 6,
+                children: [
+                  _packingBadge('Qty ${item.quantity}'),
+                  _packingBadge(
+                    item.source == 'ai' ? 'AI Suggested' : 'Manual',
                   ),
                 ],
               ),
             ),
-
-            // -------------------------------------------------
-            // ITEM ACTIONS
-            // -------------------------------------------------
-            if (isUpdating)
-              const Padding(
-                padding: EdgeInsets.all(12),
-                child: SizedBox(
-                  width: 20,
-                  height: 20,
-                  child: CircularProgressIndicator(
-                    strokeWidth: 2,
-                    color: AppColors.primary,
-                  ),
-                ),
-              )
-            else
-              PopupMenuButton<String>(
-                tooltip: 'Item options',
-                icon: const Icon(
-                  Icons.more_vert_rounded,
-                  color: AppColors.secondaryText,
-                ),
-                onSelected: (value) {
-                  if (value == 'edit') {
-                    _showEditItemDialog(item);
-                  } else if (value == 'delete') {
-                    _confirmDelete(item);
-                  }
-                },
-                itemBuilder: (context) {
-                  return const [
-                    PopupMenuItem<String>(
-                      value: 'edit',
-                      child: Row(
-                        children: [
-                          Icon(
-                            Icons.edit_outlined,
-                            color: AppColors.primary,
-                            size: 20,
-                          ),
-                          SizedBox(width: 12),
-                          Text('Edit Item'),
-                        ],
-                      ),
-                    ),
-
-                    PopupMenuItem<String>(
-                      value: 'delete',
-                      child: Row(
-                        children: [
-                          Icon(
-                            Icons.delete_outline_rounded,
-                            color: AppColors.danger,
-                            size: 20,
-                          ),
-                          SizedBox(width: 12),
-                          Text(
-                            'Delete Item',
-                            style: TextStyle(color: AppColors.danger),
-                          ),
-                        ],
-                      ),
-                    ),
-                  ];
-                },
-              ),
           ],
         ),
       ),
     );
   }
 
-  Widget _buildPackingItemBadge({
-    required String label,
-    required IconData icon,
-    required Color backgroundColor,
-    required Color foregroundColor,
-  }) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 6),
-      decoration: BoxDecoration(
-        color: backgroundColor,
-        borderRadius: BorderRadius.circular(9),
-      ),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Icon(icon, size: 13, color: foregroundColor),
-
-          const SizedBox(width: 5),
-
-          Text(
-            label,
-            style: TextStyle(
-              color: foregroundColor,
-              fontSize: 10.5,
-              fontWeight: FontWeight.w700,
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-class _RecommendationChip extends StatelessWidget {
-  final IconData icon;
-  final String title;
-
-  const _RecommendationChip({required this.icon, required this.title});
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
-      decoration: BoxDecoration(
-        color: AppColors.primaryLight,
-        borderRadius: BorderRadius.circular(10),
-      ),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Icon(icon, color: AppColors.primary, size: 16),
-          const SizedBox(width: 6),
-          Text(
-            title,
-            style: const TextStyle(
-              color: AppColors.primary,
-              fontSize: 11.5,
-              fontWeight: FontWeight.w700,
-            ),
-          ),
-        ],
-      ),
-    );
-  }
+  Widget _packingBadge(String label) => Container(
+    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+    decoration: BoxDecoration(
+      color: AppColors.primaryLight,
+      borderRadius: BorderRadius.circular(10),
+    ),
+    child: Text(
+      label,
+      style: const TextStyle(fontSize: 12, color: AppColors.primary),
+    ),
+  );
 }

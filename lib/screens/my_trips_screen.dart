@@ -4,7 +4,9 @@ import 'package:flutter/material.dart';
 import '../models/trip.dart';
 import '../services/trip_service.dart';
 import 'trip_details_screen.dart';
+import 'add_trip_screen.dart';
 import '../theme/app_theme.dart';
+import '../widgets/traveller_ui_widgets.dart';
 import '../widgets/destination_photo.dart';
 
 class MyTripsScreen extends StatefulWidget {
@@ -73,7 +75,20 @@ class _MyTripsScreenState extends State<MyTripsScreen> {
       _tripsFuture = refreshedTrips;
     });
 
-    await refreshedTrips;
+    try {
+      await refreshedTrips;
+    } catch (error) {
+      debugPrint('TRIPS REFRESH ERROR: $error');
+    }
+  }
+
+  // Open trip creation from the empty state and refresh on return.
+  Future<void> _createTrip() async {
+    await Navigator.push(
+      context,
+      MaterialPageRoute(builder: (context) => const AddTripScreen()),
+    );
+    if (mounted) await _refreshTrips();
   }
 
   Future<void> _openTrip(Trip trip) async {
@@ -373,91 +388,43 @@ class _MyTripsScreenState extends State<MyTripsScreen> {
   // ERROR STATE
   // ---------------------------------------------------------------------------
 
-  Widget _buildErrorState() {
-    return RefreshIndicator(
-      onRefresh: _refreshTrips,
-      child: ListView(
-        physics: const AlwaysScrollableScrollPhysics(),
-        padding: const EdgeInsets.symmetric(horizontal: 24),
-        children: const [
-          SizedBox(height: 140),
-          Icon(Icons.cloud_off_outlined, size: 58, color: Colors.black38),
-          SizedBox(height: 18),
-          Text(
-            'Unable to load trips',
-            textAlign: TextAlign.center,
-            style: TextStyle(
-              fontSize: 20,
-              fontWeight: FontWeight.w700,
-              color: _darkTextColor,
-            ),
-          ),
-          SizedBox(height: 8),
-          Text(
-            'Pull down to try again.',
-            textAlign: TextAlign.center,
-            style: TextStyle(color: Colors.black54),
-          ),
-        ],
-      ),
-    );
-  }
+  Widget _buildErrorState() => RefreshIndicator(
+    onRefresh: _refreshTrips,
+    child: ListView(
+      physics: const AlwaysScrollableScrollPhysics(),
+      padding: const EdgeInsets.fromLTRB(18, 32, 18, 32),
+      children: [
+        TravellerStatusCard(
+          icon: Icons.cloud_off_outlined,
+          title: 'Unable to load trips',
+          message: 'Check your connection and try again.',
+          actionText: 'Retry',
+          onAction: _refreshTrips,
+        ),
+      ],
+    ),
+  );
 
-  // ---------------------------------------------------------------------------
-  // EMPTY STATE
-  // ---------------------------------------------------------------------------
+  Widget _buildEmptyState() => RefreshIndicator(
+    onRefresh: _refreshTrips,
+    child: ListView(
+      physics: const AlwaysScrollableScrollPhysics(),
+      padding: const EdgeInsets.fromLTRB(18, 32, 18, 32),
+      children: [
+        TravellerStatusCard(
+          icon: Icons.luggage_outlined,
+          title: 'No trips yet',
+          message:
+              'Create a trip to organise your requirements, packing, route plan and reminders.',
+          actionText: 'Create a trip',
+          onAction: _createTrip,
+        ),
+      ],
+    ),
+  );
 
-  Widget _buildEmptyState() {
-    return RefreshIndicator(
-      onRefresh: _refreshTrips,
-      child: ListView(
-        physics: const AlwaysScrollableScrollPhysics(),
-        padding: const EdgeInsets.symmetric(horizontal: 24),
-        children: [
-          const SizedBox(height: 110),
-          Center(
-            child: Container(
-              width: 82,
-              height: 82,
-              decoration: BoxDecoration(
-                color: AppColors.primaryLight,
-                borderRadius: BorderRadius.circular(24),
-              ),
-              child: const Icon(
-                Icons.luggage_outlined,
-                size: 40,
-                color: _primaryColor,
-              ),
-            ),
-          ),
-          const SizedBox(height: 22),
-          const Text(
-            'No trips yet',
-            textAlign: TextAlign.center,
-            style: TextStyle(
-              fontSize: 21,
-              fontWeight: FontWeight.w800,
-              color: _darkTextColor,
-            ),
-          ),
-          const SizedBox(height: 8),
-          const Text(
-            'Create your first trip from Home '
-            'to generate personalised travel '
-            'requirements and a packing list.',
-            textAlign: TextAlign.center,
-            style: TextStyle(color: Colors.black54, height: 1.5),
-          ),
-        ],
-      ),
-    );
-  }
+  // Indicate the current trip filter without relying on colour alone.
 
-  // ---------------------------------------------------------------------------
-  // FILTERS
-  // ---------------------------------------------------------------------------
-
-  // Display one accessible filter and indicate the current selection.
   Widget _buildFilterChip({required String value, required String label}) {
     final selected = _selectedFilter == value;
 

@@ -17,13 +17,13 @@ class ChecklistScreen extends StatefulWidget {
 class _ChecklistScreenState extends State<ChecklistScreen> {
   final TripService _tripService = TripService();
 
-  static const Color _primaryColor = Color(0xFF087F8C);
+  static const Color _primaryColor = AppColors.primary;
 
-  static const Color _darkTextColor = Color(0xFF102A43);
+  static const Color _darkTextColor = AppColors.navy;
 
-  static const Color _backgroundColor = Color(0xFFF7F9FB);
+  static const Color _backgroundColor = AppColors.background;
 
-  static const Color _borderColor = Color(0xFFE1E7EC);
+  static const Color _borderColor = AppColors.border;
 
   List<ChecklistItem> _checklistItems = [];
 
@@ -582,9 +582,9 @@ class _ChecklistScreenState extends State<ChecklistScreen> {
       width: double.infinity,
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
-        color: const Color(0xFFF1F6FA),
+        color: AppColors.primaryLight,
         borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: const Color(0xFFD8E6EE)),
+        border: Border.all(color: AppColors.border),
       ),
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -896,7 +896,7 @@ class _ChecklistScreenState extends State<ChecklistScreen> {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 5),
       decoration: BoxDecoration(
-        color: const Color(0xFFE8F6F7),
+        color: AppColors.primaryLight,
         borderRadius: BorderRadius.circular(20),
       ),
       child: Text(
