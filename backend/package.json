@@ -3,7 +3,7 @@
   "version": "1.0.0",
   "main": "index.js",
   "scripts": {
-    "test": "node --test travel_routes.test.mjs"
+    "test": "node --test firebase_auth.test.mjs travel_routes.test.mjs"
   },
   "keywords": [],
   "author": "",

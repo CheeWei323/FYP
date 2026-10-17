@@ -1,7 +1,6 @@
 import { Router } from "express";
 import { rateLimit } from "express-rate-limit";
-import { getApps, initializeApp } from "firebase-admin/app";
-import { getAuth } from "firebase-admin/auth";
+import { createFirebaseAuth } from "./firebase_auth.mjs";
 
 // -----------------------------------------------------------------------------
 // INPUT VALIDATION
@@ -83,22 +82,6 @@ export function createTravelRouter({
   verifyToken,
 } = {}) {
   const router = Router();
-  let firebaseAuth;
-
-  // Verify Firebase signatures and claims for the app's Firebase project.
-  const verify =
-    verifyToken ??
-    ((token) => {
-      const name = "travelguard-routing";
-
-      const firebaseApp =
-        getApps().find((item) => item.name === name) ??
-        initializeApp({ projectId }, name);
-
-      firebaseAuth ??= getAuth(firebaseApp);
-
-      return firebaseAuth.verifyIdToken(token);
-    });
 
   // Prevent browsers and proxies from caching travel queries and results.
   router.use((req, res, next) => {
@@ -126,41 +109,23 @@ export function createTravelRouter({
     }),
   );
 
-  // Require a signed-in Firebase user before any Google request.
-  router.use(async (req, res, next) => {
+  // Check route configuration before authenticating protected requests.
+  router.use((req, res, next) => {
     if (!apiKey || !projectId) {
-      throw apiError(503, "Route planning is not configured yet.");
+      return next(apiError(503, "Route planning is not configured yet."));
     }
 
-    const match = /^Bearer ([^\s]{1,8192})$/i.exec(
-      req.get("Authorization") ?? "",
-    );
-
-    if (!match) {
-      throw apiError(401, "Please sign in to use route planning.");
-    }
-
-    try {
-      const decoded = await verify(match[1]);
-
-      if (!decoded.uid) {
-        throw new Error("Missing Firebase user.");
-      }
-
-      req.travellerUid = decoded.uid;
-    } catch (error) {
-      if (error.code === "auth/internal-error") {
-        throw apiError(503, "Sign-in verification is temporarily unavailable.");
-      }
-
-      throw apiError(
-        401,
-        "Your session is invalid or expired. Please sign in again.",
-      );
-    }
-
-    next();
+    return next();
   });
+
+  // Reuse the same Firebase token verification as packing generation.
+  router.use(
+    createFirebaseAuth({
+      projectId,
+      verifyToken,
+      signInMessage: "Please sign in to use route planning.",
+    }),
+  );
 
   // Share the allowance across a user's devices and network addresses.
   router.use(

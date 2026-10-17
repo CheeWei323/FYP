@@ -433,6 +433,11 @@ class _PackingScreenState extends State<PackingScreen> {
 
       if (!mounted) return;
 
+      // Keep sign-in failures distinct from network and Gemini errors.
+      final String? authenticationMessage = e is PackingAuthenticationException
+          ? e.message
+          : null;
+
       final String errorText = e.toString().toLowerCase();
 
       final bool isTemporaryGeminiError =
@@ -443,13 +448,15 @@ class _PackingScreenState extends State<PackingScreen> {
 
       await _showPackingFeedback(
         title: 'Unable to Generate Suggestions',
-        message: isTemporaryGeminiError
-            ? 'The packing recommendation service is '
-                  'temporarily busy. Please wait a moment '
-                  'and try again.'
-            : 'Packing suggestions could not be generated. '
-                  'Please check your internet connection '
-                  'and try again.',
+        message:
+            authenticationMessage ??
+            (isTemporaryGeminiError
+                ? 'The packing recommendation service is '
+                      'temporarily busy. Please wait a moment '
+                      'and try again.'
+                : 'Packing suggestions could not be generated. '
+                      'Please check your internet connection '
+                      'and try again.'),
         icon: Icons.error_outline_rounded,
         iconColor: AppColors.danger,
       );
