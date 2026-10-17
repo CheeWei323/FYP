@@ -32,24 +32,44 @@ class TravelRule {
     required this.officialUrl,
     required this.sourceName,
     required this.active,
-    this.reviewStatus = 'approved',
+    required this.reviewStatus,
     required this.priority,
     this.lastValidatedAt,
   });
 
-  // Converts a Firestore rule document into a TravelRule object.
+  // ---------------------------------------------------------------------------
+  // PUBLICATION ELIGIBILITY
+  // ---------------------------------------------------------------------------
+  // Only explicitly active and approved rules may generate new requirements.
+  bool get isPublished => active && reviewStatus == 'approved';
+
+  // ---------------------------------------------------------------------------
+  // FIRESTORE CONVERSION
+  // ---------------------------------------------------------------------------
+  // Use one parser for Firestore documents and controlled test records.
   factory TravelRule.fromFirestore(
     DocumentSnapshot<Map<String, dynamic>> document,
   ) {
-    final Map<String, dynamic> data = document.data() ?? {};
+    return TravelRule.fromMap(id: document.id, data: document.data() ?? {});
+  }
 
-    final bool active = data['active'] as bool? ?? true;
+  // Keep incomplete or inconsistent publication records unavailable for use.
+  factory TravelRule.fromMap({
+    required String id,
+    required Map<String, dynamic> data,
+  }) {
+    final bool published =
+        data['active'] == true && data['reviewStatus'] == 'approved';
 
-    final String reviewStatus =
-        data['reviewStatus'] as String? ?? (active ? 'approved' : 'disabled');
+    // Missing approval requires review; an explicit disabled status stays disabled.
+    final String reviewStatus = published
+        ? 'approved'
+        : data['reviewStatus'] == 'disabled'
+        ? 'disabled'
+        : 'pendingReview';
 
     return TravelRule(
-      id: document.id,
+      id: id,
       countryId: data['countryId'] as String? ?? '',
       category: data['category'] as String? ?? '',
       title: data['title'] as String? ?? '',
@@ -61,7 +81,7 @@ class TravelRule {
       mandatory: data['mandatory'] as bool? ?? true,
       officialUrl: data['officialUrl'] as String? ?? '',
       sourceName: data['sourceName'] as String? ?? '',
-      active: active,
+      active: published,
       reviewStatus: reviewStatus,
       priority: (data['priority'] as num?)?.toInt() ?? 0,
       lastValidatedAt: (data['lastValidatedAt'] as Timestamp?)?.toDate(),
