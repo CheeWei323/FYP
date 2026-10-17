@@ -7,8 +7,7 @@ class CountryService {
 
   // Retrieves destination countries that are currently enabled in the system.
   Future<List<Country>> getEnabledCountries() async {
-    final QuerySnapshot<Map<String, dynamic>> snapshot =
-    await _firestore
+    final QuerySnapshot<Map<String, dynamic>> snapshot = await _firestore
         .collection('countries')
         .where('enabled', isEqualTo: true)
         .get();
@@ -18,9 +17,7 @@ class CountryService {
         .toList();
 
     // Keep destination names in alphabetical order for the traveller.
-    countries.sort(
-          (a, b) => a.name.compareTo(b.name),
-    );
+    countries.sort((a, b) => a.name.compareTo(b.name));
 
     return countries;
   }

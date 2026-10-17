@@ -17,37 +17,29 @@ class PackingService {
 
   // Retrieves all saved packing items belonging to a trip.
   Future<List<PackingItem>> getPackingItems(String tripId) async {
-    final QuerySnapshot<Map<String, dynamic>> snapshot =
-    await _firestore
+    final QuerySnapshot<Map<String, dynamic>> snapshot = await _firestore
         .collection('trips')
         .doc(tripId)
         .collection('packingItems')
         .get();
 
     final List<PackingItem> items = snapshot.docs
-        .map(
-          (document) => PackingItem.fromFirestore(document),
-    )
+        .map((document) => PackingItem.fromFirestore(document))
         .toList();
 
     // Groups items by category and then alphabetically by name.
     items.sort((a, b) {
-      final int categoryA =
-          _categoryOrder[a.category] ?? 99;
+      final int categoryA = _categoryOrder[a.category] ?? 99;
 
-      final int categoryB =
-          _categoryOrder[b.category] ?? 99;
+      final int categoryB = _categoryOrder[b.category] ?? 99;
 
-      final int categoryComparison =
-      categoryA.compareTo(categoryB);
+      final int categoryComparison = categoryA.compareTo(categoryB);
 
       if (categoryComparison != 0) {
         return categoryComparison;
       }
 
-      return a.name.toLowerCase().compareTo(
-        b.name.toLowerCase(),
-      );
+      return a.name.toLowerCase().compareTo(b.name.toLowerCase());
     });
 
     return items;
@@ -60,8 +52,7 @@ class PackingService {
     required String category,
     required int quantity,
   }) async {
-    final DocumentReference<Map<String, dynamic>> itemReference =
-    _firestore
+    final DocumentReference<Map<String, dynamic>> itemReference = _firestore
         .collection('trips')
         .doc(tripId)
         .collection('packingItems')
@@ -76,9 +67,7 @@ class PackingService {
       source: 'user',
     );
 
-    await itemReference.set(
-      item.toMap(),
-    );
+    await itemReference.set(item.toMap());
 
     return itemReference.id;
   }
@@ -88,17 +77,14 @@ class PackingService {
     required String tripId,
     required List<PackingItem> items,
   }) async {
-    final CollectionReference<Map<String, dynamic>>
-    packingCollection = _firestore
-        .collection('trips')
-        .doc(tripId)
-        .collection('packingItems');
+    final CollectionReference<Map<String, dynamic>> packingCollection =
+        _firestore.collection('trips').doc(tripId).collection('packingItems');
 
     final WriteBatch batch = _firestore.batch();
 
     for (final PackingItem item in items) {
-      final DocumentReference<Map<String, dynamic>>
-      itemReference = packingCollection.doc();
+      final DocumentReference<Map<String, dynamic>> itemReference =
+          packingCollection.doc();
 
       final PackingItem generatedItem = PackingItem(
         id: itemReference.id,
@@ -109,10 +95,7 @@ class PackingService {
         source: 'ai',
       );
 
-      batch.set(
-        itemReference,
-        generatedItem.toMap(),
-      );
+      batch.set(itemReference, generatedItem.toMap());
     }
 
     await batch.commit();
@@ -132,11 +115,11 @@ class PackingService {
         .collection('packingItems')
         .doc(itemId)
         .update({
-      'name': name.trim(),
-      'category': category,
-      'quantity': quantity,
-      'updatedAt': FieldValue.serverTimestamp(),
-    });
+          'name': name.trim(),
+          'category': category,
+          'quantity': quantity,
+          'updatedAt': FieldValue.serverTimestamp(),
+        });
   }
 
   // Updates whether an item has already been packed.
@@ -150,10 +133,7 @@ class PackingService {
         .doc(tripId)
         .collection('packingItems')
         .doc(itemId)
-        .update({
-      'packed': packed,
-      'updatedAt': FieldValue.serverTimestamp(),
-    });
+        .update({'packed': packed, 'updatedAt': FieldValue.serverTimestamp()});
   }
 
   // Removes a packing item from the traveller's packing list.
@@ -171,8 +151,7 @@ class PackingService {
 
   // Checks whether a trip already contains packing items.
   Future<bool> hasPackingItems(String tripId) async {
-    final QuerySnapshot<Map<String, dynamic>> snapshot =
-    await _firestore
+    final QuerySnapshot<Map<String, dynamic>> snapshot = await _firestore
         .collection('trips')
         .doc(tripId)
         .collection('packingItems')

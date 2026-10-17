@@ -2,12 +2,13 @@ import 'package:flutter/material.dart';
 import '../theme/app_theme.dart';
 import '../widgets/traveller_ui_widgets.dart';
 import 'package:flutter/services.dart';
-import 'package:url_launcher/url_launcher.dart';
 
 import '../models/country.dart';
 import '../models/trip.dart';
 import '../services/country_service.dart';
 import '../services/trip_service.dart';
+import '../services/trip_guidance_policy.dart';
+import '../widgets/trip_guidance_dialog.dart';
 
 class EditTripScreen extends StatefulWidget {
   final Trip trip;
@@ -88,8 +89,6 @@ class _EditTripScreenState extends State<EditTripScreen> {
       final List<Country> countries = await _countryService
           .getEnabledCountries();
 
-      countries.sort((a, b) => a.name.compareTo(b.name));
-
       Country? selectedCountry;
 
       for (final Country country in countries) {
@@ -159,297 +158,6 @@ class _EditTripScreenState extends State<EditTripScreen> {
     setState(() {
       _departureDate = selectedDate;
     });
-  }
-
-  // ---------------------------------------------------------------------------
-  // SAFEGUARDS
-  // ---------------------------------------------------------------------------
-
-  bool _requiresJapanLongStayGuidance(int durationDays) {
-    return _selectedCountry?.id == 'japan' &&
-        (_selectedPurpose == 'tourism' || _selectedPurpose == 'business') &&
-        durationDays > 90;
-  }
-
-  bool _requiresAustraliaBusinessVisaGuidance(int durationDays) {
-    return _selectedCountry?.id == 'australia' &&
-        _selectedPurpose == 'business' &&
-        durationDays > 90;
-  }
-
-  bool _requiresUkLongStayGuidance(int durationDays) {
-    return _selectedCountry?.id == 'united_kingdom' && durationDays > 180;
-  }
-
-  bool _requiresSouthKoreaLongStayGuidance(int durationDays) {
-    return _selectedCountry?.id == 'south_korea' &&
-        (_selectedPurpose == 'tourism' || _selectedPurpose == 'business') &&
-        durationDays > 90;
-  }
-
-  Future<void> _openUrl(String url, String errorMessage) async {
-    try {
-      final bool opened = await launchUrl(
-        Uri.parse(url),
-        mode: LaunchMode.externalApplication,
-      );
-
-      if (!opened && mounted) {
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(SnackBar(content: Text(errorMessage)));
-      }
-    } catch (e) {
-      if (!mounted) return;
-
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text(errorMessage)));
-    }
-  }
-
-  Future<void> _showJapanLongStayGuidance() async {
-    String message;
-
-    if (_selectedPurpose == 'business') {
-      message =
-          'Malaysian travellers may visit Japan for '
-          'short-term business purposes for up to 90 days '
-          'without a visa when no paid activities are '
-          'undertaken.\n\n'
-          'A business stay longer than 90 days requires '
-          'additional information about the intended '
-          'activities. TravelGuard MY cannot determine the '
-          'appropriate long-term status or visa from purpose '
-          'and duration alone.\n\n'
-          'Please refer to the official Embassy of Japan '
-          'in Malaysia visa guidance.';
-    } else {
-      message =
-          'Malaysian travellers may visit Japan for tourism '
-          'for up to 90 days under the short-term visa '
-          'exemption.\n\n'
-          'A tourism stay longer than 90 days may require '
-          'a different long-stay arrangement with additional '
-          'eligibility requirements. TravelGuard MY cannot '
-          'determine eligibility from purpose and duration '
-          'alone.\n\n'
-          'Please refer to the official Embassy of Japan '
-          'in Malaysia visa guidance.';
-    }
-
-    await showDialog<void>(
-      context: context,
-      builder: (dialogContext) {
-        return AlertDialog(
-          icon: const Icon(
-            Icons.info_outline_rounded,
-            color: _primaryColor,
-            size: 32,
-          ),
-          title: const Text(
-            'Additional Visa Information Required',
-            textAlign: TextAlign.center,
-          ),
-          content: Text(message),
-          actions: [
-            TextButton(
-              onPressed: () {
-                Navigator.pop(dialogContext);
-              },
-              child: const Text('Close'),
-            ),
-            FilledButton.icon(
-              onPressed: () async {
-                Navigator.pop(dialogContext);
-
-                await _openUrl(
-                  'https://www.my.emb-japan.go.jp/itpr_en/visit.html',
-                  'Unable to open the Japan visa guidance.',
-                );
-              },
-              icon: const Icon(Icons.open_in_new_rounded, size: 18),
-              label: const Text('Open Visa Guidance'),
-            ),
-          ],
-        );
-      },
-    );
-  }
-
-  Future<void> _showAustraliaGuidance() async {
-    await showDialog<void>(
-      context: context,
-      builder: (dialogContext) {
-        return AlertDialog(
-          icon: const Icon(
-            Icons.info_outline_rounded,
-            color: _primaryColor,
-            size: 32,
-          ),
-          title: const Text(
-            'Additional Visa Information Required',
-            textAlign: TextAlign.center,
-          ),
-          content: const Text(
-            'Business visits to Australia longer than '
-            '90 days may require a different visa depending '
-            'on the activities you intend to undertake.\n\n'
-            'TravelGuard MY cannot determine the appropriate '
-            'visa from travel purpose and duration alone. '
-            'Please check the official Australian Department '
-            'of Home Affairs Visa Finder.',
-          ),
-          actions: [
-            TextButton(
-              onPressed: () {
-                Navigator.pop(dialogContext);
-              },
-              child: const Text('Close'),
-            ),
-            FilledButton.icon(
-              onPressed: () async {
-                Navigator.pop(dialogContext);
-
-                await _openUrl(
-                  'https://immi.homeaffairs.gov.au/visas/getting-a-visa/visa-finder',
-                  'Unable to open the Australian Visa Finder.',
-                );
-              },
-              icon: const Icon(Icons.open_in_new_rounded, size: 18),
-              label: const Text('Open Visa Finder'),
-            ),
-          ],
-        );
-      },
-    );
-  }
-
-  Future<void> _showUkGuidance() async {
-    String message;
-
-    switch (_selectedPurpose) {
-      case 'study':
-        message =
-            'Study in the United Kingdom for longer than '
-            '180 days requires additional information about '
-            'the type of course.\n\n'
-            'TravelGuard MY cannot determine the correct '
-            'visa from purpose and duration alone. Please '
-            'use the official UK visa checker.';
-        break;
-
-      case 'business':
-        message =
-            'Business visits to the United Kingdom longer '
-            'than 180 days cannot be reliably determined '
-            'from travel purpose and duration alone.\n\n'
-            'Please use the official UK visa checker to '
-            'determine the appropriate immigration route.';
-        break;
-
-      case 'tourism':
-      default:
-        message =
-            'A normal UK visitor stay is generally limited '
-            'to up to 6 months.\n\n'
-            'TravelGuard MY cannot generate a complete '
-            'tourism checklist for a stay longer than '
-            '180 days. Please use the official UK visa '
-            'checker for further guidance.';
-        break;
-    }
-
-    await showDialog<void>(
-      context: context,
-      builder: (dialogContext) {
-        return AlertDialog(
-          icon: const Icon(
-            Icons.info_outline_rounded,
-            color: _primaryColor,
-            size: 32,
-          ),
-          title: const Text(
-            'Additional Visa Information Required',
-            textAlign: TextAlign.center,
-          ),
-          content: Text(message),
-          actions: [
-            TextButton(
-              onPressed: () {
-                Navigator.pop(dialogContext);
-              },
-              child: const Text('Close'),
-            ),
-            FilledButton.icon(
-              onPressed: () async {
-                Navigator.pop(dialogContext);
-
-                await _openUrl(
-                  'https://www.gov.uk/check-uk-visa',
-                  'Unable to open the UK visa checker.',
-                );
-              },
-              icon: const Icon(Icons.open_in_new_rounded, size: 18),
-              label: const Text('Open UK Visa Checker'),
-            ),
-          ],
-        );
-      },
-    );
-  }
-
-  Future<void> _showSouthKoreaGuidance() async {
-    final String visitType = _selectedPurpose == 'business'
-        ? 'business'
-        : 'tourism';
-
-    await showDialog<void>(
-      context: context,
-      builder: (dialogContext) {
-        return AlertDialog(
-          icon: const Icon(
-            Icons.info_outline_rounded,
-            color: _primaryColor,
-            size: 32,
-          ),
-          title: const Text(
-            'Additional Visa Information Required',
-            textAlign: TextAlign.center,
-          ),
-          content: Text(
-            'K-ETA is intended for eligible short-term '
-            'visits to South Korea of up to 90 days.\n\n'
-            'A $visitType stay longer than 90 days may '
-            'require a different visa. TravelGuard MY '
-            'cannot determine the appropriate long-term '
-            'visa from purpose and duration alone.\n\n'
-            'Please refer to the official Embassy of the '
-            'Republic of Korea in Malaysia visa guidance.',
-          ),
-          actions: [
-            TextButton(
-              onPressed: () {
-                Navigator.pop(dialogContext);
-              },
-              child: const Text('Close'),
-            ),
-            FilledButton.icon(
-              onPressed: () async {
-                Navigator.pop(dialogContext);
-
-                await _openUrl(
-                  'https://overseas.mofa.go.kr/my-en/brd/m_1914/view.do?seq=761536&page=1',
-                  'Unable to open the South Korea visa guidance.',
-                );
-              },
-              icon: const Icon(Icons.open_in_new_rounded, size: 18),
-              label: const Text('Open Visa Guidance'),
-            ),
-          ],
-        );
-      },
-    );
   }
 
   // ---------------------------------------------------------------------------
@@ -531,23 +239,15 @@ class _EditTripScreenState extends State<EditTripScreen> {
 
     final int duration = int.parse(_durationController.text.trim());
 
-    if (_requiresJapanLongStayGuidance(duration)) {
-      await _showJapanLongStayGuidance();
-      return;
-    }
+    // Stop unsupported contexts before any trip or checklist changes are written.
+    final TripGuidance? guidance = TripGuidancePolicy.guidanceFor(
+      countryId: _selectedCountry!.id,
+      purpose: _selectedPurpose!,
+      durationDays: duration,
+    );
 
-    if (_requiresAustraliaBusinessVisaGuidance(duration)) {
-      await _showAustraliaGuidance();
-      return;
-    }
-
-    if (_requiresUkLongStayGuidance(duration)) {
-      await _showUkGuidance();
-      return;
-    }
-
-    if (_requiresSouthKoreaLongStayGuidance(duration)) {
-      await _showSouthKoreaGuidance();
+    if (guidance != null) {
+      await showTripGuidanceDialog(context, guidance);
       return;
     }
 
