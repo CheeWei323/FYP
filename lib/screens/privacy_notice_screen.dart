@@ -77,7 +77,7 @@ class PrivacyNoticeScreen extends StatelessWidget {
                         ),
                         SizedBox(height: 12),
                         Text(
-                          'Version 1.0 · Updated 16 October 2026',
+                          'Version 1.0 · Updated 17 October 2026',
                           style: TextStyle(
                             fontSize: 12,
                             color: AppColors.secondaryText,
@@ -108,7 +108,7 @@ class PrivacyNoticeScreen extends StatelessWidget {
                     title: 'How your information is used',
                     paragraphs: [
                       'Your information is used to create and manage your account, match travel requirements to your trip, save your preparation progress, organise packing, schedule reminders and provide the routes you request.',
-                      'Authorised tourism data analysts can read trip and requirement-checklist records to produce aggregated destination, travel-purpose, completion and requirement reports. Their access includes the underlying trip and checklist records used for those reports. Account administrators can access profile details for account management.',
+                      'Authorised tourism data analysts receive aggregated destination, travel-purpose, completion and requirement reports from the backend. Their analyst access does not include individual traveller trip or checklist records. The backend processes those records to calculate the reports. Account administrators can access profile details for account management.',
                     ],
                   ),
                   const _NoticeSection(

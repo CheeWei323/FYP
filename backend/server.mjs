@@ -4,20 +4,25 @@ import { rateLimit } from "express-rate-limit";
 import { GoogleGenAI } from "@google/genai";
 import { createTravelRouter } from "./travel_routes.mjs";
 import { createFirebaseAuth } from "./firebase_auth.mjs";
+import { createAnalyticsRouter } from "./analytics_routes.mjs";
 
 const app = express();
+app.disable("x-powered-by");
 
 const port = process.env.PORT || 3000;
 
 app.set("trust proxy", 1);
 
-app.use(express.json());
+app.use(express.json({ limit: "16kb" }));
 
 // -----------------------------------------------------------------------------
 // TRAVEL PLANNING API
 // -----------------------------------------------------------------------------
 // Add authenticated place searches and route calculations to the existing server.
 app.use("/api/travel", createTravelRouter());
+
+// Serve analyst aggregates without exposing traveller records.
+app.use("/api/analytics", createAnalyticsRouter());
 
 const apiKey = process.env.GEMINI_API_KEY;
 
@@ -457,6 +462,20 @@ Return only the structured packing items requested by the schema.
     }
   },
 );
+
+// Return safe JSON for malformed bodies and unexpected request failures.
+app.use((error, req, res, next) => {
+  if (res.headersSent) return next(error);
+  const status = error.status === 413 ? 413 : error.status === 400 ? 400 : 500;
+  return res.status(status).json({
+    error:
+      status === 413
+        ? "The request is too large."
+        : status === 400
+          ? "The request body must contain valid JSON."
+          : "The request could not be completed.",
+  });
+});
 
 app.listen(port, "0.0.0.0", () => {
   console.log(`TravelGuard AI backend running on port ${port}`);
