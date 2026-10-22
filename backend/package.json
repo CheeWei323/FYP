@@ -3,7 +3,7 @@
   "version": "1.0.0",
   "main": "index.js",
   "scripts": {
-    "test": "node --test firebase_auth.test.mjs travel_routes.test.mjs analytics.test.mjs",
+    "test": "node --test firebase_auth.test.mjs travel_routes.test.mjs analytics.test.mjs packing_generation.test.mjs",
     "test:rules": "node --test analytics_rules.test.mjs"
   },
   "keywords": [],

@@ -2,6 +2,7 @@ import "dotenv/config";
 import express from "express";
 import { rateLimit } from "express-rate-limit";
 import { GoogleGenAI } from "@google/genai";
+import { generatePackingWithFallback, isTemporaryGeminiError } from "./packing_generation.mjs";
 import { createTravelRouter } from "./travel_routes.mjs";
 import { createFirebaseAuth } from "./firebase_auth.mjs";
 import { createAnalyticsRouter } from "./analytics_routes.mjs";
@@ -146,94 +147,50 @@ function addDependentPackingItems(items) {
   return finalItems;
 }
 
-// Waits before retrying a temporary Gemini failure.
-function delay(milliseconds) {
-  return new Promise((resolve) => {
-    setTimeout(resolve, milliseconds);
-  });
-}
-
-// Checks whether Gemini returned a temporary high-demand error.
-function isTemporaryGeminiError(error) {
-  if (error?.status === 503) {
-    return true;
-  }
-
-  const message = String(error?.message ?? error);
-
-  return (
-    message.includes('"code":503') ||
-    message.includes("503") ||
-    message.toLowerCase().includes("high demand") ||
-    message.includes("UNAVAILABLE")
-  );
-}
-
-// Calls Gemini and retries temporary 503 errors.
+// Retry temporary capacity failures using a second free Gemini model.
 async function generateWithRetry(prompt) {
-  const maximumAttempts = 3;
-
-  for (let attempt = 1; attempt <= maximumAttempts; attempt++) {
-    try {
-      return await ai.models.generateContent({
-        model: "gemini-3.1-flash-lite",
-        contents: prompt,
-        config: {
-          responseMimeType: "application/json",
-          responseSchema: {
-            type: "object",
-            properties: {
+  return generatePackingWithFallback({
+    ai,
+    primaryModel: process.env.GEMINI_MODEL,
+    fallbackModel: process.env.GEMINI_FALLBACK_MODEL,
+    request: {
+      contents: prompt,
+      config: {
+        responseMimeType: "application/json",
+        responseSchema: {
+          type: "object",
+          properties: {
+            items: {
+              type: "array",
+              minItems: 8,
+              maxItems: 15,
               items: {
-                type: "array",
-                minItems: 8,
-                maxItems: 15,
-                items: {
-                  type: "object",
-                  properties: {
-                    name: {
-                      type: "string",
-                      description: "Short name of the packing item.",
-                    },
-                    category: {
-                      type: "string",
-                      enum: allowedCategories,
-                      description: "One of the TravelGuard packing categories.",
-                    },
-                    quantity: {
-                      type: "integer",
-                      minimum: 1,
-                      description: "Recommended quantity for the trip.",
-                    },
+                type: "object",
+                properties: {
+                  name: {
+                    type: "string",
+                    description: "Short name of the packing item.",
                   },
-                  required: ["name", "category", "quantity"],
+                  category: {
+                    type: "string",
+                    enum: allowedCategories,
+                    description: "One of the TravelGuard packing categories.",
+                  },
+                  quantity: {
+                    type: "integer",
+                    minimum: 1,
+                    description: "Recommended quantity for the trip.",
+                  },
                 },
+                required: ["name", "category", "quantity"],
               },
             },
-            required: ["items"],
           },
+          required: ["items"],
         },
-      });
-    } catch (error) {
-      const temporaryError = isTemporaryGeminiError(error);
-
-      if (!temporaryError || attempt === maximumAttempts) {
-        throw error;
-      }
-
-      // 2 seconds after attempt 1, then 4 seconds after attempt 2.
-      const waitTime = 2000 * Math.pow(2, attempt - 1);
-
-      console.warn(
-        `Gemini temporarily unavailable. ` +
-          `Retrying attempt ${attempt + 1} ` +
-          `in ${waitTime / 1000} seconds...`,
-      );
-
-      await delay(waitTime);
-    }
-  }
-
-  throw new Error("Gemini generation failed after retries.");
+      },
+    },
+  });
 }
 
 // Simple backend health-check endpoint.
