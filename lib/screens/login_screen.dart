@@ -2,6 +2,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:google_sign_in/google_sign_in.dart';
 import 'register_screen.dart';
+import 'forgot_password_screen.dart';
 import 'verify_email_screen.dart';
 import 'dashboards/traveller_dashboard.dart';
 import 'dashboards/content_manager_dashboard.dart';
@@ -108,6 +109,17 @@ class _LoginScreenState extends State<LoginScreen> {
         });
       }
     }
+  }
+
+  void _openPasswordRecovery() {
+    if (_isLoading) return;
+    FocusScope.of(context).unfocus();
+    Navigator.of(context).push(
+      MaterialPageRoute<void>(
+        builder: (_) =>
+            ForgotPasswordScreen(initialEmail: _emailController.text.trim()),
+      ),
+    );
   }
 
   Future<void> _loginWithGoogle() async {
@@ -227,7 +239,7 @@ class _LoginScreenState extends State<LoginScreen> {
     // users cannot navigate back to Login using the Back button.
     Navigator.of(context).pushAndRemoveUntil(
       MaterialPageRoute(builder: (context) => destination),
-      (route) => false,
+          (route) => false,
     );
   }
 
@@ -338,8 +350,8 @@ class _LoginScreenState extends State<LoginScreen> {
                                   onPressed: _isLoading
                                       ? null
                                       : () => setState(() {
-                                          _obscurePassword = !_obscurePassword;
-                                        }),
+                                    _obscurePassword = !_obscurePassword;
+                                  }),
                                   icon: Icon(
                                     _obscurePassword
                                         ? Icons.visibility_off_outlined
@@ -354,7 +366,17 @@ class _LoginScreenState extends State<LoginScreen> {
                                 return null;
                               },
                             ),
-                            const SizedBox(height: 24),
+                            const SizedBox(height: 4),
+                            Align(
+                              alignment: Alignment.centerRight,
+                              child: TextButton(
+                                onPressed: _isLoading
+                                    ? null
+                                    : _openPasswordRecovery,
+                                child: const Text('Forgot password?'),
+                              ),
+                            ),
+                            const SizedBox(height: 8),
                             FilledButton(
                               onPressed: _isLoading ? null : _login,
                               child: const Text(
@@ -413,10 +435,10 @@ class _LoginScreenState extends State<LoginScreen> {
                             onPressed: _isLoading
                                 ? null
                                 : () => Navigator.of(context).push(
-                                    MaterialPageRoute<void>(
-                                      builder: (_) => const RegisterScreen(),
-                                    ),
-                                  ),
+                              MaterialPageRoute<void>(
+                                builder: (_) => const RegisterScreen(),
+                              ),
+                            ),
                             child: const Text('Create an account'),
                           ),
                         ],
