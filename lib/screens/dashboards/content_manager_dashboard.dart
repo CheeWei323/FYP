@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../../models/rule_activity_log.dart';
 import '../../services/content_manager_service.dart';
+import '../../widgets/role_ui_widgets.dart';
 import '../content_manager/activity_history_screen.dart';
 import '../content_manager/content_manager_profile_screen.dart';
 import '../content_manager/manage_travel_rules_screen.dart';
@@ -15,179 +16,160 @@ class ContentManagerDashboard extends StatefulWidget {
 }
 
 class _ContentManagerDashboardState extends State<ContentManagerDashboard> {
-  final ContentManagerService _contentManagerService = ContentManagerService();
+  // ---------------------------------------------------------------------------
+  // DASHBOARD DATA AND TAB STATE
+  // ---------------------------------------------------------------------------
 
-  static const Color _primaryColor = Color(0xFF087F8C);
-
-  static const Color _darkTextColor = Color(0xFF102A43);
-
-  static const Color _backgroundColor = Color(0xFFF7F9FB);
-
-  static const Color _borderColor = Color(0xFFE1E7EC);
-
+  final _service = ContentManagerService();
+  final Set<int> _visitedTabs = {0};
+  Map<String, int>? _overview;
+  List<RuleActivityLog>? _activity;
   int _selectedIndex = 0;
-
-  late Future<Map<String, int>> _overviewFuture;
-
-  late Future<List<RuleActivityLog>> _recentActivityFuture;
+  int _activityVersion = 0;
+  int _requestVersion = 0;
+  bool _loading = false;
+  bool _overviewFailed = false;
+  bool _activityFailed = false;
 
   @override
   void initState() {
     super.initState();
-
-    _overviewFuture = _contentManagerService.getOverview();
-
-    _recentActivityFuture = _contentManagerService.getRecentActivity(limit: 4);
+    _loadDashboard();
   }
 
-  // ---------------------------------------------------------------------------
-  // REFRESH
-  // ---------------------------------------------------------------------------
-
-  Future<void> _refresh() async {
-    final Future<Map<String, int>> overviewFuture = _contentManagerService
-        .getOverview();
-
-    final Future<List<RuleActivityLog>> activityFuture = _contentManagerService
-        .getRecentActivity(limit: 4);
-
+  // Refresh each section independently and retain its last successful result.
+  Future<void> _loadDashboard() async {
+    final request = ++_requestVersion;
     setState(() {
-      _overviewFuture = overviewFuture;
-
-      _recentActivityFuture = activityFuture;
+      _loading = true;
     });
+    Map<String, int>? overview;
+    List<RuleActivityLog>? activity;
+    bool overviewFailed = false;
+    bool activityFailed = false;
 
-    await Future.wait([overviewFuture, activityFuture]);
-  }
-
-  // ---------------------------------------------------------------------------
-  // NAVIGATION
-  // ---------------------------------------------------------------------------
-
-  Future<void> _openTravelRegulations() async {
-    await Navigator.push(
-      context,
-      MaterialPageRoute(builder: (context) => const ManageTravelRulesScreen()),
-    );
-
-    if (!mounted) {
-      return;
+    Future<void> loadOverview() async {
+      try {
+        overview = await _service.getOverview();
+      } catch (_) {
+        overviewFailed = true;
+      }
     }
 
-    await _refresh();
-  }
-
-  Future<void> _openActivityHistory() async {
-    await Navigator.push(
-      context,
-      MaterialPageRoute(builder: (context) => const ActivityHistoryScreen()),
-    );
-
-    if (!mounted) {
-      return;
+    Future<void> loadActivity() async {
+      try {
+        activity = await _service.getRecentActivity(limit: 4);
+      } catch (_) {
+        activityFailed = true;
+      }
     }
 
-    await _refresh();
+    // Observe both requests before updating the displayed dashboard state.
+    await Future.wait<void>([loadOverview(), loadActivity()]);
+    if (!mounted || request != _requestVersion) return;
+    setState(() {
+      if (overview != null) _overview = overview;
+      if (activity != null) _activity = activity;
+      _overviewFailed = overviewFailed;
+      _activityFailed = activityFailed;
+      _loading = false;
+    });
   }
 
   // ---------------------------------------------------------------------------
-  // DATE FORMATTING
+  // ROLE NAVIGATION AND ACTIVITY LABELS
   // ---------------------------------------------------------------------------
 
-  String _formatActivityDate(DateTime? date) {
-    if (date == null) {
-      return 'Just now';
-    }
-
-    final DateTime localDate = date.toLocal();
-
-    const List<String> months = [
-      'Jan',
-      'Feb',
-      'Mar',
-      'Apr',
-      'May',
-      'Jun',
-      'Jul',
-      'Aug',
-      'Sep',
-      'Oct',
-      'Nov',
-      'Dec',
-    ];
-
-    final int hour = localDate.hour;
-
-    final int displayHour = hour == 0
-        ? 12
-        : hour > 12
-        ? hour - 12
-        : hour;
-
-    final String period = hour >= 12 ? 'PM' : 'AM';
-
-    final String minute = localDate.minute.toString().padLeft(2, '0');
-
-    return '${localDate.day} '
-        '${months[localDate.month - 1]} '
-        '${localDate.year}, '
-        '$displayHour:$minute $period';
+  // Load tabs on demand and retain their search, destination and filter state.
+  void _selectTab(int index) {
+    if (_selectedIndex == index) return;
+    setState(() {
+      _selectedIndex = index;
+      _visitedTabs.add(index);
+      if (index == 2) _activityVersion++;
+    });
+    if (index == 0) _loadDashboard();
   }
 
-  // ---------------------------------------------------------------------------
-  // SCREEN
-  // ---------------------------------------------------------------------------
+  String _actionLabel(String action) => switch (action) {
+    'created' => 'Rule created',
+    'updated' => 'Rule updated',
+    'enabled' => 'Rule enabled',
+    'disabled' => 'Rule disabled',
+    _ => 'Regulatory activity',
+  };
+
+  String _countryLabel(String id) => id
+      .split('_')
+      .where((word) => word.isNotEmpty)
+      .map((word) => word[0].toUpperCase() + word.substring(1))
+      .join(' ');
 
   @override
   Widget build(BuildContext context) {
-    final bool dashboardSelected = _selectedIndex == 0;
-
+    const titles = ['Content Manager', 'Regulations', 'Activity', 'Profile'];
     return Scaffold(
-      backgroundColor: _backgroundColor,
-
       appBar: AppBar(
         automaticallyImplyLeading: false,
-        backgroundColor: Colors.white,
-        surfaceTintColor: Colors.white,
-        elevation: 0,
         title: Text(
-          dashboardSelected ? 'Content Manager' : 'Profile',
-          style: const TextStyle(
-            color: _darkTextColor,
-            fontWeight: FontWeight.w700,
-          ),
+          titles[_selectedIndex],
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
         ),
+        actions: [
+          if (_selectedIndex == 0)
+            IconButton(
+              tooltip: 'Refresh dashboard',
+              onPressed: _loading ? null : _loadDashboard,
+              icon: const Icon(Icons.refresh_rounded),
+            ),
+        ],
       ),
-
       body: SafeArea(
         child: IndexedStack(
           index: _selectedIndex,
           children: [
-            _buildDashboardPage(),
-
-            const ContentManagerProfileScreen(),
+            _dashboardContent(),
+            if (_visitedTabs.contains(1))
+              const ManageTravelRulesScreen(embedded: true)
+            else
+              const SizedBox.shrink(),
+            if (_visitedTabs.contains(2))
+              ActivityHistoryScreen(
+                embedded: true,
+                reloadVersion: _activityVersion,
+              )
+            else
+              const SizedBox.shrink(),
+            if (_visitedTabs.contains(3))
+              const ContentManagerProfileScreen()
+            else
+              const SizedBox.shrink(),
           ],
         ),
       ),
-
       bottomNavigationBar: NavigationBar(
         selectedIndex: _selectedIndex,
-        backgroundColor: Colors.white,
-        indicatorColor: const Color(0xFFDFF3F5),
-        onDestinationSelected: (index) {
-          setState(() {
-            _selectedIndex = index;
-          });
-        },
+        onDestinationSelected: _selectTab,
         destinations: const [
           NavigationDestination(
             icon: Icon(Icons.dashboard_outlined),
-            selectedIcon: Icon(Icons.dashboard_rounded, color: _primaryColor),
+            selectedIcon: Icon(Icons.dashboard_rounded),
             label: 'Dashboard',
           ),
           NavigationDestination(
+            icon: Icon(Icons.policy_outlined),
+            selectedIcon: Icon(Icons.policy_rounded),
+            label: 'Regulations',
+          ),
+          NavigationDestination(
+            icon: Icon(Icons.history_outlined),
+            selectedIcon: Icon(Icons.history_rounded),
+            label: 'Activity',
+          ),
+          NavigationDestination(
             icon: Icon(Icons.person_outline_rounded),
-            selectedIcon: Icon(Icons.person_rounded, color: _primaryColor),
+            selectedIcon: Icon(Icons.person_rounded),
             label: 'Profile',
           ),
         ],
@@ -195,716 +177,107 @@ class _ContentManagerDashboardState extends State<ContentManagerDashboard> {
     );
   }
 
-  // ---------------------------------------------------------------------------
-  // DASHBOARD PAGE
-  // ---------------------------------------------------------------------------
-
-  Widget _buildDashboardPage() {
-    return RefreshIndicator(
-      onRefresh: _refresh,
-      child: ListView(
-        physics: const AlwaysScrollableScrollPhysics(),
-        padding: const EdgeInsets.fromLTRB(18, 18, 18, 36),
-        children: [
-          _buildWelcomeCard(),
-
-          const SizedBox(height: 26),
-
-          const Text(
-            'System Overview',
-            style: TextStyle(
-              fontSize: 18,
-              fontWeight: FontWeight.w800,
-              color: _darkTextColor,
-            ),
-          ),
-
-          const SizedBox(height: 12),
-
-          _buildOverview(),
-
-          const SizedBox(height: 28),
-
-          const Text(
-            'Review Status',
-            style: TextStyle(
-              fontSize: 18,
-              fontWeight: FontWeight.w800,
-              color: _darkTextColor,
-            ),
-          ),
-
-          const SizedBox(height: 12),
-
-          _buildReviewStatus(),
-
-          const SizedBox(height: 28),
-
-          const Text(
-            'Content Management',
-            style: TextStyle(
-              fontSize: 18,
-              fontWeight: FontWeight.w800,
-              color: _darkTextColor,
-            ),
-          ),
-
-          const SizedBox(height: 12),
-
-          _buildManagementCard(
-            icon: Icons.policy_outlined,
-            title: 'Manage Travel Regulations',
-            description:
-                'Review, add, edit, enable and disable '
-                'destination regulatory requirements '
-                'and official authority references.',
-            actionText: 'Manage Regulations',
-            onTap: _openTravelRegulations,
-          ),
-
-          const SizedBox(height: 28),
-
-          Row(
-            children: [
-              const Expanded(
-                child: Text(
-                  'Recent Activity',
-                  style: TextStyle(
-                    fontSize: 18,
-                    fontWeight: FontWeight.w800,
-                    color: _darkTextColor,
-                  ),
-                ),
-              ),
-
-              TextButton(
-                onPressed: _openActivityHistory,
-                child: const Text(
-                  'View All',
-                  style: TextStyle(
-                    fontWeight: FontWeight.w700,
-                    color: _primaryColor,
-                  ),
-                ),
-              ),
-            ],
-          ),
-
-          const SizedBox(height: 8),
-
-          _buildRecentActivity(),
-
-          const SizedBox(height: 28),
-
-          const Text(
-            'Publishing & Traceability',
-            style: TextStyle(
-              fontSize: 18,
-              fontWeight: FontWeight.w800,
-              color: _darkTextColor,
-            ),
-          ),
-
-          const SizedBox(height: 12),
-
-          _buildTraceabilityCard(),
-        ],
-      ),
-    );
-  }
-
-  // ---------------------------------------------------------------------------
-  // WELCOME
-  // ---------------------------------------------------------------------------
-
-  Widget _buildWelcomeCard() {
-    return Container(
-      width: double.infinity,
-      padding: const EdgeInsets.all(20),
-      decoration: BoxDecoration(
-        gradient: const LinearGradient(
-          colors: [Color(0xFFE7F7F8), Color(0xFFF1F8FB)],
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
+  Widget _dashboardContent() {
+    final overview = _overview;
+    return RolePageBody(
+      storageId: 'content-manager-dashboard',
+      onRefresh: _loadDashboard,
+      children: [
+        const RoleIntroCard(
+          eyebrow: 'Content Manager',
+          title: 'Keep travel guidance current.',
+          description:
+              'Maintain clear requirements, reliable official sources and a traceable record of regulation changes.',
+          icon: Icons.policy_outlined,
         ),
-        borderRadius: BorderRadius.circular(20),
-        border: Border.all(color: const Color(0xFFCBE8EB)),
-      ),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Container(
-            width: 52,
-            height: 52,
-            decoration: BoxDecoration(
-              color: Colors.white,
-              borderRadius: BorderRadius.circular(15),
-            ),
-            child: const Icon(
-              Icons.admin_panel_settings_outlined,
-              color: _primaryColor,
-              size: 28,
-            ),
+        const RoleSectionTitle(title: 'Content overview'),
+        if (_loading)
+          const RoleStatusCard(
+            title: 'Refreshing content overview',
+            message:
+                'Retrieving the latest regulation and destination records.',
+            loading: true,
           ),
-
-          const SizedBox(width: 15),
-
-          const Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  'TravelGuard MY',
-                  style: TextStyle(
-                    fontSize: 21,
-                    fontWeight: FontWeight.w800,
-                    color: _darkTextColor,
-                  ),
-                ),
-
-                SizedBox(height: 6),
-
-                Text(
-                  'Maintain validated travel preparation '
-                  'information, review regulatory content '
-                  'and manage official references.',
-                  style: TextStyle(
-                    fontSize: 13.5,
-                    height: 1.45,
-                    color: Colors.black54,
-                  ),
-                ),
-              ],
-            ),
+        if (_overviewFailed)
+          RoleStatusCard(
+            title: 'Unable to refresh overview',
+            message: overview == null
+                ? 'Check your connection and try again.'
+                : 'Showing the last loaded statistics.',
+            icon: Icons.cloud_off_outlined,
+            onRetry: _loading ? null : _loadDashboard,
           ),
-        ],
-      ),
-    );
-  }
-
-  // ---------------------------------------------------------------------------
-  // SYSTEM OVERVIEW
-  // ---------------------------------------------------------------------------
-
-  Widget _buildOverview() {
-    return FutureBuilder<Map<String, int>>(
-      future: _overviewFuture,
-      builder: (context, snapshot) {
-        if (snapshot.connectionState == ConnectionState.waiting) {
-          return Container(
-            height: 120,
-            decoration: BoxDecoration(
-              color: Colors.white,
-              borderRadius: BorderRadius.circular(18),
-              border: Border.all(color: _borderColor),
-            ),
-            child: const Center(child: CircularProgressIndicator()),
-          );
-        }
-
-        if (snapshot.hasError) {
-          return Container(
-            padding: const EdgeInsets.all(18),
-            decoration: BoxDecoration(
-              color: Colors.white,
-              borderRadius: BorderRadius.circular(18),
-              border: Border.all(color: _borderColor),
-            ),
-            child: const Text(
-              'Unable to load system overview.',
-              textAlign: TextAlign.center,
-            ),
-          );
-        }
-
-        final Map<String, int> overview = snapshot.data ?? {};
-
-        final int countries = overview['enabledCountries'] ?? 0;
-
-        final int rules = overview['rules'] ?? 0;
-
-        final int active = overview['activeRules'] ?? 0;
-
-        return Row(
-          children: [
-            Expanded(
-              child: _buildOverviewCard(
-                icon: Icons.public_outlined,
-                value: '$countries',
-                label: 'Destinations',
+        if (overview != null)
+          RoleMetricGrid(
+            metrics: [
+              RoleMetric(
+                label: 'Total regulations',
+                value: '${overview['rules'] ?? 0}',
+                icon: Icons.policy_outlined,
               ),
-            ),
-
-            const SizedBox(width: 10),
-
-            Expanded(
-              child: _buildOverviewCard(
-                icon: Icons.list_alt_outlined,
-                value: '$rules',
-                label: 'Travel Rules',
-              ),
-            ),
-
-            const SizedBox(width: 10),
-
-            Expanded(
-              child: _buildOverviewCard(
+              RoleMetric(
+                label: 'Active regulations',
+                value: '${overview['activeRules'] ?? 0}',
                 icon: Icons.check_circle_outline_rounded,
-                value: '$active',
-                label: 'Active Rules',
               ),
-            ),
-          ],
-        );
-      },
-    );
-  }
-
-  Widget _buildOverviewCard({
-    required IconData icon,
-    required String value,
-    required String label,
-  }) {
-    return Container(
-      padding: const EdgeInsets.symmetric(vertical: 16, horizontal: 8),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: _borderColor),
-      ),
-      child: Column(
-        children: [
-          Icon(icon, color: _primaryColor, size: 23),
-
-          const SizedBox(height: 7),
-
-          Text(
-            value,
-            style: const TextStyle(
-              fontSize: 20,
-              fontWeight: FontWeight.w800,
-              color: _darkTextColor,
-            ),
-          ),
-
-          const SizedBox(height: 3),
-
-          Text(
-            label,
-            textAlign: TextAlign.center,
-            style: const TextStyle(fontSize: 10.5, color: Colors.black54),
-          ),
-        ],
-      ),
-    );
-  }
-
-  // ---------------------------------------------------------------------------
-  // REVIEW STATUS
-  // ---------------------------------------------------------------------------
-
-  Widget _buildReviewStatus() {
-    return FutureBuilder<Map<String, int>>(
-      future: _overviewFuture,
-      builder: (context, snapshot) {
-        if (snapshot.connectionState == ConnectionState.waiting) {
-          return Container(
-            height: 100,
-            decoration: BoxDecoration(
-              color: Colors.white,
-              borderRadius: BorderRadius.circular(16),
-              border: Border.all(color: _borderColor),
-            ),
-            child: const Center(child: CircularProgressIndicator()),
-          );
-        }
-
-        if (snapshot.hasError) {
-          return const SizedBox.shrink();
-        }
-
-        final Map<String, int> overview = snapshot.data ?? {};
-
-        final int pending = overview['pendingReviewRules'] ?? 0;
-
-        final int disabled = overview['disabledRules'] ?? 0;
-
-        return Row(
-          children: [
-            Expanded(
-              child: _buildStatusCard(
-                icon: Icons.schedule_outlined,
-                value: '$pending',
-                label: 'Pending Review',
-                description: 'Awaiting approval',
+              RoleMetric(
+                label: 'Pending review',
+                value: '${overview['pendingReviewRules'] ?? 0}',
+                icon: Icons.fact_check_outlined,
               ),
-            ),
-
-            const SizedBox(width: 12),
-
-            Expanded(
-              child: _buildStatusCard(
+              RoleMetric(
+                label: 'Disabled regulations',
+                value: '${overview['disabledRules'] ?? 0}',
                 icon: Icons.pause_circle_outline_rounded,
-                value: '$disabled',
-                label: 'Disabled',
-                description: 'Not used by DSS',
-              ),
-            ),
-          ],
-        );
-      },
-    );
-  }
-
-  Widget _buildStatusCard({
-    required IconData icon,
-    required String value,
-    required String label,
-    required String description,
-  }) {
-    return Container(
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: _borderColor),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              Container(
-                width: 38,
-                height: 38,
-                decoration: BoxDecoration(
-                  color: const Color(0xFFE8F6F7),
-                  borderRadius: BorderRadius.circular(11),
-                ),
-                child: Icon(icon, color: _primaryColor, size: 20),
-              ),
-
-              const Spacer(),
-
-              Text(
-                value,
-                style: const TextStyle(
-                  fontSize: 25,
-                  fontWeight: FontWeight.w800,
-                  color: _darkTextColor,
-                ),
               ),
             ],
           ),
-
-          const SizedBox(height: 12),
-
-          Text(
-            label,
-            style: const TextStyle(
-              fontSize: 14,
-              fontWeight: FontWeight.w700,
-              color: _darkTextColor,
-            ),
-          ),
-
-          const SizedBox(height: 3),
-
-          Text(
-            description,
-            style: const TextStyle(fontSize: 11.5, color: Colors.black54),
-          ),
-        ],
-      ),
-    );
-  }
-
-  // ---------------------------------------------------------------------------
-  // CONTENT MANAGEMENT
-  // ---------------------------------------------------------------------------
-
-  Widget _buildManagementCard({
-    required IconData icon,
-    required String title,
-    required String description,
-    required String actionText,
-    required VoidCallback onTap,
-  }) {
-    return Material(
-      color: Colors.transparent,
-      child: InkWell(
-        onTap: onTap,
-        borderRadius: BorderRadius.circular(18),
-        child: Ink(
-          padding: const EdgeInsets.all(18),
-          decoration: BoxDecoration(
-            color: Colors.white,
-            borderRadius: BorderRadius.circular(18),
-            border: Border.all(color: _borderColor),
-          ),
-          child: Row(
-            children: [
-              Container(
-                width: 50,
-                height: 50,
-                decoration: BoxDecoration(
-                  color: const Color(0xFFE8F6F7),
-                  borderRadius: BorderRadius.circular(15),
-                ),
-                child: Icon(icon, color: _primaryColor, size: 25),
-              ),
-
-              const SizedBox(width: 15),
-
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      title,
-                      style: const TextStyle(
-                        fontSize: 16,
-                        fontWeight: FontWeight.w700,
-                        color: _darkTextColor,
-                      ),
-                    ),
-
-                    const SizedBox(height: 5),
-
-                    Text(
-                      description,
-                      style: const TextStyle(
-                        fontSize: 12.5,
-                        height: 1.4,
-                        color: Colors.black54,
-                      ),
-                    ),
-
-                    const SizedBox(height: 9),
-
-                    Text(
-                      actionText,
-                      style: const TextStyle(
-                        fontSize: 13,
-                        fontWeight: FontWeight.w700,
-                        color: _primaryColor,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-
-              const Icon(Icons.chevron_right_rounded, color: Colors.black38),
-            ],
+        const RoleSectionTitle(title: 'Manage travel guidance'),
+        RoleActionTile(
+          title: 'Travel regulations',
+          description:
+              'Add or edit requirements, review official sources and manage publication.',
+          icon: Icons.edit_note_rounded,
+          onTap: () => _selectTab(1),
+        ),
+        RoleSectionTitle(
+          title: 'Recent activity',
+          action: TextButton(
+            onPressed: () => _selectTab(2),
+            child: const Text('View all activity'),
           ),
         ),
-      ),
-    );
-  }
-
-  // ---------------------------------------------------------------------------
-  // RECENT ACTIVITY
-  // ---------------------------------------------------------------------------
-
-  Widget _buildRecentActivity() {
-    return FutureBuilder<List<RuleActivityLog>>(
-      future: _recentActivityFuture,
-      builder: (context, snapshot) {
-        if (snapshot.connectionState == ConnectionState.waiting) {
-          return Container(
-            height: 110,
-            decoration: BoxDecoration(
-              color: Colors.white,
-              borderRadius: BorderRadius.circular(18),
-              border: Border.all(color: _borderColor),
-            ),
-            child: const Center(child: CircularProgressIndicator()),
-          );
-        }
-
-        if (snapshot.hasError) {
-          return Container(
-            padding: const EdgeInsets.all(18),
-            decoration: BoxDecoration(
-              color: Colors.white,
-              borderRadius: BorderRadius.circular(18),
-              border: Border.all(color: _borderColor),
-            ),
-            child: const Text(
-              'Unable to load recent activity.',
-              textAlign: TextAlign.center,
-            ),
-          );
-        }
-
-        final List<RuleActivityLog> logs = snapshot.data ?? [];
-
-        if (logs.isEmpty) {
-          return Container(
-            width: double.infinity,
-            padding: const EdgeInsets.all(22),
-            decoration: BoxDecoration(
-              color: Colors.white,
-              borderRadius: BorderRadius.circular(18),
-              border: Border.all(color: _borderColor),
-            ),
-            child: const Column(
-              children: [
-                Icon(Icons.history_rounded, color: Colors.black38, size: 32),
-
-                SizedBox(height: 8),
-
-                Text(
-                  'No regulatory activity recorded yet.',
-                  textAlign: TextAlign.center,
-                  style: TextStyle(color: Colors.black54),
-                ),
-              ],
-            ),
-          );
-        }
-
-        return Container(
-          decoration: BoxDecoration(
-            color: Colors.white,
-            borderRadius: BorderRadius.circular(18),
-            border: Border.all(color: _borderColor),
+        if (_activityFailed)
+          RoleStatusCard(
+            title: 'Unable to refresh activity',
+            message: _activity == null
+                ? 'Check your connection and try again.'
+                : 'Showing the last loaded activity.',
+            icon: Icons.cloud_off_outlined,
+            onRetry: _loading ? null : _loadDashboard,
           ),
-          child: Column(
-            children: [
-              for (int index = 0; index < logs.length; index++) ...[
-                _buildActivityItem(logs[index]),
-
-                if (index != logs.length - 1)
-                  const Divider(height: 1, indent: 62),
-              ],
-            ],
+        if (_activity != null && _activity!.isEmpty)
+          const RoleStatusCard(
+            title: 'No regulatory activity yet',
+            message:
+                'Created, edited, enabled and disabled regulations will appear here.',
+            icon: Icons.history_rounded,
           ),
-        );
-      },
-    );
-  }
-
-  Widget _buildActivityItem(RuleActivityLog log) {
-    IconData icon;
-    String actionLabel;
-
-    switch (log.action) {
-      case 'created':
-        icon = Icons.add_circle_outline_rounded;
-        actionLabel = 'Created rule';
-        break;
-
-      case 'updated':
-        icon = Icons.edit_outlined;
-        actionLabel = 'Updated rule';
-        break;
-
-      case 'enabled':
-        icon = Icons.check_circle_outline_rounded;
-        actionLabel = 'Enabled rule';
-        break;
-
-      case 'disabled':
-        icon = Icons.pause_circle_outline_rounded;
-        actionLabel = 'Disabled rule';
-        break;
-
-      default:
-        icon = Icons.history_rounded;
-        actionLabel = 'Rule activity';
-    }
-
-    return Padding(
-      padding: const EdgeInsets.all(14),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Container(
-            width: 38,
-            height: 38,
-            decoration: BoxDecoration(
-              color: const Color(0xFFE8F6F7),
-              borderRadius: BorderRadius.circular(11),
-            ),
-            child: Icon(icon, color: _primaryColor, size: 20),
+        for (final log in _activity ?? <RuleActivityLog>[])
+          RoleActivityTile(
+            title: _actionLabel(log.action),
+            target: log.ruleTitle.isEmpty
+                ? 'Untitled regulation'
+                : log.ruleTitle,
+            details: 'Destination: ${_countryLabel(log.countryId)}',
+            actor: log.performedByName.isNotEmpty
+                ? log.performedByName
+                : log.performedByEmail.isNotEmpty
+                ? log.performedByEmail
+                : 'Content Manager',
+            timestamp: log.timestamp,
           ),
-
-          const SizedBox(width: 11),
-
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  actionLabel,
-                  style: const TextStyle(
-                    fontSize: 13.5,
-                    fontWeight: FontWeight.w700,
-                    color: _darkTextColor,
-                  ),
-                ),
-
-                const SizedBox(height: 3),
-
-                Text(
-                  log.ruleTitle,
-                  maxLines: 2,
-                  overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(
-                    fontSize: 12.5,
-                    color: Color(0xFF486581),
-                  ),
-                ),
-
-                const SizedBox(height: 5),
-
-                Text(
-                  '${log.performedByName} • '
-                  '${_formatActivityDate(log.timestamp)}',
-                  style: const TextStyle(fontSize: 10.5, color: Colors.black45),
-                ),
-              ],
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  // ---------------------------------------------------------------------------
-  // TRACEABILITY
-  // ---------------------------------------------------------------------------
-
-  Widget _buildTraceabilityCard() {
-    return Container(
-      padding: const EdgeInsets.all(18),
-      decoration: BoxDecoration(
-        color: const Color(0xFFF1F6FA),
-        borderRadius: BorderRadius.circular(18),
-        border: Border.all(color: const Color(0xFFD8E6EE)),
-      ),
-      child: const Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Icon(Icons.verified_user_outlined, color: _primaryColor, size: 25),
-
-          SizedBox(width: 13),
-
-          Expanded(
-            child: Text(
-              'New regulations remain pending review until enabled. '
-              'Create, update, enable and disable actions are recorded '
-              'with the responsible Content Manager and timestamp.',
-              style: TextStyle(
-                fontSize: 12.5,
-                height: 1.5,
-                color: Color(0xFF334E68),
-              ),
-            ),
-          ),
-        ],
-      ),
+      ],
     );
   }
 }

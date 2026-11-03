@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 
 import '../../services/analyst_service.dart';
+import '../../theme/app_theme.dart';
+import '../../widgets/role_ui_widgets.dart';
 import '../../widgets/analyst/analytics_filter_card.dart';
 
 class PreparationRequirementsScreen extends StatefulWidget {
@@ -15,57 +17,248 @@ class _PreparationRequirementsScreenState
     extends State<PreparationRequirementsScreen> {
   final AnalystService _analystService = AnalystService();
 
-  static const Color _primaryColor = Color(0xFF087F8C);
-
-  static const Color _darkTextColor = Color(0xFF102A43);
-
-  static const Color _backgroundColor = Color(0xFFF7F9FB);
-
-  static const Color _borderColor = Color(0xFFE1E7EC);
-
   String? _selectedDestinationId;
   String? _selectedPurpose;
 
   bool _showAllRequirements = false;
 
-  late Future<Map<String, dynamic>> _analyticsFuture;
+  // Cached Firestore analytics.
+  Map<String, dynamic>? _analyticsData;
 
-  late Future<List<Map<String, String>>> _countriesFuture;
+  // Track which filters produced the cached data.
+  String? _loadedDestinationId;
+  String? _loadedPurpose;
+
+  List<Map<String, String>> _countries = [];
+
+  bool _analyticsLoading = true;
+  bool _analyticsError = false;
+
+  bool _countriesLoading = true;
+  bool _countriesError = false;
+
+  // Prevent outdated requests from overwriting newer results.
+  int _analyticsRequestVersion = 0;
+  int _countriesRequestVersion = 0;
 
   @override
   void initState() {
     super.initState();
 
-    _analyticsFuture = _analystService.getPreparationRequirementAnalytics();
-
-    _countriesFuture = _analystService.getAnalyticsFilterCountries();
+    _loadAnalytics();
+    _loadCountries();
   }
 
-  void _reloadAnalytics() {
-    _analyticsFuture = _analystService.getPreparationRequirementAnalytics(
-      destinationId: _selectedDestinationId,
-      purpose: _selectedPurpose,
-    );
+  // ---------------------------------------------------------------------------
+  // LOAD REQUIREMENT ANALYTICS
+  // ---------------------------------------------------------------------------
+
+  Future<void> _loadAnalytics() async {
+    final int requestVersion = ++_analyticsRequestVersion;
+
+    final String? requestedDestination = _selectedDestinationId;
+    final String? requestedPurpose = _selectedPurpose;
+
+    try {
+      final Map<String, dynamic> data = await _analystService
+          .getPreparationRequirementAnalytics(
+            destinationId: requestedDestination,
+            purpose: requestedPurpose,
+          );
+
+      if (!mounted || requestVersion != _analyticsRequestVersion) {
+        return;
+      }
+
+      setState(() {
+        _analyticsData = data;
+
+        _loadedDestinationId = requestedDestination;
+        _loadedPurpose = requestedPurpose;
+
+        _analyticsLoading = false;
+        _analyticsError = false;
+      });
+    } catch (error) {
+      debugPrint('REQUIREMENT PATTERN ERROR: $error');
+
+      if (!mounted || requestVersion != _analyticsRequestVersion) {
+        return;
+      }
+
+      final bool hasCachedData =
+          _analyticsData != null &&
+          _loadedDestinationId == requestedDestination &&
+          _loadedPurpose == requestedPurpose;
+
+      setState(() {
+        _analyticsLoading = false;
+        _analyticsError = true;
+      });
+
+      // Do not discard already loaded results if refresh fails.
+      if (hasCachedData) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text(
+              'Unable to refresh requirement patterns. '
+              'Showing the previously loaded data.',
+            ),
+          ),
+        );
+      }
+    }
   }
+
+  // ---------------------------------------------------------------------------
+  // LOAD FILTER DESTINATIONS
+  // ---------------------------------------------------------------------------
+
+  Future<void> _loadCountries() async {
+    final int requestVersion = ++_countriesRequestVersion;
+
+    try {
+      final List<Map<String, String>> countries = await _analystService
+          .getAnalyticsFilterCountries();
+
+      if (!mounted || requestVersion != _countriesRequestVersion) {
+        return;
+      }
+
+      setState(() {
+        _countries = countries;
+        _countriesLoading = false;
+        _countriesError = false;
+      });
+    } catch (error) {
+      debugPrint('REQUIREMENT FILTER COUNTRIES ERROR: $error');
+
+      if (!mounted || requestVersion != _countriesRequestVersion) {
+        return;
+      }
+
+      setState(() {
+        _countriesLoading = false;
+        _countriesError = true;
+      });
+    }
+  }
+
+  // ---------------------------------------------------------------------------
+  // REFRESH
+  // ---------------------------------------------------------------------------
 
   Future<void> _refresh() async {
-    final Future<Map<String, dynamic>> analyticsFuture = _analystService
-        .getPreparationRequirementAnalytics(
-          destinationId: _selectedDestinationId,
-          purpose: _selectedPurpose,
-        );
+    await Future.wait<void>([_loadAnalytics(), _loadCountries()]);
+  }
 
-    final Future<List<Map<String, String>>> countriesFuture = _analystService
-        .getAnalyticsFilterCountries();
+  // ---------------------------------------------------------------------------
+  // RETRY HELPERS
+  // ---------------------------------------------------------------------------
 
+  void _retryAnalytics() {
     setState(() {
-      _analyticsFuture = analyticsFuture;
-
-      _countriesFuture = countriesFuture;
+      _analyticsLoading = true;
+      _analyticsError = false;
     });
 
-    await analyticsFuture;
-    await countriesFuture;
+    _loadAnalytics();
+  }
+
+  void _retryCountries() {
+    setState(() {
+      _countriesLoading = true;
+      _countriesError = false;
+    });
+
+    _loadCountries();
+  }
+
+  // ---------------------------------------------------------------------------
+  // FILTER HANDLING
+  // ---------------------------------------------------------------------------
+
+  void _changeDestination(String? destinationId) {
+    if (_selectedDestinationId == destinationId) {
+      return;
+    }
+
+    setState(() {
+      _selectedDestinationId = destinationId;
+
+      _analyticsLoading = true;
+      _analyticsError = false;
+
+      _showAllRequirements = false;
+    });
+
+    _loadAnalytics();
+  }
+
+  void _changePurpose(String? purpose) {
+    if (_selectedPurpose == purpose) {
+      return;
+    }
+
+    setState(() {
+      _selectedPurpose = purpose;
+
+      _analyticsLoading = true;
+      _analyticsError = false;
+
+      _showAllRequirements = false;
+    });
+
+    _loadAnalytics();
+  }
+
+  void _clearFilters() {
+    if (_selectedDestinationId == null && _selectedPurpose == null) {
+      return;
+    }
+
+    setState(() {
+      _selectedDestinationId = null;
+      _selectedPurpose = null;
+
+      _analyticsLoading = true;
+      _analyticsError = false;
+
+      _showAllRequirements = false;
+    });
+
+    _loadAnalytics();
+  }
+
+  // ---------------------------------------------------------------------------
+  // DATA HELPERS
+  // ---------------------------------------------------------------------------
+
+  int _readInt(dynamic value) {
+    if (value is num) {
+      return value.toInt();
+    }
+
+    return int.tryParse(value?.toString() ?? '') ?? 0;
+  }
+
+  double _readDouble(dynamic value) {
+    if (value is num) {
+      return value.toDouble();
+    }
+
+    return double.tryParse(value?.toString() ?? '') ?? 0.0;
+  }
+
+  List<Map<String, dynamic>> _readList(dynamic value) {
+    if (value is! List) {
+      return [];
+    }
+
+    return value
+        .whereType<Map>()
+        .map((item) => Map<String, dynamic>.from(item))
+        .toList();
   }
 
   String _formatPurpose(String purpose) {
@@ -90,142 +283,125 @@ class _PreparationRequirementsScreenState
   }
 
   // ---------------------------------------------------------------------------
-  // FILTERS
+  // SHARED CARD DECORATION
   // ---------------------------------------------------------------------------
 
-  Widget _buildFilters() {
-    return FutureBuilder<List<Map<String, String>>>(
-      future: _countriesFuture,
-      builder: (context, snapshot) {
-        if (snapshot.connectionState == ConnectionState.waiting) {
-          return const Center(
-            child: Padding(
-              padding: EdgeInsets.all(12),
-              child: CircularProgressIndicator(),
-            ),
-          );
-        }
-
-        final List<Map<String, String>> countries = snapshot.data ?? [];
-
-        return AnalyticsFilterCard(
-          countries: countries,
-          selectedDestinationId: _selectedDestinationId,
-          selectedPurpose: _selectedPurpose,
-          onDestinationChanged: (value) {
-            setState(() {
-              _selectedDestinationId = value;
-
-              _showAllRequirements = false;
-
-              _reloadAnalytics();
-            });
-          },
-          onPurposeChanged: (value) {
-            setState(() {
-              _selectedPurpose = value;
-
-              _showAllRequirements = false;
-
-              _reloadAnalytics();
-            });
-          },
-          onClear: () {
-            setState(() {
-              _selectedDestinationId = null;
-
-              _selectedPurpose = null;
-
-              _showAllRequirements = false;
-
-              _reloadAnalytics();
-            });
-          },
-        );
-      },
+  BoxDecoration _cardDecoration({Color color = Colors.white}) {
+    return BoxDecoration(
+      color: color,
+      borderRadius: BorderRadius.circular(20),
+      border: Border.all(color: AppColors.border),
+      boxShadow: const [
+        BoxShadow(
+          color: Color(0x08000000),
+          blurRadius: 12,
+          offset: Offset(0, 4),
+        ),
+      ],
     );
   }
 
   // ---------------------------------------------------------------------------
-  // BUILD
+  // MAIN SCREEN
   // ---------------------------------------------------------------------------
 
   @override
   Widget build(BuildContext context) {
+    final bool hasCurrentData =
+        _analyticsData != null &&
+        _loadedDestinationId == _selectedDestinationId &&
+        _loadedPurpose == _selectedPurpose;
+
+    final Map<String, dynamic>? currentData = hasCurrentData
+        ? _analyticsData
+        : null;
+
+    final int analysedTrips = _readInt(currentData?['analysedTrips']);
+
     return Scaffold(
-      backgroundColor: _backgroundColor,
+      backgroundColor: AppColors.background,
+
       appBar: AppBar(
         backgroundColor: Colors.white,
         surfaceTintColor: Colors.white,
-        foregroundColor: _darkTextColor,
+        foregroundColor: AppColors.navy,
         elevation: 0,
+
         title: const Text(
           'Requirement Patterns',
-          style: TextStyle(fontWeight: FontWeight.w700),
+          style: TextStyle(color: AppColors.navy, fontWeight: FontWeight.w800),
         ),
       ),
+
       body: SafeArea(
         child: RefreshIndicator(
+          color: AppColors.primary,
           onRefresh: _refresh,
-          child: FutureBuilder<Map<String, dynamic>>(
-            future: _analyticsFuture,
-            builder: (context, snapshot) {
-              if (snapshot.connectionState == ConnectionState.waiting) {
-                return const Center(child: CircularProgressIndicator());
-              }
 
-              if (snapshot.hasError) {
-                debugPrint(
-                  'REQUIREMENT PATTERN ERROR: '
-                  '${snapshot.error}',
-                );
+          child: ListView(
+            physics: const AlwaysScrollableScrollPhysics(
+              parent: ClampingScrollPhysics(),
+            ),
 
-                return ListView(
-                  physics: const AlwaysScrollableScrollPhysics(),
-                  padding: const EdgeInsets.all(24),
-                  children: const [
-                    SizedBox(height: 130),
-                    Center(
-                      child: Text(
-                        'Unable to load requirement patterns.',
-                        textAlign: TextAlign.center,
-                      ),
-                    ),
-                  ],
-                );
-              }
+            padding: const EdgeInsets.fromLTRB(18, 18, 18, 36),
 
-              final Map<String, dynamic> data = snapshot.data ?? {};
+            children: [
+              _buildHeader(
+                analysedTrips: analysedTrips,
+                hasData: hasCurrentData,
+              ),
 
-              final int analysedTrips = data['analysedTrips'] as int? ?? 0;
+              const SizedBox(height: 26),
 
-              final List<Map<String, dynamic>> requirements =
-                  List<Map<String, dynamic>>.from(
-                    data['requirementPatterns'] as List? ?? [],
-                  );
+              _buildSectionTitle(
+                'Filter Analytics',
+                'Select a destination and travel purpose '
+                    'to explore requirement generation patterns.',
+              ),
 
-              return ListView(
-                physics: const AlwaysScrollableScrollPhysics(),
-                padding: const EdgeInsets.fromLTRB(18, 18, 18, 36),
-                children: [
-                  _buildHeader(analysedTrips),
+              const SizedBox(height: 13),
 
-                  const SizedBox(height: 18),
+              _buildFilters(),
 
-                  _buildFilters(),
+              const SizedBox(height: 27),
 
-                  const SizedBox(height: 26),
-
-                  _buildPatternSection(
-                    requirements: requirements,
-                    analysedTrips: analysedTrips,
-                  ),
-                ],
-              );
-            },
+              _buildPatternContent(currentData),
+            ],
           ),
         ),
       ),
+    );
+  }
+
+  // ---------------------------------------------------------------------------
+  // SECTION TITLE
+  // ---------------------------------------------------------------------------
+
+  Widget _buildSectionTitle(String title, String description) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+
+      children: [
+        Text(
+          title,
+          style: const TextStyle(
+            color: AppColors.navy,
+            fontSize: 18,
+            fontWeight: FontWeight.w800,
+          ),
+        ),
+
+        const SizedBox(height: 6),
+
+        Text(
+          description,
+          style: const TextStyle(
+            color: AppColors.secondaryText,
+            fontSize: 12.5,
+            height: 1.45,
+          ),
+        ),
+      ],
     );
   }
 
@@ -233,103 +409,143 @@ class _PreparationRequirementsScreenState
   // HEADER
   // ---------------------------------------------------------------------------
 
-  Widget _buildHeader(int analysedTrips) {
-    return Container(
-      width: double.infinity,
-      padding: const EdgeInsets.all(20),
-      decoration: BoxDecoration(
-        gradient: const LinearGradient(
-          colors: [Color(0xFFE7F7F8), Color(0xFFF1F8FB)],
-        ),
-        borderRadius: BorderRadius.circular(20),
-        border: Border.all(color: const Color(0xFFCBE8EB)),
-      ),
-      child: Row(
-        children: [
-          const Icon(Icons.insights_outlined, color: _primaryColor, size: 32),
+  Widget _buildHeader({required int analysedTrips, required bool hasData}) {
+    String description;
 
-          const SizedBox(width: 14),
+    if (!hasData && _analyticsLoading) {
+      description = 'Loading requirement pattern analytics...';
+    } else if (!hasData && _analyticsError) {
+      description = 'Requirement analytics are temporarily unavailable.';
+    } else if (analysedTrips == 0) {
+      description =
+          'No generated requirements match '
+          'the selected traveller segment.';
+    } else {
+      description =
+          'Explore preparation requirements generated '
+          'across $analysedTrips '
+          '${analysedTrips == 1 ? 'trip' : 'trips'}.';
+    }
 
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                const Text(
-                  'Requirement Patterns',
-                  style: TextStyle(
-                    fontSize: 20,
-                    fontWeight: FontWeight.w800,
-                    color: _darkTextColor,
-                  ),
-                ),
-
-                const SizedBox(height: 5),
-
-                Text(
-                  analysedTrips == 0
-                      ? 'No generated requirements match '
-                            'the selected traveller segment.'
-                      : 'Explore preparation requirements '
-                            'generated across $analysedTrips '
-                            '${analysedTrips == 1 ? 'trip' : 'trips'}.',
-                  style: const TextStyle(
-                    fontSize: 12.5,
-                    height: 1.4,
-                    color: Colors.black54,
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ],
-      ),
+    return RoleIntroCard(
+      eyebrow: 'TRAVEL ANALYTICS',
+      title: "Preparation requirements",
+      description: description,
+      icon: Icons.fact_check_outlined,
     );
   }
 
   // ---------------------------------------------------------------------------
-  // REQUIREMENT PATTERNS
+  // FILTER CARD
+  // ---------------------------------------------------------------------------
+
+  Widget _buildFilters() {
+    if (_countriesLoading && _countries.isEmpty) {
+      return _buildStatusCard(
+        icon: Icons.filter_alt_outlined,
+        title: 'Loading Destinations',
+        message: 'Retrieving available destination filters...',
+        isLoading: true,
+        minimumHeight: 160,
+      );
+    }
+
+    if (_countriesError && _countries.isEmpty) {
+      return _buildStatusCard(
+        icon: Icons.cloud_off_outlined,
+        title: 'Unable to Load Filters',
+        message: 'Destination filters could not be retrieved.',
+        minimumHeight: 160,
+        onRetry: _retryCountries,
+      );
+    }
+
+    // Preserve the existing reusable analytics filter.
+    return AnalyticsFilterCard(
+      countries: _countries,
+      selectedDestinationId: _selectedDestinationId,
+      selectedPurpose: _selectedPurpose,
+      onDestinationChanged: _changeDestination,
+      onPurposeChanged: _changePurpose,
+      onClear: _clearFilters,
+    );
+  }
+
+  // ---------------------------------------------------------------------------
+  // PATTERN CONTENT
+  // ---------------------------------------------------------------------------
+
+  Widget _buildPatternContent(Map<String, dynamic>? data) {
+    if (data == null) {
+      return _buildStatusCard(
+        icon: _analyticsError
+            ? Icons.cloud_off_outlined
+            : Icons.insights_outlined,
+        title: _analyticsError
+            ? 'Unable to Load Patterns'
+            : 'Loading Requirement Patterns',
+        message: _analyticsError
+            ? 'Requirement patterns could not be '
+                  'retrieved. Please try again.'
+            : 'Retrieving generated requirement '
+                  'statistics for the selected filters...',
+        isLoading: _analyticsLoading && !_analyticsError,
+        minimumHeight: 290,
+        onRetry: _analyticsError ? _retryAnalytics : null,
+      );
+    }
+
+    final int analysedTrips = _readInt(data['analysedTrips']);
+
+    final List<Map<String, dynamic>> requirements = _readList(
+      data['requirementPatterns'],
+    );
+
+    return _buildPatternSection(
+      requirements: requirements,
+      analysedTrips: analysedTrips,
+    );
+  }
+
+  // ---------------------------------------------------------------------------
+  // REQUIREMENT PATTERNS SECTION
   // ---------------------------------------------------------------------------
 
   Widget _buildPatternSection({
     required List<Map<String, dynamic>> requirements,
     required int analysedTrips,
   }) {
+    // Preserve the order returned by AnalystService.
     final List<Map<String, dynamic>> visibleRequirements = _showAllRequirements
         ? requirements
         : requirements.take(5).toList();
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
+
       children: [
-        const Text(
+        _buildSectionTitle(
           'Commonly Generated Requirements',
-          style: TextStyle(
-            fontSize: 18,
-            fontWeight: FontWeight.w800,
-            color: _darkTextColor,
-          ),
-        ),
-
-        const SizedBox(height: 5),
-
-        const Text(
           'Shows which preparation requirements occur '
-          'most often within the selected traveller segment.',
-          style: TextStyle(fontSize: 12.5, height: 1.4, color: Colors.black54),
+              'most often within the selected traveller segment.',
         ),
 
         const SizedBox(height: 16),
 
         if (requirements.isEmpty)
-          _buildEmptyState()
+          _buildStatusCard(
+            icon: Icons.insights_outlined,
+            title: 'No Requirement Patterns',
+            message:
+                'No requirement patterns are available '
+                'for the selected filters.',
+            minimumHeight: 190,
+          )
         else ...[
           Container(
             width: double.infinity,
-            decoration: BoxDecoration(
-              color: Colors.white,
-              borderRadius: BorderRadius.circular(18),
-              border: Border.all(color: _borderColor),
-            ),
+            decoration: _cardDecoration(),
+
             child: Column(
               children: [
                 for (
@@ -344,14 +560,19 @@ class _PreparationRequirementsScreenState
                   ),
 
                   if (index != visibleRequirements.length - 1)
-                    const Divider(height: 1, indent: 16, endIndent: 16),
+                    const Divider(
+                      height: 1,
+                      indent: 16,
+                      endIndent: 16,
+                      color: AppColors.border,
+                    ),
                 ],
               ],
             ),
           ),
 
           if (requirements.length > 5) ...[
-            const SizedBox(height: 10),
+            const SizedBox(height: 11),
 
             Center(
               child: TextButton.icon(
@@ -360,27 +581,41 @@ class _PreparationRequirementsScreenState
                     _showAllRequirements = !_showAllRequirements;
                   });
                 },
+
                 icon: Icon(
                   _showAllRequirements
                       ? Icons.keyboard_arrow_up_rounded
                       : Icons.keyboard_arrow_down_rounded,
                 ),
+
                 label: Text(
                   _showAllRequirements
-                      ? 'Show less'
-                      : 'View all ${requirements.length}',
+                      ? 'Show Less'
+                      : 'View All ${requirements.length}',
+                ),
+
+                style: TextButton.styleFrom(
+                  foregroundColor: AppColors.primary,
+                  textStyle: const TextStyle(
+                    fontSize: 12.5,
+                    fontWeight: FontWeight.w800,
+                  ),
                 ),
               ),
             ),
           ],
 
-          const SizedBox(height: 16),
+          const SizedBox(height: 17),
 
           _buildExplanationCard(),
         ],
       ],
     );
   }
+
+  // ---------------------------------------------------------------------------
+  // INDIVIDUAL REQUIREMENT ROW
+  // ---------------------------------------------------------------------------
 
   Widget _buildRequirementRow({
     required int rank,
@@ -390,154 +625,156 @@ class _PreparationRequirementsScreenState
     final String title =
         requirement['title'] as String? ?? 'Unnamed requirement';
 
-    final int tripCount = requirement['tripCount'] as int? ?? 0;
+    final int tripCount = _readInt(requirement['tripCount']);
 
-    final double percentage = requirement['percentage'] as double? ?? 0;
+    final double percentage = _readDouble(requirement['percentage']);
 
     final double progress = (percentage / 100).clamp(0.0, 1.0);
 
-    final List<Map<String, dynamic>> destinationBreakdown =
-        List<Map<String, dynamic>>.from(
-          requirement['destinationBreakdown'] as List? ?? [],
-        );
+    final List<Map<String, dynamic>> destinationBreakdown = _readList(
+      requirement['destinationBreakdown'],
+    );
 
-    final List<Map<String, dynamic>> purposeBreakdown =
-        List<Map<String, dynamic>>.from(
-          requirement['purposeBreakdown'] as List? ?? [],
-        );
+    final List<Map<String, dynamic>> purposeBreakdown = _readList(
+      requirement['purposeBreakdown'],
+    );
 
     return Padding(
       padding: const EdgeInsets.all(16),
+
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
+
         children: [
           Row(
             crossAxisAlignment: CrossAxisAlignment.start,
+
             children: [
               Container(
-                width: 30,
-                height: 30,
+                width: 32,
+                height: 32,
                 alignment: Alignment.center,
+
                 decoration: BoxDecoration(
-                  color: const Color(0xFFE8F6F7),
-                  borderRadius: BorderRadius.circular(9),
+                  color: AppColors.primaryLight,
+                  borderRadius: BorderRadius.circular(10),
                 ),
+
                 child: Text(
                   '$rank',
                   style: const TextStyle(
-                    fontSize: 11,
+                    color: AppColors.primary,
+                    fontSize: 12,
                     fontWeight: FontWeight.w800,
-                    color: _primaryColor,
                   ),
                 ),
               ),
 
-              const SizedBox(width: 11),
+              const SizedBox(width: 12),
 
               Expanded(
                 child: Text(
                   title,
                   style: const TextStyle(
-                    fontSize: 12.5,
-                    fontWeight: FontWeight.w700,
-                    color: _darkTextColor,
-                    height: 1.35,
+                    color: AppColors.navy,
+                    fontSize: 13,
+                    fontWeight: FontWeight.w800,
+                    height: 1.4,
                   ),
                 ),
               ),
             ],
           ),
 
-          const SizedBox(height: 12),
+          const SizedBox(height: 14),
 
           Row(
             children: [
               Expanded(
                 child: ClipRRect(
                   borderRadius: BorderRadius.circular(20),
+
                   child: LinearProgressIndicator(
                     value: progress,
-                    minHeight: 7,
-                    backgroundColor: const Color(0xFFEAF0F3),
-                    color: _primaryColor,
+                    minHeight: 8,
+                    backgroundColor: AppColors.primaryLight,
+                    color: AppColors.primary,
                   ),
                 ),
               ),
 
-              const SizedBox(width: 10),
+              const SizedBox(width: 11),
 
               Text(
                 '${percentage.toStringAsFixed(1)}%',
                 style: const TextStyle(
-                  fontSize: 11,
+                  color: AppColors.primary,
+                  fontSize: 11.5,
                   fontWeight: FontWeight.w800,
-                  color: _primaryColor,
                 ),
               ),
             ],
           ),
 
-          const SizedBox(height: 7),
+          const SizedBox(height: 9),
 
           Text(
             'Generated for $tripCount of $analysedTrips '
             '${analysedTrips == 1 ? 'trip' : 'trips'}',
-            style: const TextStyle(fontSize: 10.5, color: Colors.black54),
+            style: const TextStyle(
+              color: AppColors.secondaryText,
+              fontSize: 11,
+              height: 1.4,
+            ),
           ),
 
-          // If no destination filter is selected,
-          // show which destinations generated this requirement.
+          // Show destination breakdown when no destination
+          // filter has been selected.
           if (_selectedDestinationId == null &&
               destinationBreakdown.isNotEmpty) ...[
-            const SizedBox(height: 12),
+            const SizedBox(height: 15),
 
-            const Text(
-              'Destinations',
-              style: TextStyle(
-                fontSize: 9.5,
-                fontWeight: FontWeight.w700,
-                color: Colors.black45,
-              ),
+            _buildBreakdownLabel(
+              icon: Icons.public_outlined,
+              label: 'Destinations',
             ),
 
-            const SizedBox(height: 6),
+            const SizedBox(height: 8),
 
             Wrap(
-              spacing: 6,
-              runSpacing: 6,
+              spacing: 7,
+              runSpacing: 7,
+
               children: destinationBreakdown.map((item) {
                 final String name = item['name'] as String? ?? 'Unknown';
 
-                final int count = item['tripCount'] as int? ?? 0;
+                final int count = _readInt(item['tripCount']);
 
                 return _buildContextChip('$name · $count');
               }).toList(),
             ),
           ],
 
-          // If no purpose filter is selected,
-          // show which traveller purposes generated it.
+          // Show travel purpose breakdown when no purpose
+          // filter has been selected.
           if (_selectedPurpose == null && purposeBreakdown.isNotEmpty) ...[
-            const SizedBox(height: 10),
+            const SizedBox(height: 13),
 
-            const Text(
-              'Travel purposes',
-              style: TextStyle(
-                fontSize: 9.5,
-                fontWeight: FontWeight.w700,
-                color: Colors.black45,
-              ),
+            _buildBreakdownLabel(
+              icon: Icons.work_outline_rounded,
+              label: 'Travel Purposes',
             ),
 
-            const SizedBox(height: 6),
+            const SizedBox(height: 8),
 
             Wrap(
-              spacing: 6,
-              runSpacing: 6,
+              spacing: 7,
+              runSpacing: 7,
+
               children: purposeBreakdown.map((item) {
                 final String purpose = item['purpose'] as String? ?? '';
 
-                final int count = item['tripCount'] as int? ?? 0;
+                final int count = _readInt(item['tripCount']);
 
                 return _buildContextChip('${_formatPurpose(purpose)} · $count');
               }).toList(),
@@ -548,57 +785,117 @@ class _PreparationRequirementsScreenState
     );
   }
 
+  // ---------------------------------------------------------------------------
+  // BREAKDOWN LABEL
+  // ---------------------------------------------------------------------------
+
+  Widget _buildBreakdownLabel({required IconData icon, required String label}) {
+    return Row(
+      children: [
+        Icon(icon, size: 15, color: AppColors.secondaryText),
+
+        const SizedBox(width: 6),
+
+        Text(
+          label,
+          style: const TextStyle(
+            color: AppColors.secondaryText,
+            fontSize: 10.5,
+            fontWeight: FontWeight.w700,
+          ),
+        ),
+      ],
+    );
+  }
+
+  // ---------------------------------------------------------------------------
+  // DESTINATION / PURPOSE CHIP
+  // ---------------------------------------------------------------------------
+
   Widget _buildContextChip(String label) {
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 6),
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
+
       decoration: BoxDecoration(
-        color: const Color(0xFFF3F7F9),
+        color: AppColors.background,
         borderRadius: BorderRadius.circular(20),
-        border: Border.all(color: const Color(0xFFE1E7EC)),
+        border: Border.all(color: AppColors.border),
       ),
+
       child: Text(
         label,
         style: const TextStyle(
-          fontSize: 9.5,
+          color: AppColors.secondaryText,
+          fontSize: 10.5,
           fontWeight: FontWeight.w600,
-          color: Color(0xFF486581),
         ),
       ),
     );
   }
 
   // ---------------------------------------------------------------------------
-  // EXPLANATION
+  // ANALYTICS EXPLANATION
   // ---------------------------------------------------------------------------
 
   Widget _buildExplanationCard() {
     return Container(
       width: double.infinity,
-      padding: const EdgeInsets.all(14),
+      padding: const EdgeInsets.all(17),
+
       decoration: BoxDecoration(
-        color: const Color(0xFFF1F6FA),
-        borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: const Color(0xFFD8E6EE)),
+        color: AppColors.primaryLight,
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(color: AppColors.border),
       ),
+
       child: const Row(
         crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Icon(Icons.info_outline_rounded, color: _primaryColor, size: 19),
 
-          SizedBox(width: 9),
+        children: [
+          Icon(Icons.info_outline_rounded, color: AppColors.primary, size: 24),
+
+          SizedBox(width: 12),
 
           Expanded(
-            child: Text(
-              'Requirement patterns describe the types of '
-              'preparation commonly generated for different '
-              'traveller groups. They support comparison of '
-              'travel preparation patterns and do not indicate '
-              'whether regulation content is accurate or requires updating.',
-              style: TextStyle(
-                fontSize: 10.5,
-                height: 1.45,
-                color: Colors.black54,
-              ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+
+              children: [
+                Text(
+                  'Understanding Requirement Patterns',
+                  style: TextStyle(
+                    color: AppColors.navy,
+                    fontSize: 13.5,
+                    fontWeight: FontWeight.w800,
+                  ),
+                ),
+
+                SizedBox(height: 7),
+
+                Text(
+                  'Requirement patterns describe the types '
+                  'of preparation commonly generated for '
+                  'different traveller groups.',
+                  style: TextStyle(
+                    color: AppColors.secondaryText,
+                    fontSize: 12,
+                    height: 1.5,
+                  ),
+                ),
+
+                SizedBox(height: 9),
+
+                Text(
+                  'These patterns support analytical comparison '
+                  'and do not indicate whether regulation content '
+                  'is accurate or requires updating.',
+                  style: TextStyle(
+                    color: AppColors.secondaryText,
+                    fontSize: 11.5,
+                    height: 1.5,
+                  ),
+                ),
+              ],
             ),
           ),
         ],
@@ -607,32 +904,30 @@ class _PreparationRequirementsScreenState
   }
 
   // ---------------------------------------------------------------------------
-  // EMPTY STATE
+  // LOADING / ERROR / EMPTY STATE
   // ---------------------------------------------------------------------------
 
-  Widget _buildEmptyState() {
-    return Container(
-      width: double.infinity,
-      padding: const EdgeInsets.all(28),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: _borderColor),
-      ),
-      child: const Column(
-        children: [
-          Icon(Icons.insights_outlined, size: 38, color: Colors.black38),
-
-          SizedBox(height: 8),
-
-          Text(
-            'No requirement patterns are available '
-            'for the selected filters.',
-            textAlign: TextAlign.center,
-            style: TextStyle(fontSize: 11.5, color: Colors.black54),
-          ),
-        ],
+  Widget _buildStatusCard({
+    required IconData icon,
+    required String title,
+    required String message,
+    bool isLoading = false,
+    double minimumHeight = 180,
+    VoidCallback? onRetry,
+  }) {
+    return ConstrainedBox(
+      constraints: BoxConstraints(minHeight: minimumHeight),
+      child: RoleStatusCard(
+        title: title,
+        message: message,
+        icon: icon,
+        loading: isLoading,
+        onRetry: onRetry,
       ),
     );
   }
 }
+
+// -----------------------------------------------------------------------------
+// REUSABLE REQUIREMENT ICON
+// -----------------------------------------------------------------------------

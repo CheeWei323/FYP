@@ -1,42 +1,50 @@
-import 'dotenv/config';
-import express from 'express';
-import { rateLimit } from 'express-rate-limit';
-import { GoogleGenAI } from '@google/genai';
+import "dotenv/config";
+import express from "express";
+import { rateLimit } from "express-rate-limit";
+import { GoogleGenAI } from "@google/genai";
+import { generatePackingWithFallback, isTemporaryGeminiError } from "./packing_generation.mjs";
+import { createTravelRouter } from "./travel_routes.mjs";
+import { createFirebaseAuth } from "./firebase_auth.mjs";
+import { createAnalyticsRouter } from "./analytics_routes.mjs";
 
 const app = express();
+app.disable("x-powered-by");
 
 const port = process.env.PORT || 3000;
 
-app.set('trust proxy', 1);
+app.set("trust proxy", 1);
 
-app.use(express.json());
+app.use(express.json({ limit: "16kb" }));
+
+// -----------------------------------------------------------------------------
+// TRAVEL PLANNING API
+// -----------------------------------------------------------------------------
+// Add authenticated place searches and route calculations to the existing server.
+app.use("/api/travel", createTravelRouter());
+
+// Serve analyst aggregates without exposing traveller records.
+app.use("/api/analytics", createAnalyticsRouter());
 
 const apiKey = process.env.GEMINI_API_KEY;
 
 if (!apiKey) {
-  throw new Error(
-    'GEMINI_API_KEY environment variable is not configured.',
-  );
+  throw new Error("GEMINI_API_KEY environment variable is not configured.");
 }
 
 const ai = new GoogleGenAI({
   apiKey,
 });
 
-const allowedPurposes = [
-  'tourism',
-  'business',
-  'study',
-];
+const allowedPurposes = ["tourism", "business", "study"];
 
 const allowedCategories = [
-  'clothing',
-  'toiletries',
-  'electronics',
-  'healthComfort',
-  'activityEssentials',
-  'generalEssentials',
-  'other',
+  "clothing",
+  "toiletries",
+  "electronics",
+  "healthComfort",
+  "activityEssentials",
+  "generalEssentials",
+  "other",
 ];
 
 // Limits repeated requests from the same client.
@@ -46,8 +54,7 @@ const packingGenerationLimiter = rateLimit({
   standardHeaders: true,
   legacyHeaders: false,
   message: {
-    error:
-      'Too many packing-generation requests. Please try again later.',
+    error: "Too many packing-generation requests. Please try again later.",
   },
 });
 
@@ -56,93 +63,83 @@ const packingGenerationLimiter = rateLimit({
 function buildBaselinePackingItems(durationDays) {
   const clothingDays = Math.min(durationDays, 7);
 
-  const bottomsQuantity = Math.min(
-    4,
-    Math.max(1, Math.ceil(clothingDays / 2)),
-  );
+  const bottomsQuantity = Math.min(4, Math.max(1, Math.ceil(clothingDays / 2)));
 
-  const sleepwearQuantity =
-      durationDays > 7 ? 2 : 1;
+  const sleepwearQuantity = durationDays > 7 ? 2 : 1;
 
   return [
     {
-      name: 'Everyday tops',
-      category: 'clothing',
+      name: "Everyday tops",
+      category: "clothing",
       quantity: clothingDays,
     },
     {
-      name: 'Everyday bottoms',
-      category: 'clothing',
+      name: "Everyday bottoms",
+      category: "clothing",
       quantity: bottomsQuantity,
     },
     {
-      name: 'Underwear',
-      category: 'clothing',
+      name: "Underwear",
+      category: "clothing",
       quantity: clothingDays,
     },
     {
-      name: 'Socks',
-      category: 'clothing',
+      name: "Socks",
+      category: "clothing",
       quantity: clothingDays,
     },
     {
-      name: 'Sleepwear',
-      category: 'clothing',
+      name: "Sleepwear",
+      category: "clothing",
       quantity: sleepwearQuantity,
     },
     {
-      name: 'Toothbrush',
-      category: 'toiletries',
+      name: "Toothbrush",
+      category: "toiletries",
       quantity: 1,
     },
     {
-      name: 'Toothpaste',
-      category: 'toiletries',
+      name: "Toothpaste",
+      category: "toiletries",
       quantity: 1,
     },
     {
-      name: 'Deodorant',
-      category: 'toiletries',
+      name: "Deodorant",
+      category: "toiletries",
       quantity: 1,
     },
     {
-      name: 'Phone charger',
-      category: 'electronics',
+      name: "Phone charger",
+      category: "electronics",
       quantity: 1,
     },
     {
-  name: 'Universal travel adapter',
-  category: 'electronics',
-  quantity: 1,
+      name: "Universal travel adapter",
+      category: "electronics",
+      quantity: 1,
     },
   ];
 }
 
 // Normalises names for duplicate checking.
 function normalizeItemName(name) {
-  return name
-    .trim()
-    .toLowerCase()
-    .replace(/\s+/g, ' ');
+  return name.trim().toLowerCase().replace(/\s+/g, " ");
 }
 
 function addDependentPackingItems(items) {
   const normalizedNames = new Set(
-    items.map((item) =>
-      normalizeItemName(item.name),
-    ),
+    items.map((item) => normalizeItemName(item.name)),
   );
 
   const finalItems = [...items];
 
-  const hasLaptop = normalizedNames.has('laptop');
-  const hasLaptopCharger =
-      normalizedNames.has('laptop charger');
+  const hasLaptop = normalizedNames.has("laptop");
+  const hasLaptopCharger = normalizedNames.has("laptop charger");
 
   if (hasLaptop && !hasLaptopCharger) {
     finalItems.push({
-      name: 'Laptop charger',
-      category: 'electronics',
+      name: "Laptop charger",
+      category: "electronics",
       quantity: 1,
     });
   }
@@ -150,186 +147,109 @@ function addDependentPackingItems(items) {
   return finalItems;
 }
 
-// Waits before retrying a temporary Gemini failure.
-function delay(milliseconds) {
-  return new Promise((resolve) => {
-    setTimeout(resolve, milliseconds);
+// Retry temporary capacity failures using a second free Gemini model.
+async function generateWithRetry(prompt) {
+  return generatePackingWithFallback({
+    ai,
+    primaryModel: process.env.GEMINI_MODEL,
+    fallbackModel: process.env.GEMINI_FALLBACK_MODEL,
+    request: {
+      contents: prompt,
+      config: {
+        responseMimeType: "application/json",
+        responseSchema: {
+          type: "object",
+          properties: {
+            items: {
+              type: "array",
+              minItems: 8,
+              maxItems: 15,
+              items: {
+                type: "object",
+                properties: {
+                  name: {
+                    type: "string",
+                    description: "Short name of the packing item.",
+                  },
+                  category: {
+                    type: "string",
+                    enum: allowedCategories,
+                    description: "One of the TravelGuard packing categories.",
+                  },
+                  quantity: {
+                    type: "integer",
+                    minimum: 1,
+                    description: "Recommended quantity for the trip.",
+                  },
+                },
+                required: ["name", "category", "quantity"],
+              },
+            },
+          },
+          required: ["items"],
+        },
+      },
+    },
   });
 }
 
-// Checks whether Gemini returned a temporary high-demand error.
-function isTemporaryGeminiError(error) {
-  if (error?.status === 503) {
-    return true;
-  }
-
-  const message = String(error?.message ?? error);
-
-  return (
-    message.includes('"code":503') ||
-    message.includes('503') ||
-    message.toLowerCase().includes('high demand') ||
-    message.includes('UNAVAILABLE')
-  );
-}
-
-// Calls Gemini and retries temporary 503 errors.
-async function generateWithRetry(prompt) {
-  const maximumAttempts = 3;
-
-  for (
-    let attempt = 1;
-    attempt <= maximumAttempts;
-    attempt++
-  ) {
-    try {
-      return await ai.models.generateContent({
-        model: 'gemini-3.1-flash-lite',
-        contents: prompt,
-        config: {
-          responseMimeType: 'application/json',
-          responseSchema: {
-            type: 'object',
-            properties: {
-              items: {
-                type: 'array',
-                minItems: 8,
-                maxItems: 15,
-                items: {
-                  type: 'object',
-                  properties: {
-                    name: {
-                      type: 'string',
-                      description:
-                        'Short name of the packing item.',
-                    },
-                    category: {
-                      type: 'string',
-                      enum: allowedCategories,
-                      description:
-                        'One of the TravelGuard packing categories.',
-                    },
-                    quantity: {
-                      type: 'integer',
-                      minimum: 1,
-                      description:
-                        'Recommended quantity for the trip.',
-                    },
-                  },
-                  required: [
-                    'name',
-                    'category',
-                    'quantity',
-                  ],
-                },
-              },
-            },
-            required: [
-              'items',
-            ],
-          },
-        },
-      });
-    } catch (error) {
-      const temporaryError =
-          isTemporaryGeminiError(error);
-
-      if (
-        !temporaryError ||
-        attempt === maximumAttempts
-      ) {
-        throw error;
-      }
-
-      // 2 seconds after attempt 1, then 4 seconds after attempt 2.
-      const waitTime =
-          2000 * Math.pow(2, attempt - 1);
-
-      console.warn(
-        `Gemini temporarily unavailable. ` +
-        `Retrying attempt ${attempt + 1} ` +
-        `in ${waitTime / 1000} seconds...`,
-      );
-
-      await delay(waitTime);
-    }
-  }
-
-  throw new Error(
-    'Gemini generation failed after retries.',
-  );
-}
-
 // Simple backend health-check endpoint.
-app.get('/', (req, res) => {
+app.get("/", (req, res) => {
   res.json({
-    message: 'TravelGuard AI backend is running.',
+    message: "TravelGuard AI backend is running.",
   });
 });
 
 // Generates contextual packing recommendations.
 app.post(
-  '/api/packing/generate',
+  "/api/packing/generate",
   packingGenerationLimiter,
+  createFirebaseAuth({
+    signInMessage: "Please sign in to generate packing suggestions.",
+  }),
   async (req, res) => {
     try {
-      const {
-        destination,
-        purpose,
-        durationDays,
-        departureDate,
-      } = req.body;
+      const { destination, purpose, durationDays, departureDate } = req.body;
 
       // Validate destination.
-      if (
-        typeof destination !== 'string' ||
-        destination.trim().length === 0
-      ) {
+      if (typeof destination !== "string" || destination.trim().length === 0) {
         return res.status(400).json({
-          error: 'A valid destination is required.',
+          error: "A valid destination is required.",
         });
       }
 
       // Validate travel purpose.
       if (
-        typeof purpose !== 'string' ||
-        !allowedPurposes.includes(
-          purpose.trim().toLowerCase(),
-        )
+        typeof purpose !== "string" ||
+        !allowedPurposes.includes(purpose.trim().toLowerCase())
       ) {
         return res.status(400).json({
-          error: 'A valid travel purpose is required.',
+          error: "A valid travel purpose is required.",
         });
       }
 
       // Validate trip duration.
-      if (
-        !Number.isInteger(durationDays) ||
-        durationDays < 1
-      ) {
+      if (!Number.isInteger(durationDays) || durationDays < 1) {
         return res.status(400).json({
-          error: 'Duration must be at least one day.',
+          error: "Duration must be at least one day.",
         });
       }
 
       // Validate departure date.
       if (
-        typeof departureDate !== 'string' ||
+        typeof departureDate !== "string" ||
         departureDate.trim().length === 0
       ) {
         return res.status(400).json({
-          error: 'A valid departure date is required.',
+          error: "A valid departure date is required.",
         });
       }
 
-      const cleanedDestination =
-          destination.trim();
+      const cleanedDestination = destination.trim();
 
-      const cleanedPurpose =
-          purpose.trim().toLowerCase();
+      const cleanedPurpose = purpose.trim().toLowerCase();
 
-      const cleanedDepartureDate =
-          departureDate.trim();
+      const cleanedDepartureDate = departureDate.trim();
 
       const prompt = `
 Generate practical and personalised contextual packing recommendations
@@ -422,36 +342,25 @@ Allowed categories:
 Return only the structured packing items requested by the schema.
 `;
 
-      const response =
-          await generateWithRetry(prompt);
+      const response = await generateWithRetry(prompt);
 
       if (!response.text) {
-        throw new Error(
-          'Gemini returned an empty response.',
-        );
+        throw new Error("Gemini returned an empty response.");
       }
 
-      const result =
-          JSON.parse(response.text);
+      const result = JSON.parse(response.text);
 
-      if (
-        !result ||
-        !Array.isArray(result.items)
-      ) {
-        throw new Error(
-          'Gemini returned an invalid packing list.',
-        );
+      if (!result || !Array.isArray(result.items)) {
+        throw new Error("Gemini returned an invalid packing list.");
       }
 
       // Validates Gemini output before it is merged with standard items.
       const contextualItems = result.items
         .filter((item) => {
           return (
-            typeof item.name === 'string' &&
+            typeof item.name === "string" &&
             item.name.trim().length > 0 &&
-            allowedCategories.includes(
-              item.category,
-            ) &&
+            allowedCategories.includes(item.category) &&
             Number.isInteger(item.quantity) &&
             item.quantity >= 1
           );
@@ -463,27 +372,21 @@ Return only the structured packing items requested by the schema.
         }));
 
       if (contextualItems.length === 0) {
-        throw new Error(
-          'Gemini did not return any valid packing items.',
-        );
+        throw new Error("Gemini did not return any valid packing items.");
       }
 
-      const baselineItems =
-          buildBaselinePackingItems(durationDays);
+      const baselineItems = buildBaselinePackingItems(durationDays);
 
       // Removes exact-name duplicates from Gemini output and also
       // prevents duplicate contextual items from being returned.
       const seenNames = new Set(
-        baselineItems.map((item) =>
-          normalizeItemName(item.name),
-        ),
+        baselineItems.map((item) => normalizeItemName(item.name)),
       );
 
       const uniqueContextualItems = [];
 
       for (const item of contextualItems) {
-        const normalizedName =
-            normalizeItemName(item.name);
+        const normalizedName = normalizeItemName(item.name);
 
         if (seenNames.has(normalizedName)) {
           continue;
@@ -493,41 +396,44 @@ Return only the structured packing items requested by the schema.
         uniqueContextualItems.push(item);
       }
 
-      const mergedItems = [
-        ...baselineItems,
-        ...uniqueContextualItems,
-      ];
+      const mergedItems = [...baselineItems, ...uniqueContextualItems];
 
-      const finalItems =
-          addDependentPackingItems(mergedItems);
+      const finalItems = addDependentPackingItems(mergedItems);
 
       return res.status(200).json({
         items: finalItems,
       });
     } catch (error) {
-      console.error(
-        'PACKING GENERATION ERROR:',
-        error,
-      );
+      console.error("PACKING GENERATION ERROR:", error);
 
       // Return a specific response for temporary Gemini congestion.
       if (isTemporaryGeminiError(error)) {
         return res.status(503).json({
-          error:
-            'Gemini is temporarily busy. Please try again shortly.',
+          error: "Gemini is temporarily busy. Please try again shortly.",
         });
       }
 
       return res.status(500).json({
-        error:
-          'Unable to generate packing recommendations.',
+        error: "Unable to generate packing recommendations.",
       });
     }
   },
 );
 
-app.listen(port, '0.0.0.0', () => {
-  console.log(
-    `TravelGuard AI backend running on port ${port}`,
-  );
+// Return safe JSON for malformed bodies and unexpected request failures.
+app.use((error, req, res, next) => {
+  if (res.headersSent) return next(error);
+  const status = error.status === 413 ? 413 : error.status === 400 ? 400 : 500;
+  return res.status(status).json({
+    error:
+      status === 413
+        ? "The request is too large."
+        : status === 400
+          ? "The request body must contain valid JSON."
+          : "The request could not be completed.",
+  });
+});
+
+app.listen(port, "0.0.0.0", () => {
+  console.log(`TravelGuard AI backend running on port ${port}`);
 });

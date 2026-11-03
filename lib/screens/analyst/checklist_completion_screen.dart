@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 
 import '../../services/analyst_service.dart';
+import '../../theme/app_theme.dart';
+import '../../widgets/role_ui_widgets.dart';
 import '../../widgets/analyst/analytics_filter_card.dart';
 
 class ChecklistCompletionScreen extends StatefulWidget {
@@ -14,16 +16,6 @@ class ChecklistCompletionScreen extends StatefulWidget {
 class _ChecklistCompletionScreenState extends State<ChecklistCompletionScreen> {
   final AnalystService _analystService = AnalystService();
 
-  static const Color _primaryColor = Color(0xFF087F8C);
-
-  static const Color _darkTextColor = Color(0xFF102A43);
-
-  static const Color _backgroundColor = Color(0xFFF7F9FB);
-
-  static const Color _borderColor = Color(0xFFE1E7EC);
-
-  static const Color _comparisonBarColor = Color(0xFF2F5F98);
-
   String? _selectedDestinationId;
   String? _selectedPurpose;
 
@@ -31,105 +23,258 @@ class _ChecklistCompletionScreenState extends State<ChecklistCompletionScreen> {
 
   bool _showAllAttentionRequirements = false;
 
-  late Future<Map<String, dynamic>> _analyticsFuture;
+  // Cached Firestore analytics.
+  Map<String, dynamic>? _analyticsData;
 
-  late Future<List<Map<String, String>>> _countriesFuture;
+  String? _loadedDestinationId;
+  String? _loadedPurpose;
+
+  List<Map<String, String>> _countries = [];
+
+  bool _analyticsLoading = true;
+  bool _analyticsError = false;
+
+  bool _countriesLoading = true;
+  bool _countriesError = false;
+
+  // Prevent outdated requests from replacing newer results.
+  int _analyticsRequestVersion = 0;
+  int _countriesRequestVersion = 0;
 
   @override
   void initState() {
     super.initState();
 
-    _analyticsFuture = _analystService.getChecklistCompletionAnalytics();
-
-    _countriesFuture = _analystService.getAnalyticsFilterCountries();
+    _loadAnalytics();
+    _loadCountries();
   }
 
-  void _reloadAnalytics() {
-    _analyticsFuture = _analystService.getChecklistCompletionAnalytics(
-      destinationId: _selectedDestinationId,
-      purpose: _selectedPurpose,
-    );
+  // ---------------------------------------------------------------------------
+  // LOAD CHECKLIST ANALYTICS
+  // ---------------------------------------------------------------------------
+
+  Future<void> _loadAnalytics() async {
+    final int requestVersion = ++_analyticsRequestVersion;
+
+    final String? requestedDestination = _selectedDestinationId;
+    final String? requestedPurpose = _selectedPurpose;
+
+    try {
+      final Map<String, dynamic> data = await _analystService
+          .getChecklistCompletionAnalytics(
+            destinationId: requestedDestination,
+            purpose: requestedPurpose,
+          );
+
+      if (!mounted || requestVersion != _analyticsRequestVersion) {
+        return;
+      }
+
+      setState(() {
+        _analyticsData = data;
+
+        _loadedDestinationId = requestedDestination;
+        _loadedPurpose = requestedPurpose;
+
+        _analyticsLoading = false;
+        _analyticsError = false;
+      });
+    } catch (error) {
+      debugPrint('CHECKLIST ANALYTICS ERROR: $error');
+
+      if (!mounted || requestVersion != _analyticsRequestVersion) {
+        return;
+      }
+
+      final bool hasCachedData =
+          _analyticsData != null &&
+          _loadedDestinationId == requestedDestination &&
+          _loadedPurpose == requestedPurpose;
+
+      setState(() {
+        _analyticsLoading = false;
+        _analyticsError = true;
+      });
+
+      // Preserve existing analytics if a refresh fails.
+      if (hasCachedData) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text(
+              'Unable to refresh checklist analytics. '
+              'Showing the previously loaded data.',
+            ),
+          ),
+        );
+      }
+    }
   }
+
+  // ---------------------------------------------------------------------------
+  // LOAD FILTER DESTINATIONS
+  // ---------------------------------------------------------------------------
+
+  Future<void> _loadCountries() async {
+    final int requestVersion = ++_countriesRequestVersion;
+
+    try {
+      final List<Map<String, String>> countries = await _analystService
+          .getAnalyticsFilterCountries();
+
+      if (!mounted || requestVersion != _countriesRequestVersion) {
+        return;
+      }
+
+      setState(() {
+        _countries = countries;
+        _countriesLoading = false;
+        _countriesError = false;
+      });
+    } catch (error) {
+      debugPrint('CHECKLIST FILTER COUNTRIES ERROR: $error');
+
+      if (!mounted || requestVersion != _countriesRequestVersion) {
+        return;
+      }
+
+      setState(() {
+        _countriesLoading = false;
+        _countriesError = true;
+      });
+    }
+  }
+
+  // ---------------------------------------------------------------------------
+  // REFRESH
+  // ---------------------------------------------------------------------------
 
   Future<void> _refresh() async {
-    final Future<Map<String, dynamic>> analyticsFuture = _analystService
-        .getChecklistCompletionAnalytics(
-          destinationId: _selectedDestinationId,
-          purpose: _selectedPurpose,
-        );
-
-    final Future<List<Map<String, String>>> countriesFuture = _analystService
-        .getAnalyticsFilterCountries();
-
-    setState(() {
-      _analyticsFuture = analyticsFuture;
-
-      _countriesFuture = countriesFuture;
-    });
-
-    await analyticsFuture;
-    await countriesFuture;
+    await Future.wait<void>([_loadAnalytics(), _loadCountries()]);
   }
 
-  Widget _buildFilters() {
-    return FutureBuilder<List<Map<String, String>>>(
-      future: _countriesFuture,
-      builder: (context, snapshot) {
-        if (snapshot.connectionState == ConnectionState.waiting) {
-          return const Center(
-            child: Padding(
-              padding: EdgeInsets.all(12),
-              child: CircularProgressIndicator(),
-            ),
-          );
-        }
+  // ---------------------------------------------------------------------------
+  // FILTER HANDLING
+  // ---------------------------------------------------------------------------
 
-        final List<Map<String, String>> countries = snapshot.data ?? [];
+  void _changeDestination(String? destinationId) {
+    if (_selectedDestinationId == destinationId) {
+      return;
+    }
 
-        return AnalyticsFilterCard(
-          countries: countries,
-          selectedDestinationId: _selectedDestinationId,
-          selectedPurpose: _selectedPurpose,
+    setState(() {
+      _selectedDestinationId = destinationId;
 
-          onDestinationChanged: (value) {
-            setState(() {
-              _selectedDestinationId = value;
+      _analyticsLoading = true;
+      _analyticsError = false;
 
-              _showAllAttentionRequirements = false;
+      _showAllAttentionRequirements = false;
 
-              _syncComparisonMode();
+      _syncComparisonMode();
+    });
 
-              _reloadAnalytics();
-            });
-          },
+    _loadAnalytics();
+  }
 
-          onPurposeChanged: (value) {
-            setState(() {
-              _selectedPurpose = value;
+  void _changePurpose(String? purpose) {
+    if (_selectedPurpose == purpose) {
+      return;
+    }
 
-              _showAllAttentionRequirements = false;
+    setState(() {
+      _selectedPurpose = purpose;
 
-              _syncComparisonMode();
+      _analyticsLoading = true;
+      _analyticsError = false;
 
-              _reloadAnalytics();
-            });
-          },
+      _showAllAttentionRequirements = false;
 
-          onClear: () {
-            setState(() {
-              _selectedDestinationId = null;
-              _selectedPurpose = null;
+      _syncComparisonMode();
+    });
 
-              _showAllAttentionRequirements = false;
+    _loadAnalytics();
+  }
 
-              _syncComparisonMode();
+  void _clearFilters() {
+    if (_selectedDestinationId == null && _selectedPurpose == null) {
+      return;
+    }
 
-              _reloadAnalytics();
-            });
-          },
-        );
-      },
-    );
+    setState(() {
+      _selectedDestinationId = null;
+      _selectedPurpose = null;
+
+      _analyticsLoading = true;
+      _analyticsError = false;
+
+      _showAllAttentionRequirements = false;
+
+      _syncComparisonMode();
+    });
+
+    _loadAnalytics();
+  }
+
+  // ---------------------------------------------------------------------------
+  // COMPARISON MODE
+  // ---------------------------------------------------------------------------
+
+  bool get _hasDestinationFilter => _selectedDestinationId != null;
+
+  bool get _hasPurposeFilter => _selectedPurpose != null;
+
+  bool get _bothFiltersSelected => _hasDestinationFilter && _hasPurposeFilter;
+
+  bool get _showComparisonSelector =>
+      !_hasDestinationFilter && !_hasPurposeFilter;
+
+  void _syncComparisonMode() {
+    // A fixed destination means comparing travel purposes.
+    if (_hasDestinationFilter && !_hasPurposeFilter) {
+      _comparisonMode = 'purpose';
+      return;
+    }
+
+    // A fixed purpose means comparing destinations.
+    if (!_hasDestinationFilter && _hasPurposeFilter) {
+      _comparisonMode = 'destination';
+      return;
+    }
+
+    // Default to comparing destinations.
+    if (!_hasDestinationFilter && !_hasPurposeFilter) {
+      _comparisonMode = 'destination';
+    }
+  }
+
+  // ---------------------------------------------------------------------------
+  // DATA HELPERS
+  // ---------------------------------------------------------------------------
+
+  int _readInt(dynamic value) {
+    if (value is num) {
+      return value.toInt();
+    }
+
+    return int.tryParse(value?.toString() ?? '') ?? 0;
+  }
+
+  double _readDouble(dynamic value) {
+    if (value is num) {
+      return value.toDouble();
+    }
+
+    return double.tryParse(value?.toString() ?? '') ?? 0.0;
+  }
+
+  List<Map<String, dynamic>> _readList(dynamic value) {
+    if (value is! List) {
+      return [];
+    }
+
+    return value
+        .whereType<Map>()
+        .map((item) => Map<String, dynamic>.from(item))
+        .toList();
   }
 
   String _formatPurpose(String purpose) {
@@ -153,145 +298,121 @@ class _ChecklistCompletionScreenState extends State<ChecklistCompletionScreen> {
     }
   }
 
-  bool get _hasDestinationFilter => _selectedDestinationId != null;
+  // ---------------------------------------------------------------------------
+  // CARD DECORATION
+  // ---------------------------------------------------------------------------
 
-  bool get _hasPurposeFilter => _selectedPurpose != null;
-
-  bool get _bothFiltersSelected => _hasDestinationFilter && _hasPurposeFilter;
-
-  bool get _showComparisonSelector =>
-      !_hasDestinationFilter && !_hasPurposeFilter;
-
-  void _syncComparisonMode() {
-    // If a destination is fixed, compare purposes
-    // within that selected destination.
-    if (_hasDestinationFilter && !_hasPurposeFilter) {
-      _comparisonMode = 'purpose';
-      return;
-    }
-
-    // If a purpose is fixed, compare destinations
-    // within that selected purpose.
-    if (!_hasDestinationFilter && _hasPurposeFilter) {
-      _comparisonMode = 'destination';
-      return;
-    }
-
-    // If both filters are cleared, return to the
-    // default destination comparison.
-    if (!_hasDestinationFilter && !_hasPurposeFilter) {
-      _comparisonMode = 'destination';
-    }
+  BoxDecoration _cardDecoration({Color color = Colors.white}) {
+    return BoxDecoration(
+      color: color,
+      borderRadius: BorderRadius.circular(20),
+      border: Border.all(color: AppColors.border),
+      boxShadow: const [
+        BoxShadow(
+          color: Color(0x08000000),
+          blurRadius: 12,
+          offset: Offset(0, 4),
+        ),
+      ],
+    );
   }
+
+  // ---------------------------------------------------------------------------
+  // MAIN SCREEN
+  // ---------------------------------------------------------------------------
 
   @override
   Widget build(BuildContext context) {
+    final bool hasCurrentData =
+        _analyticsData != null &&
+        _loadedDestinationId == _selectedDestinationId &&
+        _loadedPurpose == _selectedPurpose;
+
+    final Map<String, dynamic>? currentData = hasCurrentData
+        ? _analyticsData
+        : null;
+
     return Scaffold(
-      backgroundColor: _backgroundColor,
+      backgroundColor: AppColors.background,
+
       appBar: AppBar(
         backgroundColor: Colors.white,
         surfaceTintColor: Colors.white,
-        foregroundColor: _darkTextColor,
+        foregroundColor: AppColors.navy,
         elevation: 0,
+
         title: const Text(
           'Checklist Completion',
-          style: TextStyle(fontWeight: FontWeight.w700),
+          style: TextStyle(color: AppColors.navy, fontWeight: FontWeight.w800),
         ),
       ),
+
       body: SafeArea(
         child: RefreshIndicator(
+          color: AppColors.primary,
           onRefresh: _refresh,
-          child: FutureBuilder<Map<String, dynamic>>(
-            future: _analyticsFuture,
-            builder: (context, snapshot) {
-              if (snapshot.connectionState == ConnectionState.waiting) {
-                return const Center(child: CircularProgressIndicator());
-              }
 
-              if (snapshot.hasError) {
-                debugPrint(
-                  'CHECKLIST ANALYTICS ERROR: '
-                  '${snapshot.error}',
-                );
+          child: ListView(
+            physics: const AlwaysScrollableScrollPhysics(
+              parent: ClampingScrollPhysics(),
+            ),
 
-                return ListView(
-                  physics: const AlwaysScrollableScrollPhysics(),
-                  padding: const EdgeInsets.all(24),
-                  children: const [
-                    SizedBox(height: 130),
-                    Center(child: Text('Unable to load checklist analytics.')),
-                  ],
-                );
-              }
+            padding: const EdgeInsets.fromLTRB(18, 18, 18, 36),
 
-              final Map<String, dynamic> data = snapshot.data ?? {};
+            children: [
+              _buildHeader(),
 
-              final double overallCompletionRate =
-                  data['overallCompletionRate'] as double? ?? 0;
+              const SizedBox(height: 26),
 
-              final int completedItems =
-                  data['completedChecklistItems'] as int? ?? 0;
+              _buildSectionTitle(
+                'Filter Analytics',
+                'Select a destination and travel purpose '
+                    'to explore checklist completion.',
+              ),
 
-              final int incompleteItems =
-                  data['incompleteChecklistItems'] as int? ?? 0;
+              const SizedBox(height: 13),
 
-              final int tripsWithChecklist =
-                  data['tripsWithChecklist'] as int? ?? 0;
+              _buildFilters(),
 
-              final List<Map<String, dynamic>> destinationComparison =
-                  List<Map<String, dynamic>>.from(
-                    data['destinationComparison'] as List? ?? [],
-                  );
+              const SizedBox(height: 27),
 
-              final List<Map<String, dynamic>> purposeComparison =
-                  List<Map<String, dynamic>>.from(
-                    data['purposeComparison'] as List? ?? [],
-                  );
-
-              final List<Map<String, dynamic>> attentionRequirements =
-                  List<Map<String, dynamic>>.from(
-                    data['requirementsNeedingAttention'] as List? ?? [],
-                  );
-
-              final List<Map<String, dynamic>> comparisonData =
-                  _comparisonMode == 'destination'
-                  ? destinationComparison
-                  : purposeComparison;
-
-              return ListView(
-                physics: const AlwaysScrollableScrollPhysics(),
-                padding: const EdgeInsets.fromLTRB(18, 18, 18, 36),
-                children: [
-                  _buildHeader(),
-
-                  const SizedBox(height: 18),
-
-                  _buildFilters(),
-
-                  const SizedBox(height: 24),
-
-                  _buildOverallCompletionCard(
-                    completionRate: overallCompletionRate,
-                    completedItems: completedItems,
-                    incompleteItems: incompleteItems,
-                    tripCount: tripsWithChecklist,
-                  ),
-
-                  const SizedBox(height: 28),
-
-                  if (!_bothFiltersSelected) ...[
-                    _buildComparisonSection(data: comparisonData),
-
-                    const SizedBox(height: 28),
-                  ],
-
-                  _buildAttentionSection(requirements: attentionRequirements),
-                ],
-              );
-            },
+              _buildAnalyticsContent(currentData),
+            ],
           ),
         ),
       ),
+    );
+  }
+
+  // ---------------------------------------------------------------------------
+  // SECTION TITLE
+  // ---------------------------------------------------------------------------
+
+  Widget _buildSectionTitle(String title, String description) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+
+      children: [
+        Text(
+          title,
+          style: const TextStyle(
+            color: AppColors.navy,
+            fontSize: 18,
+            fontWeight: FontWeight.w800,
+          ),
+        ),
+
+        const SizedBox(height: 6),
+
+        Text(
+          description,
+          style: const TextStyle(
+            color: AppColors.secondaryText,
+            fontSize: 12.5,
+            height: 1.45,
+          ),
+        ),
+      ],
     );
   }
 
@@ -300,56 +421,130 @@ class _ChecklistCompletionScreenState extends State<ChecklistCompletionScreen> {
   // ---------------------------------------------------------------------------
 
   Widget _buildHeader() {
-    return Container(
-      width: double.infinity,
-      padding: const EdgeInsets.all(20),
-      decoration: BoxDecoration(
-        gradient: const LinearGradient(
-          colors: [Color(0xFFE7F7F8), Color(0xFFF1F8FB)],
-        ),
-        borderRadius: BorderRadius.circular(20),
-        border: Border.all(color: const Color(0xFFCBE8EB)),
-      ),
-      child: const Row(
-        children: [
-          Icon(Icons.task_alt_outlined, color: _primaryColor, size: 32),
-
-          SizedBox(width: 14),
-
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  'Checklist Completion',
-                  style: TextStyle(
-                    fontSize: 20,
-                    fontWeight: FontWeight.w800,
-                    color: _darkTextColor,
-                  ),
-                ),
-
-                SizedBox(height: 5),
-
-                Text(
-                  'Understand how well travellers '
-                  'complete their preparation guidance.',
-                  style: TextStyle(
-                    fontSize: 12.5,
-                    height: 1.4,
-                    color: Colors.black54,
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ],
-      ),
+    return const RoleIntroCard(
+      eyebrow: 'TRAVEL ANALYTICS',
+      title: "Checklist completion",
+      description:
+          "Explore preparation progress by destination, travel purpose and individual requirement.",
+      icon: Icons.task_alt_rounded,
     );
   }
 
   // ---------------------------------------------------------------------------
-  // OVERALL COMPLETION
+  // ANALYTICS FILTERS
+  // ---------------------------------------------------------------------------
+
+  Widget _buildFilters() {
+    if (_countriesLoading && _countries.isEmpty) {
+      return _buildStatusCard(
+        icon: Icons.filter_alt_outlined,
+        title: 'Loading Filters',
+        message: 'Retrieving supported destination filters...',
+        isLoading: true,
+        minimumHeight: 160,
+      );
+    }
+
+    if (_countriesError && _countries.isEmpty) {
+      return _buildStatusCard(
+        icon: Icons.cloud_off_outlined,
+        title: 'Unable to Load Filters',
+        message: 'Destination filters could not be retrieved.',
+        minimumHeight: 160,
+        onRetry: _loadCountries,
+      );
+    }
+
+    // Keep the existing reusable destination/purpose filter.
+    return AnalyticsFilterCard(
+      countries: _countries,
+      selectedDestinationId: _selectedDestinationId,
+      selectedPurpose: _selectedPurpose,
+      onDestinationChanged: _changeDestination,
+      onPurposeChanged: _changePurpose,
+      onClear: _clearFilters,
+    );
+  }
+
+  // ---------------------------------------------------------------------------
+  // ANALYTICS CONTENT
+  // ---------------------------------------------------------------------------
+
+  Widget _buildAnalyticsContent(Map<String, dynamic>? data) {
+    if (data == null) {
+      return _buildStatusCard(
+        icon: _analyticsError
+            ? Icons.cloud_off_outlined
+            : Icons.analytics_outlined,
+        title: _analyticsError
+            ? 'Unable to Load Analytics'
+            : 'Loading Checklist Analytics',
+        message: _analyticsError
+            ? 'Checklist completion statistics could not '
+                  'be retrieved. Please try again.'
+            : 'Retrieving checklist completion statistics '
+                  'for the selected filters...',
+        isLoading: _analyticsLoading && !_analyticsError,
+        minimumHeight: 300,
+        onRetry: _analyticsError ? _loadAnalytics : null,
+      );
+    }
+
+    final double overallCompletionRate = _readDouble(
+      data['overallCompletionRate'],
+    );
+
+    final int completedItems = _readInt(data['completedChecklistItems']);
+
+    final int incompleteItems = _readInt(data['incompleteChecklistItems']);
+
+    final int tripsWithChecklist = _readInt(data['tripsWithChecklist']);
+
+    final List<Map<String, dynamic>> destinationComparison = _readList(
+      data['destinationComparison'],
+    );
+
+    final List<Map<String, dynamic>> purposeComparison = _readList(
+      data['purposeComparison'],
+    );
+
+    final List<Map<String, dynamic>> attentionRequirements = _readList(
+      data['requirementsNeedingAttention'],
+    );
+
+    final List<Map<String, dynamic>> comparisonData =
+        _comparisonMode == 'destination'
+        ? destinationComparison
+        : purposeComparison;
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+
+      children: [
+        _buildOverallCompletionCard(
+          completionRate: overallCompletionRate,
+          completedItems: completedItems,
+          incompleteItems: incompleteItems,
+          tripCount: tripsWithChecklist,
+        ),
+
+        const SizedBox(height: 28),
+
+        // Comparison is hidden when both dimensions
+        // are already fixed by the selected filters.
+        if (!_bothFiltersSelected) ...[
+          _buildComparisonSection(data: comparisonData),
+
+          const SizedBox(height: 28),
+        ],
+
+        _buildAttentionSection(requirements: attentionRequirements),
+      ],
+    );
+  }
+
+  // ---------------------------------------------------------------------------
+  // OVERALL COMPLETION CARD
   // ---------------------------------------------------------------------------
 
   Widget _buildOverallCompletionCard({
@@ -358,188 +553,95 @@ class _ChecklistCompletionScreenState extends State<ChecklistCompletionScreen> {
     required int incompleteItems,
     required int tripCount,
   }) {
-    final double progress = (completionRate / 100).clamp(0.0, 1.0);
-
+    final progress = (completionRate / 100).clamp(0.0, 1.0);
     return Container(
       width: double.infinity,
-      padding: const EdgeInsets.fromLTRB(20, 20, 20, 18),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(18),
-        border: Border.all(color: _borderColor),
-      ),
+      padding: const EdgeInsets.all(20),
+      decoration: _cardDecoration(),
       child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          const Align(
-            alignment: Alignment.centerLeft,
-            child: Text(
-              'Overall Preparation Completion',
-              style: TextStyle(
-                fontSize: 16,
-                fontWeight: FontWeight.w800,
-                color: _darkTextColor,
-              ),
+          const Text(
+            'Overall preparation completion',
+            style: TextStyle(
+              fontSize: 17,
+              fontWeight: FontWeight.w700,
+              color: AppColors.navy,
             ),
           ),
-
-          const SizedBox(height: 4),
-
-          Align(
-            alignment: Alignment.centerLeft,
-            child: Text(
-              tripCount == 0
-                  ? 'No checklist data is available for the selected filters.'
-                  : 'Average completion across $tripCount '
-                        '${tripCount == 1 ? 'trip' : 'trips'} '
-                        'with generated checklists.',
-              style: const TextStyle(
-                fontSize: 11,
-                height: 1.4,
-                color: Colors.black54,
-              ),
-            ),
+          const SizedBox(height: 8),
+          Text(
+            tripCount == 0
+                ? 'No generated checklists match these filters.'
+                : 'Average completion across $tripCount ${tripCount == 1 ? 'trip' : 'trips'} with generated checklists.',
           ),
-
-          const SizedBox(height: 18),
-
-          SizedBox(
-            width: 170,
-            height: 170,
-            child: Stack(
-              alignment: Alignment.center,
-              children: [
-                SizedBox(
-                  width: 150,
-                  height: 150,
-                  child: CircularProgressIndicator(
-                    value: progress,
-                    strokeWidth: 20,
-                    backgroundColor: const Color(0xFFE7ECEF),
-                    color: _primaryColor,
-                    strokeCap: StrokeCap.butt,
+          const SizedBox(height: 20),
+          Center(
+            child: SizedBox.square(
+              dimension: 150,
+              child: Stack(
+                alignment: Alignment.center,
+                children: [
+                  SizedBox.square(
+                    dimension: 136,
+                    child: CircularProgressIndicator(
+                      value: progress,
+                      strokeWidth: 15,
+                      backgroundColor: AppColors.primaryLight,
+                      color: AppColors.primary,
+                    ),
                   ),
-                ),
-
-                Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Text(
-                      '${completionRate.toStringAsFixed(1)}%',
-                      style: const TextStyle(
-                        fontSize: 27,
-                        fontWeight: FontWeight.w800,
-                        color: _darkTextColor,
-                      ),
-                    ),
-
-                    const SizedBox(height: 2),
-
-                    const Text(
-                      'Average completion',
-                      style: TextStyle(fontSize: 10, color: Colors.black54),
-                    ),
-                  ],
-                ),
-              ],
+                  const Icon(
+                    Icons.task_alt_rounded,
+                    color: AppColors.primary,
+                    size: 36,
+                  ),
+                ],
+              ),
             ),
           ),
-
-          const SizedBox(height: 16),
-
-          Row(
-            children: [
-              Expanded(
-                child: _buildSupportingStat(
-                  icon: Icons.check_circle_outline,
-                  label: 'Completed',
-                  value: completedItems,
-                ),
+          const SizedBox(height: 20),
+          Text(
+            '${completionRate.toStringAsFixed(1)}%',
+            textAlign: TextAlign.center,
+            style: const TextStyle(
+              fontSize: 28,
+              fontWeight: FontWeight.w800,
+              color: AppColors.navy,
+            ),
+          ),
+          const Text('Average completion', textAlign: TextAlign.center),
+          const SizedBox(height: 20),
+          RoleMetricGrid(
+            metrics: [
+              RoleMetric(
+                label: 'Completed items',
+                value: '$completedItems',
+                icon: Icons.check_circle_outline_rounded,
               ),
-
-              Container(width: 1, height: 38, color: _borderColor),
-
-              Expanded(
-                child: _buildSupportingStat(
-                  icon: Icons.pending_actions_outlined,
-                  label: 'Incomplete',
-                  value: incompleteItems,
-                ),
+              RoleMetric(
+                label: 'Incomplete items',
+                value: '$incompleteItems',
+                icon: Icons.pending_actions_outlined,
               ),
             ],
           ),
-
-          const SizedBox(height: 14),
-
-          Container(
-            width: double.infinity,
-            padding: const EdgeInsets.all(12),
-            decoration: BoxDecoration(
-              color: const Color(0xFFF7F9FB),
-              borderRadius: BorderRadius.circular(12),
-            ),
-            child: const Row(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Icon(
-                  Icons.info_outline_rounded,
-                  size: 15,
-                  color: Colors.black45,
-                ),
-
-                SizedBox(width: 7),
-
-                Expanded(
-                  child: Text(
-                    'Completion indicates how much of the '
-                    'generated preparation checklist travellers '
-                    'have marked as completed.',
-                    style: TextStyle(
-                      fontSize: 10.5,
-                      height: 1.4,
-                      color: Colors.black54,
-                    ),
-                  ),
-                ),
-              ],
-            ),
+          const SizedBox(height: 16),
+          const Text(
+            'Completion records the checklist items travellers have marked as complete.',
+            style: TextStyle(fontSize: 12),
           ),
         ],
       ),
     );
   }
 
-  Widget _buildSupportingStat({
-    required IconData icon,
-    required String label,
-    required int value,
-  }) {
-    return Column(
-      children: [
-        Icon(icon, size: 19, color: _primaryColor),
-
-        const SizedBox(height: 5),
-
-        Text(
-          '$value',
-          style: const TextStyle(
-            fontSize: 17,
-            fontWeight: FontWeight.w800,
-            color: _darkTextColor,
-          ),
-        ),
-
-        const SizedBox(height: 2),
-
-        Text(
-          label,
-          style: const TextStyle(fontSize: 10, color: Colors.black54),
-        ),
-      ],
-    );
-  }
+  // ---------------------------------------------------------------------------
+  // SUPPORTING STATISTIC
+  // ---------------------------------------------------------------------------
 
   // ---------------------------------------------------------------------------
-  // DESTINATION / PURPOSE COMPARISON
+  // COMPLETION COMPARISON
   // ---------------------------------------------------------------------------
 
   Widget _buildComparisonSection({required List<Map<String, dynamic>> data}) {
@@ -568,163 +670,97 @@ class _ChecklistCompletionScreenState extends State<ChecklistCompletionScreen> {
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
+
       children: [
-        Text(
-          title,
-          style: const TextStyle(
-            fontSize: 18,
-            fontWeight: FontWeight.w800,
-            color: _darkTextColor,
-          ),
-        ),
+        _buildSectionTitle(title, description),
 
-        const SizedBox(height: 5),
-
-        Text(
-          description,
-          style: const TextStyle(
-            fontSize: 12.5,
-            height: 1.4,
-            color: Colors.black54,
-          ),
-        ),
-
-        // Only show the switch when neither
-        // analytical dimension is fixed.
         if (_showComparisonSelector) ...[
-          const SizedBox(height: 14),
+          const SizedBox(height: 15),
 
           _buildComparisonSelector(),
         ],
 
-        const SizedBox(height: 14),
+        const SizedBox(height: 15),
 
         if (data.isEmpty)
-          _buildEmptyComparison()
+          _buildStatusCard(
+            icon: Icons.bar_chart_rounded,
+            title: 'No Comparison Data',
+            message:
+                'No completion comparison data is available '
+                'for the selected filters.',
+            minimumHeight: 175,
+          )
         else
-          Container(
-            width: double.infinity,
-            padding: const EdgeInsets.all(16),
-            decoration: BoxDecoration(
-              color: Colors.white,
-              borderRadius: BorderRadius.circular(18),
-              border: Border.all(color: _borderColor),
-            ),
-            child: Column(
-              children: [
-                for (int index = 0; index < data.length; index++) ...[
-                  _buildComparisonRow(data[index]),
+          _buildComparisonChart(data),
+      ],
+    );
+  }
 
-                  if (index != data.length - 1) const SizedBox(height: 18),
-                ],
-              ],
-            ),
+  // ---------------------------------------------------------------------------
+  // COMPARISON SELECTOR
+  // ---------------------------------------------------------------------------
+
+  Widget _buildComparisonSelector() {
+    return Wrap(
+      spacing: 8,
+      runSpacing: 6,
+      children: [
+        for (final option in [
+          ('destination', 'Destination'),
+          ('purpose', 'Purpose'),
+        ])
+          ChoiceChip(
+            label: Text(option.$2),
+            selected: _comparisonMode == option.$1,
+            onSelected: (_) => setState(() {
+              _comparisonMode = option.$1;
+            }),
           ),
       ],
     );
   }
 
-  Widget _buildComparisonSelector() {
+  // ---------------------------------------------------------------------------
+  // COMPARISON CHART
+  // ---------------------------------------------------------------------------
+
+  Widget _buildComparisonChart(List<Map<String, dynamic>> data) {
     return Container(
       width: double.infinity,
-      padding: const EdgeInsets.all(4),
-      decoration: BoxDecoration(
-        color: const Color(0xFFEAF0F3),
-        borderRadius: BorderRadius.circular(13),
-      ),
-      child: Row(
-        children: [
-          Expanded(
-            child: _buildComparisonOption(
-              value: 'destination',
-              label: 'Destination',
-              icon: Icons.public_outlined,
-            ),
-          ),
+      padding: const EdgeInsets.all(17),
+      decoration: _cardDecoration(),
 
-          Expanded(
-            child: _buildComparisonOption(
-              value: 'purpose',
-              label: 'Purpose',
-              icon: Icons.work_outline_rounded,
-            ),
-          ),
+      child: Column(
+        children: [
+          for (int index = 0; index < data.length; index++) ...[
+            _buildComparisonRow(data[index]),
+
+            if (index != data.length - 1) const SizedBox(height: 21),
+          ],
         ],
       ),
     );
   }
 
-  Widget _buildComparisonOption({
-    required String value,
-    required String label,
-    required IconData icon,
-  }) {
-    final bool selected = _comparisonMode == value;
-
-    return Material(
-      color: Colors.transparent,
-      child: InkWell(
-        borderRadius: BorderRadius.circular(10),
-        onTap: () {
-          setState(() {
-            _comparisonMode = value;
-          });
-        },
-        child: AnimatedContainer(
-          duration: const Duration(milliseconds: 180),
-          padding: const EdgeInsets.symmetric(vertical: 11, horizontal: 8),
-          decoration: BoxDecoration(
-            color: selected ? Colors.white : Colors.transparent,
-            borderRadius: BorderRadius.circular(10),
-            boxShadow: selected
-                ? const [
-                    BoxShadow(
-                      color: Color(0x12000000),
-                      blurRadius: 5,
-                      offset: Offset(0, 2),
-                    ),
-                  ]
-                : null,
-          ),
-          child: Row(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              Icon(
-                icon,
-                size: 17,
-                color: selected ? _primaryColor : Colors.black45,
-              ),
-
-              const SizedBox(width: 6),
-
-              Text(
-                label,
-                style: TextStyle(
-                  fontSize: 11.5,
-                  fontWeight: FontWeight.w700,
-                  color: selected ? _darkTextColor : Colors.black54,
-                ),
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
+  // ---------------------------------------------------------------------------
+  // COMPARISON ROW
+  // ---------------------------------------------------------------------------
 
   Widget _buildComparisonRow(Map<String, dynamic> item) {
     final String label = _comparisonMode == 'destination'
         ? item['name'] as String? ?? 'Unknown'
         : _formatPurpose(item['purpose'] as String? ?? '');
 
-    final int tripCount = item['tripCount'] as int? ?? 0;
+    final int tripCount = _readInt(item['tripCount']);
 
-    final double rate = item['completionRate'] as double? ?? 0;
+    final double rate = _readDouble(item['completionRate']);
 
     final double progress = (rate / 100).clamp(0.0, 1.0);
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
+
       children: [
         Row(
           children: [
@@ -732,70 +768,50 @@ class _ChecklistCompletionScreenState extends State<ChecklistCompletionScreen> {
               child: Text(
                 label,
                 style: const TextStyle(
+                  color: AppColors.navy,
                   fontSize: 12.5,
                   fontWeight: FontWeight.w700,
-                  color: _darkTextColor,
                 ),
               ),
             ),
 
+            const SizedBox(width: 10),
+
             Text(
               '${rate.toStringAsFixed(1)}%',
               style: const TextStyle(
-                fontSize: 12,
+                color: AppColors.primary,
+                fontSize: 12.5,
                 fontWeight: FontWeight.w800,
-                color: _primaryColor,
               ),
             ),
           ],
         ),
 
-        const SizedBox(height: 7),
+        const SizedBox(height: 9),
 
         ClipRRect(
           borderRadius: BorderRadius.circular(20),
+
           child: LinearProgressIndicator(
             value: progress,
             minHeight: 9,
-            backgroundColor: const Color(0xFFEAF0F3),
-            color: _comparisonBarColor,
+            backgroundColor: AppColors.primaryLight,
+            color: AppColors.primary,
           ),
         ),
 
-        const SizedBox(height: 5),
+        const SizedBox(height: 7),
 
         Text(
           '$tripCount '
           '${tripCount == 1 ? 'trip' : 'trips'} included',
-          style: const TextStyle(fontSize: 10, color: Colors.black45),
+          style: const TextStyle(
+            color: AppColors.secondaryText,
+            fontSize: 10.5,
+          ),
         ),
       ],
-    );
-  }
-
-  Widget _buildEmptyComparison() {
-    return Container(
-      width: double.infinity,
-      padding: const EdgeInsets.all(24),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: _borderColor),
-      ),
-      child: const Column(
-        children: [
-          Icon(Icons.bar_chart_rounded, size: 34, color: Colors.black38),
-
-          SizedBox(height: 8),
-
-          Text(
-            'No completion comparison data is available '
-            'for the selected filters.',
-            textAlign: TextAlign.center,
-            style: TextStyle(fontSize: 11.5, color: Colors.black54),
-          ),
-        ],
-      ),
     );
   }
 
@@ -813,48 +829,59 @@ class _ChecklistCompletionScreenState extends State<ChecklistCompletionScreen> {
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
+
       children: [
-        const Text(
+        _buildSectionTitle(
           'Requirements for Further Investigation',
-          style: TextStyle(
-            fontSize: 18,
-            fontWeight: FontWeight.w800,
-            color: _darkTextColor,
-          ),
-        ),
-
-        const SizedBox(height: 5),
-
-        const Text(
           'Requirements with lower completion highlight '
-          'patterns that may warrant further investigation. ',
-          style: TextStyle(fontSize: 12.5, height: 1.4, color: Colors.black54),
+              'patterns that may warrant further investigation.',
         ),
 
-        const SizedBox(height: 6),
+        const SizedBox(height: 10),
 
-        const Text(
-          'Completion rate alone does not prove that '
-          'the guidance is inadequate.',
-          style: TextStyle(
-            fontSize: 10.5,
-            fontStyle: FontStyle.italic,
-            color: Colors.black45,
-          ),
+        const Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+
+          children: [
+            Icon(
+              Icons.info_outline_rounded,
+              size: 16,
+              color: AppColors.secondaryText,
+            ),
+
+            SizedBox(width: 7),
+
+            Expanded(
+              child: Text(
+                'Completion rate alone does not prove '
+                'that the guidance is inadequate.',
+                style: TextStyle(
+                  color: AppColors.secondaryText,
+                  fontSize: 11,
+                  height: 1.45,
+                  fontStyle: FontStyle.italic,
+                ),
+              ),
+            ),
+          ],
         ),
 
-        const SizedBox(height: 14),
+        const SizedBox(height: 16),
 
         if (requirements.isEmpty)
-          _buildNoAttentionRequired()
+          _buildStatusCard(
+            icon: Icons.check_circle_outline_rounded,
+            title: 'No Requirements Identified',
+            message:
+                'No requirements needing further investigation '
+                'were returned for the selected filters.',
+            minimumHeight: 175,
+          )
         else ...[
           Container(
             width: double.infinity,
-            decoration: BoxDecoration(
-              color: Colors.white,
-              borderRadius: BorderRadius.circular(18),
-              border: Border.all(color: _borderColor),
-            ),
+            decoration: _cardDecoration(),
+
             child: Column(
               children: [
                 for (
@@ -868,14 +895,19 @@ class _ChecklistCompletionScreenState extends State<ChecklistCompletionScreen> {
                   ),
 
                   if (index != visibleRequirements.length - 1)
-                    const Divider(height: 1, indent: 16, endIndent: 16),
+                    const Divider(
+                      height: 1,
+                      indent: 16,
+                      endIndent: 16,
+                      color: AppColors.border,
+                    ),
                 ],
               ],
             ),
           ),
 
           if (requirements.length > 3) ...[
-            const SizedBox(height: 10),
+            const SizedBox(height: 11),
 
             Center(
               child: TextButton.icon(
@@ -885,15 +917,25 @@ class _ChecklistCompletionScreenState extends State<ChecklistCompletionScreen> {
                         !_showAllAttentionRequirements;
                   });
                 },
+
                 icon: Icon(
                   _showAllAttentionRequirements
                       ? Icons.keyboard_arrow_up_rounded
                       : Icons.keyboard_arrow_down_rounded,
                 ),
+
                 label: Text(
                   _showAllAttentionRequirements
-                      ? 'Show less'
-                      : 'View all ${requirements.length}',
+                      ? 'Show Less'
+                      : 'View All ${requirements.length}',
+                ),
+
+                style: TextButton.styleFrom(
+                  foregroundColor: AppColors.primary,
+                  textStyle: const TextStyle(
+                    fontWeight: FontWeight.w800,
+                    fontSize: 12.5,
+                  ),
                 ),
               ),
             ),
@@ -903,6 +945,10 @@ class _ChecklistCompletionScreenState extends State<ChecklistCompletionScreen> {
     );
   }
 
+  // ---------------------------------------------------------------------------
+  // REQUIREMENT ITEM
+  // ---------------------------------------------------------------------------
+
   Widget _buildAttentionRequirement({
     required int rank,
     required Map<String, dynamic> requirement,
@@ -910,97 +956,110 @@ class _ChecklistCompletionScreenState extends State<ChecklistCompletionScreen> {
     final String title =
         requirement['title'] as String? ?? 'Unnamed requirement';
 
-    final int generated = requirement['generated'] as int? ?? 0;
+    final int generated = _readInt(requirement['generated']);
 
-    final int completed = requirement['completed'] as int? ?? 0;
+    final int completed = _readInt(requirement['completed']);
 
-    final int incomplete = requirement['incomplete'] as int? ?? 0;
+    final int incomplete = _readInt(requirement['incomplete']);
 
-    final double completionRate = requirement['completionRate'] as double? ?? 0;
+    final double completionRate = _readDouble(requirement['completionRate']);
 
     final double progress = (completionRate / 100).clamp(0.0, 1.0);
 
     return Padding(
       padding: const EdgeInsets.all(16),
+
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
+
         children: [
           Container(
-            width: 30,
-            height: 30,
+            width: 32,
+            height: 32,
             alignment: Alignment.center,
+
             decoration: BoxDecoration(
-              color: const Color(0xFFE8F6F7),
-              borderRadius: BorderRadius.circular(9),
+              color: AppColors.primaryLight,
+              borderRadius: BorderRadius.circular(10),
             ),
+
             child: Text(
               '$rank',
               style: const TextStyle(
-                fontSize: 11,
+                color: AppColors.primary,
+                fontSize: 12,
                 fontWeight: FontWeight.w800,
-                color: _primaryColor,
               ),
             ),
           ),
 
-          const SizedBox(width: 11),
+          const SizedBox(width: 12),
 
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
+
               children: [
                 Text(
                   title,
                   style: const TextStyle(
+                    color: AppColors.navy,
                     fontSize: 12.5,
-                    fontWeight: FontWeight.w700,
-                    color: _darkTextColor,
+                    fontWeight: FontWeight.w800,
                   ),
                 ),
 
-                const SizedBox(height: 7),
+                const SizedBox(height: 9),
 
                 Row(
                   children: [
                     Expanded(
                       child: ClipRRect(
                         borderRadius: BorderRadius.circular(20),
+
                         child: LinearProgressIndicator(
                           value: progress,
-                          minHeight: 7,
-                          backgroundColor: const Color(0xFFEAF0F3),
-                          color: _primaryColor,
+                          minHeight: 8,
+                          backgroundColor: AppColors.primaryLight,
+                          color: AppColors.primary,
                         ),
                       ),
                     ),
 
-                    const SizedBox(width: 10),
+                    const SizedBox(width: 11),
 
                     Text(
                       '${completionRate.toStringAsFixed(1)}%',
                       style: const TextStyle(
+                        color: AppColors.primary,
                         fontSize: 11,
                         fontWeight: FontWeight.w800,
-                        color: _primaryColor,
                       ),
                     ),
                   ],
                 ),
 
-                const SizedBox(height: 7),
+                const SizedBox(height: 9),
 
                 Text(
                   '$completed of $generated completed · '
                   '$incomplete incomplete',
-                  style: const TextStyle(fontSize: 10.5, color: Colors.black54),
+                  style: const TextStyle(
+                    color: AppColors.secondaryText,
+                    fontSize: 10.5,
+                    height: 1.4,
+                  ),
                 ),
 
-                const SizedBox(height: 3),
+                const SizedBox(height: 4),
 
                 Text(
                   'Based on $generated generated '
                   '${generated == 1 ? 'instance' : 'instances'}',
-                  style: const TextStyle(fontSize: 9.5, color: Colors.black38),
+                  style: const TextStyle(
+                    color: AppColors.secondaryText,
+                    fontSize: 10,
+                  ),
                 ),
               ],
             ),
@@ -1010,33 +1069,31 @@ class _ChecklistCompletionScreenState extends State<ChecklistCompletionScreen> {
     );
   }
 
-  Widget _buildNoAttentionRequired() {
-    return Container(
-      width: double.infinity,
-      padding: const EdgeInsets.all(24),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: _borderColor),
-      ),
-      child: const Column(
-        children: [
-          Icon(
-            Icons.check_circle_outline_rounded,
-            size: 36,
-            color: _primaryColor,
-          ),
+  // ---------------------------------------------------------------------------
+  // LOADING / ERROR / EMPTY CARD
+  // ---------------------------------------------------------------------------
 
-          SizedBox(height: 8),
-
-          Text(
-            'No incomplete requirements were found '
-            'for the selected filters.',
-            textAlign: TextAlign.center,
-            style: TextStyle(fontSize: 11.5, color: Colors.black54),
-          ),
-        ],
+  Widget _buildStatusCard({
+    required IconData icon,
+    required String title,
+    required String message,
+    bool isLoading = false,
+    double minimumHeight = 180,
+    VoidCallback? onRetry,
+  }) {
+    return ConstrainedBox(
+      constraints: BoxConstraints(minHeight: minimumHeight),
+      child: RoleStatusCard(
+        title: title,
+        message: message,
+        icon: icon,
+        loading: isLoading,
+        onRetry: onRetry,
       ),
     );
   }
 }
+
+// -----------------------------------------------------------------------------
+// REUSABLE CHECKLIST ICON
+// -----------------------------------------------------------------------------

@@ -1,12 +1,13 @@
 import 'package:flutter/material.dart';
 
 import '../../services/analyst_service.dart';
-import '../analyst/destination_trends_screen.dart';
-import '../analyst/purpose_distribution_screen.dart';
-import '../analyst/checklist_completion_screen.dart';
-import '../analyst/preparation_requirements_screen.dart';
-import '../analyst/analyst_reports_screen.dart';
+import '../../widgets/role_ui_widgets.dart';
 import '../analyst/analyst_profile_screen.dart';
+import '../analyst/analyst_reports_screen.dart';
+import '../analyst/checklist_completion_screen.dart';
+import '../analyst/destination_trends_screen.dart';
+import '../analyst/preparation_requirements_screen.dart';
+import '../analyst/purpose_distribution_screen.dart';
 
 class AnalystDashboard extends StatefulWidget {
   const AnalystDashboard({super.key});
@@ -16,100 +17,103 @@ class AnalystDashboard extends StatefulWidget {
 }
 
 class _AnalystDashboardState extends State<AnalystDashboard> {
-  final AnalystService _analystService = AnalystService();
+  // ---------------------------------------------------------------------------
+  // OVERVIEW DATA AND TAB STATE
+  // ---------------------------------------------------------------------------
 
-  static const Color _primaryColor = Color(0xFF087F8C);
-
-  static const Color _darkTextColor = Color(0xFF102A43);
-
-  static const Color _backgroundColor = Color(0xFFF7F9FB);
-
-  static const Color _borderColor = Color(0xFFE1E7EC);
-
-  late Future<Map<String, dynamic>> _overviewFuture;
-
+  final _analystService = AnalystService();
+  final _visitedTabs = <int>{0};
+  Map<String, dynamic>? _overview;
+  bool _failed = false;
+  int _requestVersion = 0;
   int _selectedIndex = 0;
-
-  // ---------------------------------------------------------------------------
-  // LIFECYCLE
-  // ---------------------------------------------------------------------------
+  int _reportsVersion = 0;
 
   @override
   void initState() {
     super.initState();
+    _loadOverview();
+  }
 
-    _overviewFuture = _analystService.getOverview();
+  // Keep the previous overview visible if a later refresh fails.
+  Future<void> _loadOverview() async {
+    final version = ++_requestVersion;
+    try {
+      final overview = await _analystService.getOverview();
+      if (!mounted || version != _requestVersion) return;
+      setState(() {
+        _overview = overview;
+        _failed = false;
+      });
+    } catch (_) {
+      if (!mounted || version != _requestVersion) return;
+      setState(() {
+        _failed = true;
+      });
+    }
   }
 
   // ---------------------------------------------------------------------------
-  // REFRESH
+  // NAVIGATION AND REFRESH
   // ---------------------------------------------------------------------------
 
-  Future<void> _refresh() async {
-    final Future<Map<String, dynamic>> future = _analystService.getOverview();
-
+  // Mount tabs on first use, then preserve their filters and scroll positions.
+  void _selectTab(int index) {
+    if (index == _selectedIndex) return;
     setState(() {
-      _overviewFuture = future;
+      _selectedIndex = index;
+      _visitedTabs.add(index);
+      if (index == 1) _reportsVersion++;
     });
-
-    await future;
+    if (index == 0) _loadOverview();
   }
 
-  // ---------------------------------------------------------------------------
-  // SCREEN
-  // ---------------------------------------------------------------------------
+  // Analytics return to the same overview and navigation tab.
+  Future<void> _openAnalytics(Widget screen) async {
+    await Navigator.of(
+      context,
+    ).push(MaterialPageRoute<void>(builder: (_) => screen));
+    if (mounted) _loadOverview();
+  }
 
   @override
   Widget build(BuildContext context) {
-    const List<String> titles = ['Tourism Data Analyst', 'Reports', 'Profile'];
-
+    const titles = ['Tourism Data Analyst', 'Reports', 'Profile'];
     return Scaffold(
-      backgroundColor: _backgroundColor,
       appBar: AppBar(
         automaticallyImplyLeading: false,
-        backgroundColor: Colors.white,
-        surfaceTintColor: Colors.white,
-        elevation: 0,
-        title: Text(
-          titles[_selectedIndex],
-          style: const TextStyle(
-            color: _darkTextColor,
-            fontWeight: FontWeight.w700,
-          ),
+        title: Text(titles[_selectedIndex]),
+      ),
+      body: SafeArea(
+        child: IndexedStack(
+          index: _selectedIndex,
+          children: [
+            _buildDashboard(),
+            if (_visitedTabs.contains(1))
+              AnalystReportsScreen(reloadVersion: _reportsVersion)
+            else
+              const SizedBox.shrink(),
+            if (_visitedTabs.contains(2))
+              const AnalystProfileScreen()
+            else
+              const SizedBox.shrink(),
+          ],
         ),
       ),
-
-      body: IndexedStack(
-        index: _selectedIndex,
-        children: [
-          _buildDashboardTab(),
-          const AnalystReportsScreen(),
-          const AnalystProfileScreen(),
-        ],
-      ),
-
       bottomNavigationBar: NavigationBar(
         selectedIndex: _selectedIndex,
-        backgroundColor: Colors.white,
-        indicatorColor: const Color(0xFFDDF3F4),
-        onDestinationSelected: (index) {
-          setState(() {
-            _selectedIndex = index;
-          });
-        },
+        onDestinationSelected: _selectTab,
         destinations: const [
           NavigationDestination(
             icon: Icon(Icons.dashboard_outlined),
             selectedIcon: Icon(Icons.dashboard_rounded),
             label: 'Dashboard',
           ),
-
           NavigationDestination(
             icon: Icon(Icons.description_outlined),
             selectedIcon: Icon(Icons.description_rounded),
             label: 'Reports',
           ),
-
           NavigationDestination(
             icon: Icon(Icons.person_outline_rounded),
             selectedIcon: Icon(Icons.person_rounded),
@@ -120,459 +124,112 @@ class _AnalystDashboardState extends State<AnalystDashboard> {
     );
   }
 
-  Widget _buildDashboardTab() {
-    return SafeArea(
-      child: RefreshIndicator(
-        onRefresh: _refresh,
-        child: ListView(
-          physics: const AlwaysScrollableScrollPhysics(),
-          padding: const EdgeInsets.fromLTRB(18, 18, 18, 36),
-          children: [
-            _buildWelcomeCard(),
-
-            const SizedBox(height: 26),
-
-            const Text(
-              'Analytics Overview',
-              style: TextStyle(
-                fontSize: 18,
-                fontWeight: FontWeight.w800,
-                color: _darkTextColor,
-              ),
+  Widget _buildDashboard() {
+    final overview = _overview;
+    final total = (overview?['totalTrips'] as num?)?.toInt() ?? 0;
+    return RolePageBody(
+      storageId: 'analyst-dashboard',
+      onRefresh: _loadOverview,
+      children: [
+        const RoleIntroCard(
+          eyebrow: 'ANALYST WORKSPACE',
+          title: 'Turn travel data into insight',
+          description:
+              'Explore traveller patterns, preparation progress and saved reports.',
+          icon: Icons.insights_rounded,
+        ),
+        const SizedBox(height: 24),
+        const RoleSectionTitle(title: 'Travel overview'),
+        const SizedBox(height: 12),
+        if (overview == null)
+          RoleStatusCard(
+            title: _failed ? 'Unable to load overview' : 'Loading analytics',
+            message: _failed
+                ? 'Try again to retrieve the travel overview.'
+                : 'Retrieving stored trip data...',
+            icon: Icons.analytics_outlined,
+            loading: !_failed,
+            onRetry: _failed ? _loadOverview : null,
+          )
+        else ...[
+          if (_failed) ...[
+            RoleStatusCard(
+              title: 'Showing last loaded data',
+              message: 'The overview could not be refreshed.',
+              onRetry: _loadOverview,
             ),
-
-            const SizedBox(height: 5),
-
-            const Text(
-              'Aggregated travel activity '
-              'across supported destinations.',
-              style: TextStyle(fontSize: 12.5, color: Colors.black54),
-            ),
-
-            const SizedBox(height: 14),
-
-            _buildOverview(),
-
-            const SizedBox(height: 28),
-
-            const Text(
-              'Analytics Modules',
-              style: TextStyle(
-                fontSize: 18,
-                fontWeight: FontWeight.w800,
-                color: _darkTextColor,
-              ),
-            ),
-
             const SizedBox(height: 12),
-
-            _buildAnalyticsModuleCard(
-              icon: Icons.public_outlined,
-              title: 'Destination Trends',
-              description:
-                  'Analyse popular destinations and '
-                  'monthly departure activity.',
-              available: true,
-              onTap: () {
-                Navigator.push(
-                  context,
-                  MaterialPageRoute(
-                    builder: (context) => const DestinationTrendsScreen(),
-                  ),
-                );
-              },
-            ),
-
-            const SizedBox(height: 10),
-
-            _buildAnalyticsModuleCard(
-              icon: Icons.donut_large_outlined,
-              title: 'Travel Purpose Distribution',
-              description:
-                  'Compare tourism, business and '
-                  'study travel patterns.',
-              available: true,
-              onTap: () {
-                Navigator.push(
-                  context,
-                  MaterialPageRoute(
-                    builder: (context) => const PurposeDistributionScreen(),
-                  ),
-                );
-              },
-            ),
-
-            const SizedBox(height: 10),
-
-            _buildAnalyticsModuleCard(
-              icon: Icons.task_alt_outlined,
-              title: 'Checklist Completion',
-              description:
-                  'Analyse aggregated checklist completion '
-                  'and lower-completion requirements.',
-              available: true,
-              onTap: () {
-                Navigator.push(
-                  context,
-                  MaterialPageRoute(
-                    builder: (context) => const ChecklistCompletionScreen(),
-                  ),
-                );
-              },
-            ),
-
-            const SizedBox(height: 10),
-
-            _buildAnalyticsModuleCard(
-              icon: Icons.insights_outlined,
-              title: 'Requirement Patterns',
-              description:
-                  'Explore commonly generated requirements '
-                  'by traveller segment.',
-              available: true,
-              onTap: () {
-                Navigator.push(
-                  context,
-                  MaterialPageRoute(
-                    builder: (context) => const PreparationRequirementsScreen(),
-                  ),
-                );
-              },
-            ),
-
-            const SizedBox(height: 28),
-
-            _buildInformationCard(),
           ],
-        ),
-      ),
-    );
-  }
-
-  // ---------------------------------------------------------------------------
-  // WELCOME
-  // ---------------------------------------------------------------------------
-
-  Widget _buildWelcomeCard() {
-    return Container(
-      width: double.infinity,
-      padding: const EdgeInsets.all(20),
-      decoration: BoxDecoration(
-        gradient: const LinearGradient(
-          colors: [Color(0xFFE7F7F8), Color(0xFFF1F8FB)],
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-        ),
-        borderRadius: BorderRadius.circular(20),
-        border: Border.all(color: const Color(0xFFCBE8EB)),
-      ),
-      child: const Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Icon(Icons.analytics_outlined, color: _primaryColor, size: 32),
-
-          SizedBox(width: 14),
-
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  'TravelGuard MY Analytics',
-                  style: TextStyle(
-                    fontSize: 21,
-                    fontWeight: FontWeight.w800,
-                    color: _darkTextColor,
-                  ),
-                ),
-
-                SizedBox(height: 6),
-
-                Text(
-                  'Explore aggregated travel preparation '
-                  'patterns without displaying individual '
-                  'traveller information.',
-                  style: TextStyle(
-                    fontSize: 13.5,
-                    height: 1.45,
-                    color: Colors.black54,
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  // ---------------------------------------------------------------------------
-  // OVERVIEW
-  // ---------------------------------------------------------------------------
-
-  Widget _buildOverview() {
-    return FutureBuilder<Map<String, dynamic>>(
-      future: _overviewFuture,
-      builder: (context, snapshot) {
-        if (snapshot.connectionState == ConnectionState.waiting) {
-          return Container(
-            height: 230,
-            decoration: BoxDecoration(
-              color: Colors.white,
-              borderRadius: BorderRadius.circular(18),
-              border: Border.all(color: _borderColor),
-            ),
-            child: const Center(child: CircularProgressIndicator()),
-          );
-        }
-
-        if (snapshot.hasError) {
-          return Container(
-            width: double.infinity,
-            padding: const EdgeInsets.all(20),
-            decoration: BoxDecoration(
-              color: Colors.white,
-              borderRadius: BorderRadius.circular(18),
-              border: Border.all(color: _borderColor),
-            ),
-            child: const Text(
-              'Unable to load analytics overview.',
-              textAlign: TextAlign.center,
-              style: TextStyle(color: Colors.black54),
-            ),
-          );
-        }
-
-        final Map<String, dynamic> data = snapshot.data ?? {};
-
-        return Column(
-          children: [
-            Row(
-              children: [
-                Expanded(
-                  child: _buildOverviewCard(
-                    icon: Icons.flight_takeoff_outlined,
-                    value: '${data['totalTrips'] ?? 0}',
-                    label: 'Total Trips',
-                  ),
-                ),
-
-                const SizedBox(width: 10),
-
-                Expanded(
-                  child: _buildOverviewCard(
-                    icon: Icons.groups_outlined,
-                    value: '${data['uniqueTravellers'] ?? 0}',
-                    label: 'Travellers',
-                  ),
-                ),
-              ],
-            ),
-
-            const SizedBox(height: 10),
-
-            Row(
-              children: [
-                Expanded(
-                  child: _buildOverviewCard(
-                    icon: Icons.location_on_outlined,
-                    value: '${data['topDestination'] ?? 'No trip data'}',
-                    label: 'Top Destination',
-                    compactValue: true,
-                  ),
-                ),
-
-                const SizedBox(width: 10),
-
-                Expanded(
-                  child: _buildOverviewCard(
-                    icon: Icons.public_outlined,
-                    value: '${data['supportedDestinations'] ?? 0}',
-                    label: 'Destinations',
-                  ),
-                ),
-              ],
-            ),
-          ],
-        );
-      },
-    );
-  }
-
-  Widget _buildOverviewCard({
-    required IconData icon,
-    required String value,
-    required String label,
-    bool compactValue = false,
-  }) {
-    return Container(
-      constraints: const BoxConstraints(minHeight: 118),
-      padding: const EdgeInsets.all(14),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: _borderColor),
-      ),
-      child: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          Icon(icon, color: _primaryColor, size: 23),
-
-          const SizedBox(height: 7),
-
-          Text(
-            value,
-            maxLines: compactValue ? 2 : 1,
-            overflow: TextOverflow.ellipsis,
-            textAlign: TextAlign.center,
-            style: TextStyle(
-              fontSize: compactValue ? 15 : 21,
-              fontWeight: FontWeight.w800,
-              color: _darkTextColor,
-              height: 1.15,
-            ),
-          ),
-
-          const SizedBox(height: 4),
-
-          Text(
-            label,
-            textAlign: TextAlign.center,
-            style: const TextStyle(fontSize: 10.5, color: Colors.black54),
-          ),
-        ],
-      ),
-    );
-  }
-
-  // ---------------------------------------------------------------------------
-  // ANALYTICS MODULES
-  // ---------------------------------------------------------------------------
-
-  Widget _buildAnalyticsModuleCard({
-    required IconData icon,
-    required String title,
-    required String description,
-    VoidCallback? onTap,
-    bool available = false,
-  }) {
-    return Material(
-      color: Colors.transparent,
-      child: InkWell(
-        onTap: available ? onTap : null,
-        borderRadius: BorderRadius.circular(17),
-        child: Ink(
-          width: double.infinity,
-          padding: const EdgeInsets.all(17),
-          decoration: BoxDecoration(
-            color: Colors.white,
-            borderRadius: BorderRadius.circular(17),
-            border: Border.all(color: _borderColor),
-          ),
-          child: Row(
-            children: [
-              Container(
-                width: 48,
-                height: 48,
-                decoration: BoxDecoration(
-                  color: const Color(0xFFE8F6F7),
-                  borderRadius: BorderRadius.circular(14),
-                ),
-                child: Icon(icon, color: _primaryColor, size: 24),
+          RoleMetricGrid(
+            metrics: [
+              RoleMetric(
+                label: 'Stored trips',
+                value: '$total',
+                icon: Icons.luggage_outlined,
               ),
-
-              const SizedBox(width: 14),
-
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      title,
-                      style: const TextStyle(
-                        fontSize: 15,
-                        fontWeight: FontWeight.w700,
-                        color: _darkTextColor,
-                      ),
-                    ),
-
-                    const SizedBox(height: 4),
-
-                    Text(
-                      description,
-                      style: const TextStyle(
-                        fontSize: 11.5,
-                        height: 1.4,
-                        color: Colors.black54,
-                      ),
-                    ),
-                  ],
-                ),
+              RoleMetric(
+                label: 'Unique travellers',
+                value: '${overview['uniqueTravellers'] ?? 0}',
+                icon: Icons.people_outline_rounded,
               ),
-
-              if (available)
-                const Icon(Icons.chevron_right_rounded, color: Colors.black38)
-              else
-                Container(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 8,
-                    vertical: 5,
-                  ),
-                  decoration: BoxDecoration(
-                    color: const Color(0xFFF0F4F6),
-                    borderRadius: BorderRadius.circular(20),
-                  ),
-                  child: const Text(
-                    'NEXT',
-                    style: TextStyle(
-                      fontSize: 9,
-                      fontWeight: FontWeight.w800,
-                      color: Color(0xFF627D98),
-                    ),
-                  ),
-                ),
             ],
           ),
-        ),
-      ),
-    );
-  }
-
-  // ---------------------------------------------------------------------------
-  // INFORMATION
-  // ---------------------------------------------------------------------------
-
-  Widget _buildInformationCard() {
-    return Container(
-      width: double.infinity,
-      padding: const EdgeInsets.all(18),
-      decoration: BoxDecoration(
-        color: const Color(0xFFF1F6FA),
-        borderRadius: BorderRadius.circular(17),
-        border: Border.all(color: const Color(0xFFD8E6EE)),
-      ),
-      child: const Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Icon(Icons.privacy_tip_outlined, color: _primaryColor, size: 24),
-
-          SizedBox(width: 13),
-
-          Expanded(
-            child: Text(
-              'Analytics are generated from aggregated '
-              'stored travel records and are read-only. '
-              'Individual traveller names and email '
-              'addresses are not displayed.',
-              style: TextStyle(
-                fontSize: 12.5,
-                height: 1.5,
-                color: Color(0xFF334E68),
-              ),
-            ),
+          const SizedBox(height: 12),
+          RoleActionTile(
+            title: total == 0
+                ? 'No trips recorded yet'
+                : '${overview['topDestination'] ?? 'Unknown'}',
+            description: total == 0
+                ? 'Analytics will appear as travellers create trips.'
+                : 'Leading destination · ${overview['topDestinationTrips'] ?? 0} trips. Open destination trends for the full breakdown.',
+            icon: Icons.public_rounded,
+            onTap: total == 0
+                ? null
+                : () => _openAnalytics(const DestinationTrendsScreen()),
           ),
         ],
-      ),
+        const SizedBox(height: 24),
+        const RoleSectionTitle(title: 'Explore analytics'),
+        const SizedBox(height: 12),
+        RoleActionTile(
+          title: 'Destination trends',
+          description: 'Compare destinations and monthly departures.',
+          icon: Icons.public_outlined,
+          onTap: () => _openAnalytics(const DestinationTrendsScreen()),
+        ),
+        const SizedBox(height: 12),
+        RoleActionTile(
+          title: 'Travel purpose distribution',
+          description: 'Understand tourism, business and study travel.',
+          icon: Icons.donut_large_rounded,
+          onTap: () => _openAnalytics(const PurposeDistributionScreen()),
+        ),
+        const SizedBox(height: 12),
+        RoleActionTile(
+          title: 'Checklist completion',
+          description:
+              'Compare preparation progress and outstanding requirements.',
+          icon: Icons.task_alt_rounded,
+          onTap: () => _openAnalytics(const ChecklistCompletionScreen()),
+        ),
+        const SizedBox(height: 12),
+        RoleActionTile(
+          title: 'Preparation requirements',
+          description:
+              'Explore frequently generated requirements by traveller segment.',
+          icon: Icons.fact_check_outlined,
+          onTap: () => _openAnalytics(const PreparationRequirementsScreen()),
+        ),
+        const SizedBox(height: 24),
+        const RoleSectionTitle(title: 'Reports'),
+        const SizedBox(height: 12),
+        RoleActionTile(
+          title: 'Generate or view reports',
+          description: 'Create an Excel report or reopen a saved snapshot.',
+          icon: Icons.description_outlined,
+          onTap: () => _selectTab(1),
+        ),
+      ],
     );
   }
 }

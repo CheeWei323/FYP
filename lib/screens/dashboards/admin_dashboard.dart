@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../../models/admin_activity_log.dart';
 import '../../services/admin_service.dart';
+import '../../widgets/role_ui_widgets.dart';
 import '../admin/admin_activity_history_screen.dart';
 import '../admin/admin_profile_screen.dart';
 import '../admin/manage_destinations_screen.dart';
@@ -15,139 +16,158 @@ class AdminDashboard extends StatefulWidget {
 }
 
 class _AdminDashboardState extends State<AdminDashboard> {
-  final AdminService _adminService = AdminService();
+  // ---------------------------------------------------------------------------
+  // DASHBOARD DATA AND TAB STATE
+  // ---------------------------------------------------------------------------
 
-  static const Color _primaryColor = Color(0xFF087F8C);
-
-  static const Color _darkTextColor = Color(0xFF102A43);
-
-  static const Color _backgroundColor = Color(0xFFF7F9FB);
-
-  static const Color _borderColor = Color(0xFFE1E7EC);
-
-  late Future<Map<String, int>> _overviewFuture;
-
-  late Future<List<AdminActivityLog>> _recentActivityFuture;
-
+  final _service = AdminService();
+  final Set<int> _visitedTabs = {0};
+  Map<String, int>? _overview;
+  List<AdminActivityLog>? _activity;
   int _selectedIndex = 0;
-
-  // ---------------------------------------------------------------------------
-  // LIFECYCLE
-  // ---------------------------------------------------------------------------
+  int _activityVersion = 0;
+  int _requestVersion = 0;
+  bool _loading = false;
+  bool _overviewFailed = false;
+  bool _activityFailed = false;
 
   @override
   void initState() {
     super.initState();
-
-    _overviewFuture = _adminService.getOverview();
-
-    _recentActivityFuture = _adminService.getRecentActivity(limit: 4);
+    _loadDashboard();
   }
 
-  // ---------------------------------------------------------------------------
-  // REFRESH
-  // ---------------------------------------------------------------------------
-
-  Future<void> _refresh() async {
-    final Future<Map<String, int>> overviewFuture = _adminService.getOverview();
-
-    final Future<List<AdminActivityLog>> activityFuture = _adminService
-        .getRecentActivity(limit: 4);
-
+  // Load each section independently so one failed request does not hide the other.
+  Future<void> _loadDashboard() async {
+    final version = ++_requestVersion;
     setState(() {
-      _overviewFuture = overviewFuture;
-
-      _recentActivityFuture = activityFuture;
+      _loading = true;
     });
+    Map<String, int>? overview;
+    List<AdminActivityLog>? activity;
+    bool overviewFailed = false;
+    bool activityFailed = false;
 
-    await overviewFuture;
-    await activityFuture;
-  }
-
-  // ---------------------------------------------------------------------------
-  // NAVIGATION
-  // ---------------------------------------------------------------------------
-
-  Future<void> _openUsers() async {
-    await Navigator.push(
-      context,
-      MaterialPageRoute(builder: (context) => const ManageUsersScreen()),
-    );
-
-    if (!mounted) {
-      return;
+    Future<void> loadOverview() async {
+      try {
+        overview = await _service.getOverview();
+      } catch (_) {
+        overviewFailed = true;
+      }
     }
 
-    await _refresh();
+    Future<void> loadActivity() async {
+      try {
+        activity = await _service.getRecentActivity(limit: 4);
+      } catch (_) {
+        activityFailed = true;
+      }
+    }
+
+    // Catch each section's failure before awaiting both requests together.
+    await Future.wait<void>([loadOverview(), loadActivity()]);
+    if (!mounted || version != _requestVersion) return;
+    setState(() {
+      if (overview != null) _overview = overview;
+      if (activity != null) _activity = activity;
+      _overviewFailed = overviewFailed;
+      _activityFailed = activityFailed;
+      _loading = false;
+    });
   }
 
+  // ---------------------------------------------------------------------------
+  // ROLE NAVIGATION
+  // ---------------------------------------------------------------------------
+
+  // Create tabs on their first visit and preserve their state when switching.
+  void _selectTab(int index) {
+    if (_selectedIndex == index) return;
+    setState(() {
+      _selectedIndex = index;
+      _visitedTabs.add(index);
+      if (index == 2) _activityVersion++;
+    });
+    if (index == 0) _loadDashboard();
+  }
+
+  // Destination management remains a focused page reached from the dashboard.
   Future<void> _openDestinations() async {
-    await Navigator.push(
+    await Navigator.of(
       context,
-      MaterialPageRoute(builder: (context) => const ManageDestinationsScreen()),
-    );
-
-    if (!mounted) {
-      return;
-    }
-
-    await _refresh();
+    ).push(MaterialPageRoute(builder: (_) => const ManageDestinationsScreen()));
+    if (!mounted) return;
+    await _loadDashboard();
   }
 
-  Future<void> _openActivityHistory() async {
-    await Navigator.push(
-      context,
-      MaterialPageRoute(
-        builder: (context) => const AdminActivityHistoryScreen(),
-      ),
-    );
-
-    if (!mounted) {
-      return;
-    }
-
-    await _refresh();
-  }
-
-  // ---------------------------------------------------------------------------
-  // SCREEN
-  // ---------------------------------------------------------------------------
+  String _activityLabel(String action) => switch (action) {
+    'roleChanged' => 'Role changed',
+    'destinationEnabled' => 'Destination enabled',
+    'destinationDisabled' => 'Destination disabled',
+    _ => 'Administrative action',
+  };
 
   @override
   Widget build(BuildContext context) {
+    const titles = ['Administrator', 'Users', 'Activity', 'Profile'];
     return Scaffold(
-      backgroundColor: _backgroundColor,
       appBar: AppBar(
         automaticallyImplyLeading: false,
-        backgroundColor: Colors.white,
-        surfaceTintColor: Colors.white,
-        elevation: 0,
         title: Text(
-          _selectedIndex == 0 ? 'System Administrator' : 'Profile',
-          style: const TextStyle(
-            color: _darkTextColor,
-            fontWeight: FontWeight.w700,
-          ),
+          titles[_selectedIndex],
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
         ),
+        actions: [
+          if (_selectedIndex == 0)
+            IconButton(
+              tooltip: 'Refresh dashboard',
+              onPressed: _loading ? null : _loadDashboard,
+              icon: const Icon(Icons.refresh_rounded),
+            ),
+        ],
       ),
       body: SafeArea(
         child: IndexedStack(
           index: _selectedIndex,
-          children: [_buildDashboardContent(), const AdminProfileScreen()],
+          children: [
+            _dashboardContent(),
+            if (_visitedTabs.contains(1))
+              const ManageUsersScreen(embedded: true)
+            else
+              const SizedBox.shrink(),
+            if (_visitedTabs.contains(2))
+              AdminActivityHistoryScreen(
+                embedded: true,
+                reloadVersion: _activityVersion,
+              )
+            else
+              const SizedBox.shrink(),
+            if (_visitedTabs.contains(3))
+              const AdminProfileScreen()
+            else
+              const SizedBox.shrink(),
+          ],
         ),
       ),
       bottomNavigationBar: NavigationBar(
         selectedIndex: _selectedIndex,
-        onDestinationSelected: (int index) {
-          setState(() {
-            _selectedIndex = index;
-          });
-        },
+        onDestinationSelected: _selectTab,
         destinations: const [
           NavigationDestination(
             icon: Icon(Icons.dashboard_outlined),
             selectedIcon: Icon(Icons.dashboard_rounded),
             label: 'Dashboard',
+          ),
+          NavigationDestination(
+            icon: Icon(Icons.people_outline_rounded),
+            selectedIcon: Icon(Icons.people_rounded),
+            label: 'Users',
+          ),
+          NavigationDestination(
+            icon: Icon(Icons.history_outlined),
+            selectedIcon: Icon(Icons.history_rounded),
+            label: 'Activity',
           ),
           NavigationDestination(
             icon: Icon(Icons.person_outline_rounded),
@@ -159,637 +179,120 @@ class _AdminDashboardState extends State<AdminDashboard> {
     );
   }
 
-  // ---------------------------------------------------------------------------
-  // DASHBOARD CONTENT
-  // ---------------------------------------------------------------------------
-
-  Widget _buildDashboardContent() {
-    return RefreshIndicator(
-      onRefresh: _refresh,
-      child: ListView(
-        physics: const AlwaysScrollableScrollPhysics(),
-        padding: const EdgeInsets.fromLTRB(18, 18, 18, 36),
-        children: [
-          _buildWelcomeCard(),
-
-          const SizedBox(height: 26),
-
-          const Text(
-            'System Overview',
-            style: TextStyle(
-              fontSize: 18,
-              fontWeight: FontWeight.w800,
-              color: _darkTextColor,
-            ),
+  Widget _dashboardContent() {
+    final overview = _overview;
+    return RolePageBody(
+      storageId: 'admin-dashboard',
+      onRefresh: _loadDashboard,
+      children: [
+        const RoleIntroCard(
+          eyebrow: 'System Administrator',
+          title: 'Keep every journey running smoothly.',
+          description:
+              'Manage account access, destination availability and the changes made across your system.',
+          icon: Icons.admin_panel_settings_outlined,
+        ),
+        const RoleSectionTitle(title: 'System overview'),
+        if (_loading)
+          const RoleStatusCard(
+            title: 'Refreshing system overview',
+            message: 'Retrieving the latest account and destination records.',
+            loading: true,
           ),
-
-          const SizedBox(height: 12),
-
-          _buildOverview(),
-
-          const SizedBox(height: 28),
-
-          const Text(
-            'System Management',
-            style: TextStyle(
-              fontSize: 18,
-              fontWeight: FontWeight.w800,
-              color: _darkTextColor,
-            ),
+        if (_overviewFailed)
+          RoleStatusCard(
+            title: 'Unable to refresh overview',
+            message: overview == null
+                ? 'Check your connection and try again.'
+                : 'Showing the last loaded statistics.',
+            icon: Icons.cloud_off_outlined,
+            onRetry: _loading ? null : _loadDashboard,
           ),
-
-          const SizedBox(height: 12),
-
-          _buildManagementCard(
-            icon: Icons.manage_accounts_outlined,
-            title: 'User & Role Management',
-            description:
-                'Review registered accounts and manage '
-                'their authorised system roles.',
-            actionText: 'Manage User Accounts',
-            onTap: _openUsers,
-          ),
-
-          const SizedBox(height: 12),
-
-          _buildManagementCard(
-            icon: Icons.public_outlined,
-            title: 'Destination Management',
-            description:
-                'Control which supported destinations are '
-                'available when travellers create new trips.',
-            actionText: 'Manage Destinations',
-            onTap: _openDestinations,
-          ),
-
-          const SizedBox(height: 28),
-
-          Row(
-            children: [
-              const Expanded(
-                child: Text(
-                  'Recent Administrative Activity',
-                  style: TextStyle(
-                    fontSize: 18,
-                    fontWeight: FontWeight.w800,
-                    color: _darkTextColor,
-                  ),
-                ),
+        if (overview != null)
+          RoleMetricGrid(
+            metrics: [
+              RoleMetric(
+                label: 'Total accounts',
+                value: '${overview['users'] ?? 0}',
+                icon: Icons.people_outline_rounded,
               ),
-              TextButton(
-                onPressed: _openActivityHistory,
-                child: const Text('View All'),
+              RoleMetric(
+                label: 'Travellers',
+                value: '${overview['travellers'] ?? 0}',
+                icon: Icons.luggage_outlined,
+              ),
+              RoleMetric(
+                label: 'Content Managers',
+                value: '${overview['contentManagers'] ?? 0}',
+                icon: Icons.policy_outlined,
+              ),
+              RoleMetric(
+                label: 'Tourism Data Analysts',
+                value: '${overview['analysts'] ?? 0}',
+                icon: Icons.analytics_outlined,
+              ),
+              RoleMetric(
+                label: 'Administrators',
+                value: '${overview['admins'] ?? 0}',
+                icon: Icons.admin_panel_settings_outlined,
+              ),
+              RoleMetric(
+                label: 'Destinations enabled',
+                value:
+                    '${overview['enabledCountries'] ?? 0} / ${overview['countries'] ?? 0}',
+                icon: Icons.public_outlined,
               ),
             ],
           ),
-
-          const SizedBox(height: 10),
-
-          _buildRecentActivity(),
-
-          const SizedBox(height: 28),
-
-          _buildInformationCard(),
-        ],
-      ),
-    );
-  }
-
-  // ---------------------------------------------------------------------------
-  // WELCOME
-  // ---------------------------------------------------------------------------
-
-  Widget _buildWelcomeCard() {
-    return Container(
-      width: double.infinity,
-      padding: const EdgeInsets.all(20),
-      decoration: BoxDecoration(
-        gradient: const LinearGradient(
-          colors: [Color(0xFFE7F7F8), Color(0xFFF1F8FB)],
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
+        const RoleSectionTitle(title: 'Manage your system'),
+        RoleActionTile(
+          title: 'User accounts',
+          description: 'Find accounts and manage their authorised roles.',
+          icon: Icons.manage_accounts_outlined,
+          onTap: () => _selectTab(1),
         ),
-        borderRadius: BorderRadius.circular(20),
-        border: Border.all(color: const Color(0xFFCBE8EB)),
-      ),
-      child: const Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Icon(
-            Icons.admin_panel_settings_outlined,
-            color: _primaryColor,
-            size: 32,
-          ),
-
-          SizedBox(width: 14),
-
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  'TravelGuard MY',
-                  style: TextStyle(
-                    fontSize: 21,
-                    fontWeight: FontWeight.w800,
-                    color: _darkTextColor,
-                  ),
-                ),
-
-                SizedBox(height: 6),
-
-                Text(
-                  'Monitor system access, manage authorised '
-                  'accounts and maintain destination availability.',
-                  style: TextStyle(
-                    fontSize: 13.5,
-                    height: 1.45,
-                    color: Colors.black54,
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  // ---------------------------------------------------------------------------
-  // SYSTEM OVERVIEW
-  // ---------------------------------------------------------------------------
-
-  Widget _buildOverview() {
-    return FutureBuilder<Map<String, int>>(
-      future: _overviewFuture,
-      builder: (context, snapshot) {
-        if (snapshot.connectionState == ConnectionState.waiting) {
-          return Container(
-            height: 260,
-            decoration: BoxDecoration(
-              color: Colors.white,
-              borderRadius: BorderRadius.circular(18),
-              border: Border.all(color: _borderColor),
-            ),
-            child: const Center(child: CircularProgressIndicator()),
-          );
-        }
-
-        if (snapshot.hasError) {
-          return Container(
-            padding: const EdgeInsets.all(18),
-            decoration: BoxDecoration(
-              color: Colors.white,
-              borderRadius: BorderRadius.circular(18),
-              border: Border.all(color: _borderColor),
-            ),
-            child: const Text(
-              'Unable to load system overview.',
-              textAlign: TextAlign.center,
-            ),
-          );
-        }
-
-        final Map<String, int> data = snapshot.data ?? {};
-
-        return Column(
-          children: [
-            Row(
-              children: [
-                Expanded(
-                  child: _buildOverviewCard(
-                    icon: Icons.people_outline_rounded,
-                    value: '${data['users'] ?? 0}',
-                    label: 'Total Users',
-                  ),
-                ),
-
-                const SizedBox(width: 10),
-
-                Expanded(
-                  child: _buildOverviewCard(
-                    icon: Icons.luggage_outlined,
-                    value: '${data['travellers'] ?? 0}',
-                    label: 'Travellers',
-                  ),
-                ),
-              ],
-            ),
-
-            const SizedBox(height: 10),
-
-            Row(
-              children: [
-                Expanded(
-                  child: _buildOverviewCard(
-                    icon: Icons.policy_outlined,
-                    value: '${data['contentManagers'] ?? 0}',
-                    label: 'Content Managers',
-                  ),
-                ),
-
-                const SizedBox(width: 10),
-
-                Expanded(
-                  child: _buildOverviewCard(
-                    icon: Icons.analytics_outlined,
-                    value: '${data['analysts'] ?? 0}',
-                    label: 'Data Analysts',
-                  ),
-                ),
-              ],
-            ),
-
-            const SizedBox(height: 10),
-
-            Row(
-              children: [
-                Expanded(
-                  child: _buildOverviewCard(
-                    icon: Icons.admin_panel_settings_outlined,
-                    value: '${data['admins'] ?? 0}',
-                    label: 'Administrators',
-                  ),
-                ),
-
-                const SizedBox(width: 10),
-
-                Expanded(
-                  child: _buildOverviewCard(
-                    icon: Icons.public_outlined,
-                    value:
-                        '${data['enabledCountries'] ?? 0}'
-                        '/'
-                        '${data['countries'] ?? 0}',
-                    label: 'Destinations',
-                  ),
-                ),
-              ],
-            ),
-          ],
-        );
-      },
-    );
-  }
-
-  Widget _buildOverviewCard({
-    required IconData icon,
-    required String value,
-    required String label,
-  }) {
-    return Container(
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: _borderColor),
-      ),
-      child: Column(
-        children: [
-          Icon(icon, color: _primaryColor, size: 23),
-
-          const SizedBox(height: 7),
-
-          Text(
-            value,
-            style: const TextStyle(
-              fontSize: 21,
-              fontWeight: FontWeight.w800,
-              color: _darkTextColor,
-            ),
-          ),
-
-          const SizedBox(height: 3),
-
-          Text(
-            label,
-            textAlign: TextAlign.center,
-            style: const TextStyle(fontSize: 11, color: Colors.black54),
-          ),
-        ],
-      ),
-    );
-  }
-
-  // ---------------------------------------------------------------------------
-  // MANAGEMENT
-  // ---------------------------------------------------------------------------
-
-  Widget _buildManagementCard({
-    required IconData icon,
-    required String title,
-    required String description,
-    required String actionText,
-    required VoidCallback onTap,
-  }) {
-    return Material(
-      color: Colors.transparent,
-      child: InkWell(
-        onTap: onTap,
-        borderRadius: BorderRadius.circular(18),
-        child: Ink(
-          padding: const EdgeInsets.all(18),
-          decoration: BoxDecoration(
-            color: Colors.white,
-            borderRadius: BorderRadius.circular(18),
-            border: Border.all(color: _borderColor),
-          ),
-          child: Row(
-            children: [
-              Container(
-                width: 50,
-                height: 50,
-                decoration: BoxDecoration(
-                  color: const Color(0xFFE8F6F7),
-                  borderRadius: BorderRadius.circular(15),
-                ),
-                child: Icon(icon, color: _primaryColor, size: 25),
-              ),
-
-              const SizedBox(width: 15),
-
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      title,
-                      style: const TextStyle(
-                        fontSize: 16,
-                        fontWeight: FontWeight.w700,
-                        color: _darkTextColor,
-                      ),
-                    ),
-
-                    const SizedBox(height: 5),
-
-                    Text(
-                      description,
-                      style: const TextStyle(
-                        fontSize: 12.5,
-                        height: 1.4,
-                        color: Colors.black54,
-                      ),
-                    ),
-
-                    const SizedBox(height: 9),
-
-                    Text(
-                      actionText,
-                      style: const TextStyle(
-                        fontSize: 13,
-                        fontWeight: FontWeight.w700,
-                        color: _primaryColor,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-
-              const Icon(Icons.chevron_right_rounded, color: Colors.black38),
-            ],
+        RoleActionTile(
+          title: 'Destinations',
+          description:
+              'Choose which supported destinations are available for new trips.',
+          icon: Icons.public_outlined,
+          onTap: _openDestinations,
+        ),
+        RoleSectionTitle(
+          title: 'Recent activity',
+          action: TextButton(
+            onPressed: () => _selectTab(2),
+            child: const Text('View all activity'),
           ),
         ),
-      ),
-    );
-  }
-
-  // ---------------------------------------------------------------------------
-  // RECENT ADMINISTRATIVE ACTIVITY
-  // ---------------------------------------------------------------------------
-
-  Widget _buildRecentActivity() {
-    return FutureBuilder<List<AdminActivityLog>>(
-      future: _recentActivityFuture,
-      builder: (context, snapshot) {
-        if (snapshot.connectionState == ConnectionState.waiting) {
-          return Container(
-            height: 100,
-            decoration: BoxDecoration(
-              color: Colors.white,
-              borderRadius: BorderRadius.circular(16),
-              border: Border.all(color: _borderColor),
-            ),
-            child: const Center(child: CircularProgressIndicator()),
-          );
-        }
-
-        if (snapshot.hasError) {
-          return Container(
-            width: double.infinity,
-            padding: const EdgeInsets.all(18),
-            decoration: BoxDecoration(
-              color: Colors.white,
-              borderRadius: BorderRadius.circular(16),
-              border: Border.all(color: _borderColor),
-            ),
-            child: const Text(
-              'Unable to load recent activity.',
-              textAlign: TextAlign.center,
-            ),
-          );
-        }
-
-        final List<AdminActivityLog> logs = snapshot.data ?? [];
-
-        if (logs.isEmpty) {
-          return Container(
-            width: double.infinity,
-            padding: const EdgeInsets.all(22),
-            decoration: BoxDecoration(
-              color: Colors.white,
-              borderRadius: BorderRadius.circular(16),
-              border: Border.all(color: _borderColor),
-            ),
-            child: const Column(
-              children: [
-                Icon(Icons.history_rounded, color: Colors.black38),
-                SizedBox(height: 7),
-                Text(
-                  'No administrative activity yet.',
-                  style: TextStyle(fontSize: 12.5, color: Colors.black54),
-                ),
-              ],
-            ),
-          );
-        }
-
-        return Column(
-          children: [for (final log in logs) _buildRecentActivityCard(log)],
-        );
-      },
-    );
-  }
-
-  Widget _buildRecentActivityCard(AdminActivityLog log) {
-    return Container(
-      width: double.infinity,
-      margin: const EdgeInsets.only(bottom: 9),
-      padding: const EdgeInsets.all(15),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(15),
-        border: Border.all(color: _borderColor),
-      ),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Container(
-            width: 39,
-            height: 39,
-            decoration: BoxDecoration(
-              color: const Color(0xFFE8F6F7),
-              borderRadius: BorderRadius.circular(11),
-            ),
-            child: Icon(
-              _adminActivityIcon(log.action),
-              color: _primaryColor,
-              size: 20,
-            ),
+        if (_activityFailed)
+          RoleStatusCard(
+            title: 'Unable to refresh activity',
+            message: _activity == null
+                ? 'Check your connection and try again.'
+                : 'Showing the last loaded activity.',
+            icon: Icons.cloud_off_outlined,
+            onRetry: _loading ? null : _loadDashboard,
           ),
-
-          const SizedBox(width: 12),
-
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  _adminActivityLabel(log.action),
-                  style: const TextStyle(
-                    fontSize: 11,
-                    fontWeight: FontWeight.w700,
-                    color: _primaryColor,
-                  ),
-                ),
-
-                const SizedBox(height: 3),
-
-                Text(
-                  log.targetName,
-                  style: const TextStyle(
-                    fontSize: 14,
-                    fontWeight: FontWeight.w700,
-                    color: _darkTextColor,
-                  ),
-                ),
-
-                const SizedBox(height: 3),
-
-                Text(
-                  log.details,
-                  style: const TextStyle(fontSize: 11.5, color: Colors.black54),
-                ),
-
-                const SizedBox(height: 6),
-
-                Text(
-                  '${log.performedByName.isEmpty ? log.performedByEmail : log.performedByName}'
-                  ' • '
-                  '${_formatAdminActivityTime(log.timestamp)}',
-                  style: const TextStyle(fontSize: 9.5, color: Colors.black45),
-                ),
-              ],
-            ),
+        if (_activity != null && _activity!.isEmpty)
+          const RoleStatusCard(
+            title: 'No administrative activity yet',
+            message: 'Role and destination changes will appear here.',
+            icon: Icons.history_rounded,
           ),
-        ],
-      ),
-    );
-  }
-
-  String _adminActivityLabel(String action) {
-    switch (action) {
-      case 'roleChanged':
-        return 'ROLE CHANGED';
-
-      case 'destinationEnabled':
-        return 'DESTINATION ENABLED';
-
-      case 'destinationDisabled':
-        return 'DESTINATION DISABLED';
-
-      default:
-        return 'ADMINISTRATIVE ACTION';
-    }
-  }
-
-  IconData _adminActivityIcon(String action) {
-    switch (action) {
-      case 'roleChanged':
-        return Icons.manage_accounts_outlined;
-
-      case 'destinationEnabled':
-        return Icons.check_circle_outline_rounded;
-
-      case 'destinationDisabled':
-        return Icons.block_outlined;
-
-      default:
-        return Icons.history_rounded;
-    }
-  }
-
-  String _formatAdminActivityTime(DateTime? timestamp) {
-    if (timestamp == null) {
-      return 'Time pending';
-    }
-
-    final DateTime local = timestamp.toLocal();
-
-    const List<String> months = [
-      'Jan',
-      'Feb',
-      'Mar',
-      'Apr',
-      'May',
-      'Jun',
-      'Jul',
-      'Aug',
-      'Sep',
-      'Oct',
-      'Nov',
-      'Dec',
-    ];
-
-    return '${local.day} '
-        '${months[local.month - 1]} '
-        '${local.year}';
-  }
-
-  // ---------------------------------------------------------------------------
-  // INFORMATION
-  // ---------------------------------------------------------------------------
-
-  Widget _buildInformationCard() {
-    return Container(
-      padding: const EdgeInsets.all(18),
-      decoration: BoxDecoration(
-        color: const Color(0xFFF1F6FA),
-        borderRadius: BorderRadius.circular(18),
-        border: Border.all(color: const Color(0xFFD8E6EE)),
-      ),
-      child: const Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Icon(Icons.security_outlined, color: _primaryColor, size: 25),
-
-          SizedBox(width: 13),
-
-          Expanded(
-            child: Text(
-              'Administrator access is used to manage authorised '
-              'system roles, destination availability and review '
-              'administrative activity. Administrator accounts '
-              'remain protected from client-side role modification.',
-              style: TextStyle(
-                fontSize: 12.5,
-                height: 1.5,
-                color: Color(0xFF334E68),
-              ),
-            ),
+        for (final log in _activity ?? <AdminActivityLog>[])
+          RoleActivityTile(
+            title: _activityLabel(log.action),
+            target: log.targetName.isEmpty ? log.targetId : log.targetName,
+            details: log.details,
+            actor: log.performedByName.isNotEmpty
+                ? log.performedByName
+                : log.performedByEmail.isNotEmpty
+                ? log.performedByEmail
+                : 'Administrator',
+            timestamp: log.timestamp,
           ),
-        ],
-      ),
+      ],
     );
   }
 }

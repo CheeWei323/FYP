@@ -50,52 +50,23 @@ class ContentManagerService {
     return rules;
   }
 
-  // Loads summary information for the Content Manager dashboard.
+  // Summarise regulations using the same publication policy as checklist generation.
   Future<Map<String, int>> getOverview() async {
-    final Future<QuerySnapshot<Map<String, dynamic>>> countriesFuture =
-        _firestore.collection('countries').get();
+    final snapshot = await _firestore.collection('travelRules').get();
+    final rules = snapshot.docs
+        .map((document) => TravelRule.fromFirestore(document))
+        .toList();
 
-    final Future<QuerySnapshot<Map<String, dynamic>>> rulesFuture = _firestore
-        .collection('travelRules')
-        .get();
-
-    final QuerySnapshot<Map<String, dynamic>> countriesSnapshot =
-        await countriesFuture;
-
-    final QuerySnapshot<Map<String, dynamic>> rulesSnapshot = await rulesFuture;
-
-    final int enabledCountries = countriesSnapshot.docs
-        .where((document) => document.data()['enabled'] == true)
-        .length;
-
-    final int activeRules = rulesSnapshot.docs
-        .where((document) => document.data()['active'] == true)
-        .length;
-
-    final int pendingReviewRules = rulesSnapshot.docs
-        .where((document) => document.data()['reviewStatus'] == 'pendingReview')
-        .length;
-
-    final int disabledRules = rulesSnapshot.docs.where((document) {
-      final Map<String, dynamic> data = document.data();
-
-      final String? reviewStatus = data['reviewStatus'] as String?;
-
-      final bool active = data['active'] as bool? ?? true;
-
-      // Backwards compatibility:
-      // older inactive rules without reviewStatus
-      // are treated as disabled.
-      return reviewStatus == 'disabled' || (reviewStatus == null && !active);
-    }).length;
-
+    // Destination counts are managed by the Administrator.
     return {
-      'countries': countriesSnapshot.docs.length,
-      'enabledCountries': enabledCountries,
-      'rules': rulesSnapshot.docs.length,
-      'activeRules': activeRules,
-      'pendingReviewRules': pendingReviewRules,
-      'disabledRules': disabledRules,
+      'rules': rules.length,
+      'activeRules': rules.where((rule) => rule.isPublished).length,
+      'pendingReviewRules': rules
+          .where((rule) => rule.reviewStatus == 'pendingReview')
+          .length,
+      'disabledRules': rules
+          .where((rule) => rule.reviewStatus == 'disabled')
+          .length,
     };
   }
 

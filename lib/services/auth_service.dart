@@ -44,6 +44,11 @@ class AuthService {
     );
   }
 
+  // Let Firebase send its standard password-reset link.
+  Future<void> sendPasswordResetEmail({required String email}) {
+    return _auth.sendPasswordResetEmail(email: email.trim());
+  }
+
   // Send verification email again.
   Future<void> resendVerificationEmail() async {
     final User? user = _auth.currentUser;

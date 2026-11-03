@@ -59,6 +59,54 @@ service cloud.firestore {
   ];
 }
 
+    // Validate a place ID and its preceding visit while allowing return trips.
+    function validRouteVisit(ids, index) {
+      return ids.size() <= index
+             || (
+               ids[index] is string
+               && ids[index].matches('^[A-Za-z0-9_-]{1,512}$')
+               && (
+                 index == 0
+                 || ids[index] != ids[index - 1]
+               )
+             );
+    }
+
+    // Store only traveller choices for the current trip destination.
+    function validRoutePlan(data, tripId) {
+      return data.keys().hasAll([
+               'schemaVersion',
+               'countryId',
+               'travelMode',
+               'placeIds',
+               'updatedAt'
+             ])
+             && data.keys().hasOnly([
+               'schemaVersion',
+               'countryId',
+               'travelMode',
+               'placeIds',
+               'updatedAt'
+             ])
+             && data.schemaVersion == 1
+             && data.countryId is string
+             && data.countryId == getAfter(
+               /databases/$(database)/documents/trips/$(tripId)
+             ).data.destinationCountryId
+             && data.travelMode in ['DRIVE', 'WALK']
+             && data.placeIds is list
+             && data.placeIds.size() >= 2
+             && data.placeIds.size() <= 7
+             && validRouteVisit(data.placeIds, 0)
+             && validRouteVisit(data.placeIds, 1)
+             && validRouteVisit(data.placeIds, 2)
+             && validRouteVisit(data.placeIds, 3)
+             && validRouteVisit(data.placeIds, 4)
+             && validRouteVisit(data.placeIds, 5)
+             && validRouteVisit(data.placeIds, 6)
+             && data.updatedAt == request.time;
+    }
+
 
     // -----------------------------------------------------------------------
     // DATA VALIDATION HELPERS
@@ -679,10 +727,10 @@ match /reminders/{reminderId} {
                       request.resource.data
                     );
 
-      // Traveller may read only their own trip.
-      allow read: if request.auth != null
-                  && (resource.data.userId == request.auth.uid || isAnalyst()
-                  );
+      // Only travellers may read their own raw trip records.
+      // Analysts receive aggregates through the authenticated backend.
+      allow read: if isTraveller()
+                  && resource.data.userId == request.auth.uid;
 
       // Traveller may edit only trip-planning fields.
       // Ownership and original creation information cannot change.
@@ -710,6 +758,22 @@ match /reminders/{reminderId} {
       allow delete: if isTraveller()
                     && resource.data.userId == request.auth.uid;
 
+      // ---------------------------------------------------------------------
+      // PRIVATE ROUTE PLAN
+      // ---------------------------------------------------------------------
+      match /routePlans/{planId} {
+        allow read, delete: if planId == 'current'
+                            && isTraveller()
+                            && ownsTrip(tripId);
+
+        allow create, update: if planId == 'current'
+                              && isTraveller()
+                              && ownsTrip(tripId)
+                              && validRoutePlan(
+                                request.resource.data,
+                                tripId
+                              );
+      }
 
       // ---------------------------------------------------------------------
       // CHECKLIST ITEMS
@@ -745,14 +809,11 @@ match /reminders/{reminderId} {
                         )
                       );
 
-        // Trip owners may read their own checklist items.
-       // Tourism Data Analysts may read checklist items
-      // for read-only aggregate completion analytics.
-        allow read: if ownsTrip(tripId)
-                     || isAnalyst();
+        // Raw checklist items remain private to their traveller owner.
+        allow read: if isTraveller() && ownsTrip(tripId);
 
         // Travellers may change only completion information.
-        allow update: if ownsTrip(tripId)
+        allow update: if isTraveller() && ownsTrip(tripId)
                       && request.resource.data
                           .diff(resource.data)
                           .affectedKeys()
@@ -764,7 +825,7 @@ match /reminders/{reminderId} {
 
         // Required for checklist regeneration
         // and whole-trip deletion.
-        allow delete: if ownsTrip(tripId);
+        allow delete: if isTraveller() && ownsTrip(tripId);
       }
 
 

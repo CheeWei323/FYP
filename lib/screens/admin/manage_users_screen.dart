@@ -1,854 +1,412 @@
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 
 import '../../models/system_user.dart';
 import '../../services/admin_service.dart';
+import '../../theme/app_theme.dart';
+import '../../widgets/role_ui_widgets.dart';
 
 class ManageUsersScreen extends StatefulWidget {
-  const ManageUsersScreen({super.key});
+  const ManageUsersScreen({super.key, this.embedded = false});
+
+  final bool embedded;
 
   @override
   State<ManageUsersScreen> createState() => _ManageUsersScreenState();
 }
 
 class _ManageUsersScreenState extends State<ManageUsersScreen> {
-  final AdminService _adminService = AdminService();
+  // ---------------------------------------------------------------------------
+  // ACCOUNT LIST STATE
+  // ---------------------------------------------------------------------------
 
-  final TextEditingController _searchController = TextEditingController();
-
-  static const Color _primaryColor = Color(0xFF087F8C);
-
-  static const Color _darkTextColor = Color(0xFF102A43);
-
-  static const Color _backgroundColor = Color(0xFFF7F9FB);
-
-  static const Color _borderColor = Color(0xFFE1E7EC);
-
-  late Future<List<SystemUser>> _usersFuture;
-
-  List<SystemUser> _allUsers = [];
-
-  String _searchText = '';
-
-  String? _updatingUserId;
+  final _service = AdminService();
+  final _searchController = TextEditingController();
+  List<SystemUser>? _users;
+  String _search = '';
+  String _roleFilter = 'all';
+  String? _savingUserId;
+  bool _loading = false;
+  bool _failed = false;
+  int _requestVersion = 0;
 
   @override
   void initState() {
     super.initState();
-
-    _usersFuture = _loadUsers();
+    _loadUsers();
   }
 
   @override
   void dispose() {
     _searchController.dispose();
-
     super.dispose();
   }
 
-  // ---------------------------------------------------------------------------
-  // DATA
-  // ---------------------------------------------------------------------------
-
-  Future<List<SystemUser>> _loadUsers() async {
-    final List<SystemUser> users = await _adminService.getUsers();
-
-    _allUsers = users;
-
-    return users;
-  }
-
-  Future<void> _refresh() async {
-    final Future<List<SystemUser>> future = _loadUsers();
-
+  // Keep the last list after a failed refresh and ignore superseded responses.
+  Future<void> _loadUsers() async {
+    final version = ++_requestVersion;
     setState(() {
-      _usersFuture = future;
+      _loading = true;
     });
+    try {
+      final users = await _service.getUsers();
+      if (!mounted || version != _requestVersion) return;
+      setState(() {
+        _users = users;
+        _failed = false;
+      });
+    } catch (_) {
+      if (!mounted || version != _requestVersion) return;
+      setState(() {
+        _failed = true;
+      });
+    } finally {
+      if (mounted && version == _requestVersion) {
+        setState(() {
+          _loading = false;
+        });
+      }
+    }
+  }
 
-    await future;
+  // Avoid refreshing the list while a role update is still being saved.
+  Future<void> _refresh() async {
+    if (_savingUserId != null) return;
+    await _loadUsers();
   }
 
   // ---------------------------------------------------------------------------
-  // HELPERS
+  // ROLE LABELS AND LOCAL FILTERS
   // ---------------------------------------------------------------------------
+
+  String _roleLabel(String role) => switch (role) {
+    'traveller' => 'Traveller',
+    'contentManager' => 'Content Manager',
+    'analyst' => 'Tourism Data Analyst',
+    'admin' => 'System Administrator',
+    _ => role.isEmpty ? 'Unknown role' : role,
+  };
+
+  String _roleDescription(String role) => switch (role) {
+    'traveller' => 'Prepare trips, check requirements and plan routes.',
+    'contentManager' => 'Maintain travel regulations and source information.',
+    'analyst' => 'Review tourism analytics and create reports.',
+    _ => '',
+  };
 
   List<SystemUser> get _visibleUsers {
-    final String search = _searchText.trim().toLowerCase();
-
-    if (search.isEmpty) {
-      return _allUsers;
-    }
-
-    return _allUsers.where((user) {
-      return user.fullName.toLowerCase().contains(search) ||
-          user.email.toLowerCase().contains(search) ||
-          user.role.toLowerCase().contains(search) ||
-          _formatRole(user.role).toLowerCase().contains(search);
+    final query = _search.trim().toLowerCase();
+    return (_users ?? []).where((user) {
+      final matchesRole = _roleFilter == 'all' || user.role == _roleFilter;
+      final matchesSearch =
+          query.isEmpty ||
+          '${user.fullName} ${user.email} ${user.role} ${_roleLabel(user.role)}'
+              .toLowerCase()
+              .contains(query);
+      return matchesRole && matchesSearch;
     }).toList();
   }
 
-  String _formatRole(String role) {
-    switch (role) {
-      case 'traveller':
-        return 'Traveller';
+  // ---------------------------------------------------------------------------
+  // ROLE UPDATE AND CONFIRMATION
+  // ---------------------------------------------------------------------------
 
-      case 'contentManager':
-        return 'Content Manager';
-
-      case 'analyst':
-        return 'Tourism Data Analyst';
-
-      case 'admin':
-        return 'System Administrator';
-
-      default:
-        return role.isEmpty ? 'Unknown Role' : role;
-    }
-  }
-
-  String _formatDate(DateTime? date) {
-    if (date == null) {
-      return 'Not recorded';
-    }
-
-    final DateTime localDate = date.toLocal();
-
-    const List<String> months = [
-      'Jan',
-      'Feb',
-      'Mar',
-      'Apr',
-      'May',
-      'Jun',
-      'Jul',
-      'Aug',
-      'Sep',
-      'Oct',
-      'Nov',
-      'Dec',
-    ];
-
-    return '${localDate.day} '
-        '${months[localDate.month - 1]} '
-        '${localDate.year}';
-  }
-
-  String _roleDescription(String role) {
-    switch (role) {
-      case 'traveller':
-        return 'Access travel planning, requirements and packing features.';
-
-      case 'contentManager':
-        return 'Maintain and review regulatory travel information.';
-
-      case 'analyst':
-        return 'Access tourism data analytics and reporting features.';
-
-      default:
-        return '';
-    }
-  }
-
-  IconData _roleIcon(String role) {
-    switch (role) {
-      case 'traveller':
-        return Icons.luggage_outlined;
-
-      case 'contentManager':
-        return Icons.policy_outlined;
-
-      case 'analyst':
-        return Icons.analytics_outlined;
-
-      default:
-        return Icons.person_outline_rounded;
-    }
-  }
-
-  Future<void> _changeUserRole(SystemUser user) async {
-    if (_updatingUserId != null || user.role == 'admin') {
+  Future<void> _changeRole(SystemUser user) async {
+    final currentUid = FirebaseAuth.instance.currentUser?.uid;
+    if (_savingUserId != null ||
+        _failed ||
+        _loading ||
+        user.role == 'admin' ||
+        user.id == currentUid) {
       return;
     }
+    String selection = user.role;
 
-    String selectedRole = user.role;
-
-    final String? newRole = await showDialog<String>(
+    // Offer only the three roles already allowed by AdminService and Firestore.
+    final newRole = await showDialog<String>(
       context: context,
-      builder: (BuildContext dialogContext) {
-        return StatefulBuilder(
-          builder: (context, setDialogState) {
-            return AlertDialog(
-              title: const Text('Change User Role'),
-              content: SingleChildScrollView(
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      user.fullName.isEmpty ? user.email : user.fullName,
-                      style: const TextStyle(
-                        fontWeight: FontWeight.w700,
-                        color: _darkTextColor,
-                      ),
-                    ),
-
-                    const SizedBox(height: 4),
-
-                    Text(
-                      user.email,
-                      style: const TextStyle(
-                        fontSize: 12,
-                        color: Colors.black54,
-                      ),
-                    ),
-
-                    const SizedBox(height: 18),
-
-                    const Text(
-                      'Select the authorised role for this account.',
-                      style: TextStyle(fontSize: 13, color: Color(0xFF486581)),
-                    ),
-
-                    const SizedBox(height: 10),
-
-                    RadioGroup<String>(
-                      groupValue: selectedRole,
-                      onChanged: (String? value) {
-                        if (value == null) {
-                          return;
-                        }
-
-                        setDialogState(() {
-                          selectedRole = value;
-                        });
-                      },
-                      child: Column(
-                        children: [
-                          _buildRoleOption(
-                            role: 'traveller',
-                            selectedRole: selectedRole,
-                          ),
-
-                          _buildRoleOption(
-                            role: 'contentManager',
-                            selectedRole: selectedRole,
-                          ),
-
-                          _buildRoleOption(
-                            role: 'analyst',
-                            selectedRole: selectedRole,
-                          ),
-                        ],
-                      ),
-                    ),
-
-                    const SizedBox(height: 10),
-
-                    Container(
-                      padding: const EdgeInsets.all(12),
-                      decoration: BoxDecoration(
-                        color: const Color(0xFFF1F6FA),
-                        borderRadius: BorderRadius.circular(12),
-                      ),
-                      child: const Row(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Icon(
-                            Icons.info_outline_rounded,
-                            size: 18,
-                            color: _primaryColor,
-                          ),
-
-                          SizedBox(width: 9),
-
-                          Expanded(
-                            child: Text(
-                              'Changing a role changes the system '
-                              'features and permissions available to '
-                              'this account.',
-                              style: TextStyle(
-                                fontSize: 11.5,
-                                height: 1.4,
-                                color: Color(0xFF486581),
-                              ),
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                  ],
+      builder: (dialogContext) => StatefulBuilder(
+        builder: (context, updateDialog) => AlertDialog(
+          title: const Text('Change user role'),
+          content: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  user.fullName.isEmpty ? user.email : user.fullName,
+                  style: const TextStyle(fontWeight: FontWeight.w700),
                 ),
-              ),
-              actions: [
-                TextButton(
-                  onPressed: () {
-                    Navigator.pop(dialogContext);
+                const SizedBox(height: 8),
+                const Text('Choose the access this account should have.'),
+                const SizedBox(height: 12),
+                RadioGroup<String>(
+                  groupValue: selection,
+                  onChanged: (value) {
+                    if (value == null) return;
+                    updateDialog(() {
+                      selection = value;
+                    });
                   },
-                  child: const Text('Cancel'),
-                ),
-                FilledButton(
-                  onPressed: selectedRole == user.role
-                      ? null
-                      : () {
-                          Navigator.pop(dialogContext, selectedRole);
-                        },
-                  child: const Text('Update Role'),
+                  child: Column(
+                    children: [
+                      for (final role in [
+                        'traveller',
+                        'contentManager',
+                        'analyst',
+                      ])
+                        RadioListTile<String>(
+                          value: role,
+                          contentPadding: EdgeInsets.zero,
+                          title: Text(_roleLabel(role)),
+                          subtitle: Text(_roleDescription(role)),
+                        ),
+                    ],
+                  ),
                 ),
               ],
-            );
-          },
-        );
-      },
-    );
-
-    if (newRole == null || newRole == user.role || !mounted) {
-      return;
-    }
-
-    final bool? confirmed = await showDialog<bool>(
-      context: context,
-      builder: (BuildContext dialogContext) {
-        return AlertDialog(
-          icon: const Icon(
-            Icons.manage_accounts_outlined,
-            color: _primaryColor,
-            size: 32,
-          ),
-          title: const Text('Confirm Role Change', textAlign: TextAlign.center),
-          content: Text(
-            'Change ${user.fullName.isEmpty ? 'this account' : user.fullName} '
-            'from ${_formatRole(user.role)} to '
-            '${_formatRole(newRole)}?',
-            textAlign: TextAlign.center,
+            ),
           ),
           actions: [
             TextButton(
-              onPressed: () {
-                Navigator.pop(dialogContext, false);
-              },
+              onPressed: () => Navigator.pop(dialogContext),
               child: const Text('Cancel'),
             ),
             FilledButton(
-              onPressed: () {
-                Navigator.pop(dialogContext, true);
-              },
-              child: const Text('Confirm'),
+              onPressed: selection == user.role
+                  ? null
+                  : () => Navigator.pop(dialogContext, selection),
+              child: const Text('Review change'),
             ),
           ],
-        );
-      },
+        ),
+      ),
     );
+    if (!mounted || newRole == null || newRole == user.role) return;
 
-    if (confirmed != true || !mounted) {
-      return;
-    }
-
+    // Keep a separate confirmation before changing another account's access.
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('Confirm role change'),
+        content: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                user.email,
+                style: const TextStyle(fontWeight: FontWeight.w700),
+              ),
+              const SizedBox(height: 16),
+              Text('Current role: ${_roleLabel(user.role)}'),
+              const SizedBox(height: 8),
+              Text('New role: ${_roleLabel(newRole)}'),
+              const SizedBox(height: 16),
+              const Text(
+                'This changes the features and permissions available to this account.',
+              ),
+            ],
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext, false),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(dialogContext, true),
+            child: const Text('Confirm'),
+          ),
+        ],
+      ),
+    );
+    if (!mounted || confirmed != true) return;
     setState(() {
-      _updatingUserId = user.id;
+      _savingUserId = user.id;
     });
 
     try {
-      await _adminService.updateUserRole(user: user, newRole: newRole);
-
-      if (!mounted) {
-        return;
-      }
-
-      final Future<List<SystemUser>> future = _loadUsers();
-
-      setState(() {
-        _usersFuture = future;
-      });
-
-      await future;
-
-      if (!mounted) {
-        return;
-      }
-
-      ScaffoldMessenger.of(context)
-        ..hideCurrentSnackBar()
-        ..showSnackBar(
-          SnackBar(
-            content: Text(
-              'Role updated to '
-              '${_formatRole(newRole)}.',
-            ),
-          ),
-        );
-    } catch (error) {
-      debugPrint('ADMIN ROLE UPDATE ERROR: $error');
-
-      if (!mounted) {
-        return;
-      }
-
-      ScaffoldMessenger.of(context)
-        ..hideCurrentSnackBar()
-        ..showSnackBar(
-          const SnackBar(content: Text('Unable to update the user role.')),
-        );
+      // The existing service verifies permissions and writes its activity log.
+      await _service.updateUserRole(user: user, newRole: newRole);
+      if (!mounted) return;
+      _showMessage('Role updated to ${_roleLabel(newRole)}.');
+      await _loadUsers();
+    } catch (_) {
+      if (!mounted) return;
+      _showMessage('Unable to update this role. Please try again.');
     } finally {
       if (mounted) {
         setState(() {
-          _updatingUserId = null;
+          _savingUserId = null;
         });
       }
     }
   }
 
-  // ---------------------------------------------------------------------------
-  // UI
-  // ---------------------------------------------------------------------------
+  // Replace earlier feedback so messages do not queue behind each other.
+  void _showMessage(String message) {
+    ScaffoldMessenger.of(context)
+      ..hideCurrentSnackBar()
+      ..showSnackBar(SnackBar(content: Text(message)));
+  }
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: _backgroundColor,
-      appBar: AppBar(
-        backgroundColor: Colors.white,
-        surfaceTintColor: Colors.white,
-        elevation: 0,
-        foregroundColor: _darkTextColor,
-        title: const Text(
-          'User Accounts',
-          style: TextStyle(fontWeight: FontWeight.w700),
+    final visible = _visibleUsers;
+    final body = RolePageBody(
+      storageId: 'admin-users',
+      onRefresh: _refresh,
+      children: [
+        const RoleIntroCard(
+          eyebrow: 'Account management',
+          title: 'The right access for every role.',
+          description:
+              'Find an account, review its role and confirm any access changes.',
+          icon: Icons.manage_accounts_outlined,
         ),
-      ),
-      body: SafeArea(
-        child: RefreshIndicator(
-          onRefresh: _refresh,
-          child: FutureBuilder<List<SystemUser>>(
-            future: _usersFuture,
-            builder: (context, snapshot) {
-              if (snapshot.connectionState == ConnectionState.waiting) {
-                return const Center(child: CircularProgressIndicator());
-              }
-
-              if (snapshot.hasError) {
-                return ListView(
-                  physics: const AlwaysScrollableScrollPhysics(),
-                  padding: const EdgeInsets.all(24),
-                  children: [const SizedBox(height: 120), _buildErrorState()],
-                );
-              }
-
-              final List<SystemUser> visibleUsers = _visibleUsers;
-
-              return ListView(
-                physics: const AlwaysScrollableScrollPhysics(),
-                padding: const EdgeInsets.fromLTRB(18, 18, 18, 36),
-                children: [
-                  _buildIntroCard(),
-
-                  const SizedBox(height: 22),
-
-                  _buildSearchField(),
-
-                  const SizedBox(height: 18),
-
-                  Row(
-                    children: [
-                      const Expanded(
-                        child: Text(
-                          'Registered Users',
-                          style: TextStyle(
-                            fontSize: 18,
-                            fontWeight: FontWeight.w800,
-                            color: _darkTextColor,
-                          ),
-                        ),
-                      ),
-                      Text(
-                        '${visibleUsers.length} shown',
-                        style: const TextStyle(
-                          fontSize: 12,
-                          color: Colors.black54,
-                        ),
-                      ),
-                    ],
+        const SizedBox(height: 18),
+        TextField(
+          controller: _searchController,
+          onChanged: (value) => setState(() {
+            _search = value;
+          }),
+          decoration: InputDecoration(
+            labelText: 'Search accounts',
+            hintText: 'Name, email or role',
+            prefixIcon: const Icon(Icons.search_rounded),
+            suffixIcon: _search.isEmpty
+                ? null
+                : IconButton(
+                    tooltip: 'Clear search',
+                    onPressed: () {
+                      _searchController.clear();
+                      setState(() {
+                        _search = '';
+                      });
+                    },
+                    icon: const Icon(Icons.close_rounded),
                   ),
-
-                  const SizedBox(height: 12),
-
-                  if (_allUsers.isEmpty)
-                    _buildEmptyState(
-                      title: 'No user accounts',
-                      message: 'No registered user profiles are available.',
-                    )
-                  else if (visibleUsers.isEmpty)
-                    _buildEmptyState(
-                      title: 'No matching users',
-                      message: 'Try a different name, email or role.',
-                    )
-                  else
-                    for (final SystemUser user in visibleUsers)
-                      _buildUserCard(user),
-                ],
-              );
-            },
           ),
         ),
-      ),
-    );
-  }
-
-  Widget _buildIntroCard() {
-    return Container(
-      width: double.infinity,
-      padding: const EdgeInsets.all(20),
-      decoration: BoxDecoration(
-        gradient: const LinearGradient(
-          colors: [Color(0xFFE7F7F8), Color(0xFFF1F8FB)],
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-        ),
-        borderRadius: BorderRadius.circular(20),
-        border: Border.all(color: const Color(0xFFCBE8EB)),
-      ),
-      child: const Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Icon(Icons.manage_accounts_outlined, color: _primaryColor, size: 30),
-
-          SizedBox(width: 14),
-
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  'User Management',
-                  style: TextStyle(
-                    fontSize: 20,
-                    fontWeight: FontWeight.w800,
-                    color: _darkTextColor,
-                  ),
-                ),
-
-                SizedBox(height: 6),
-
-                Text(
-                  'Review registered system accounts and '
-                  'manage their authorised roles.',
-                  style: TextStyle(
-                    fontSize: 13,
-                    height: 1.45,
-                    color: Colors.black54,
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildSearchField() {
-    return TextField(
-      controller: _searchController,
-      onChanged: (value) {
-        setState(() {
-          _searchText = value;
-        });
-      },
-      decoration: InputDecoration(
-        hintText: 'Search name, email or role',
-        prefixIcon: const Icon(Icons.search_rounded),
-        suffixIcon: _searchText.isEmpty
-            ? null
-            : IconButton(
-                onPressed: () {
-                  _searchController.clear();
-
-                  setState(() {
-                    _searchText = '';
-                  });
-                },
-                icon: const Icon(Icons.close_rounded),
-              ),
-        filled: true,
-        fillColor: Colors.white,
-        border: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(14),
-          borderSide: const BorderSide(color: _borderColor),
-        ),
-        enabledBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(14),
-          borderSide: const BorderSide(color: _borderColor),
-        ),
-        focusedBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(14),
-          borderSide: const BorderSide(color: _primaryColor, width: 1.4),
-        ),
-      ),
-    );
-  }
-
-  Widget _buildUserCard(SystemUser user) {
-    return Container(
-      width: double.infinity,
-      margin: const EdgeInsets.only(bottom: 10),
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: _borderColor),
-      ),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Container(
-            width: 44,
-            height: 44,
-            decoration: BoxDecoration(
-              color: const Color(0xFFE8F6F7),
-              borderRadius: BorderRadius.circular(13),
-            ),
-            child: const Icon(
-              Icons.person_outline_rounded,
-              color: _primaryColor,
-              size: 23,
-            ),
-          ),
-
-          const SizedBox(width: 13),
-
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  user.fullName.isEmpty ? 'Unnamed User' : user.fullName,
-                  style: const TextStyle(
-                    fontSize: 15,
-                    fontWeight: FontWeight.w700,
-                    color: _darkTextColor,
-                  ),
-                ),
-
-                const SizedBox(height: 4),
-
-                Text(
-                  user.email.isEmpty ? 'No email recorded' : user.email,
-                  style: const TextStyle(fontSize: 12.5, color: Colors.black54),
-                ),
-
-                const SizedBox(height: 9),
-
-                Wrap(
-                  spacing: 7,
-                  runSpacing: 7,
-                  children: [
-                    _buildRoleBadge(user.role),
-                    _buildInfoChip('Joined ${_formatDate(user.createdAt)}'),
-                  ],
-                ),
-                if (user.role != 'admin') ...[
-                  const SizedBox(height: 12),
-
-                  SizedBox(
-                    width: double.infinity,
-                    height: 40,
-                    child: OutlinedButton.icon(
-                      onPressed: _updatingUserId != null
-                          ? null
-                          : () => _changeUserRole(user),
-                      icon: _updatingUserId == user.id
-                          ? const SizedBox(
-                              width: 16,
-                              height: 16,
-                              child: CircularProgressIndicator(strokeWidth: 2),
-                            )
-                          : const Icon(
-                              Icons.manage_accounts_outlined,
-                              size: 18,
-                            ),
-                      label: const Text('Manage Role'),
-                    ),
-                  ),
-                ] else ...[
-                  const SizedBox(height: 10),
-
-                  const Row(
-                    children: [
-                      Icon(
-                        Icons.lock_outline_rounded,
-                        size: 15,
-                        color: Colors.black38,
-                      ),
-
-                      SizedBox(width: 5),
-
-                      Text(
-                        'Administrator role is protected',
-                        style: TextStyle(fontSize: 10.5, color: Colors.black45),
-                      ),
-                    ],
-                  ),
-                ],
-              ],
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildRoleBadge(String role) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 5),
-      decoration: BoxDecoration(
-        color: const Color(0xFFE8F6F7),
-        borderRadius: BorderRadius.circular(20),
-      ),
-      child: Text(
-        _formatRole(role),
-        style: const TextStyle(
-          fontSize: 10.5,
-          fontWeight: FontWeight.w700,
-          color: _primaryColor,
-        ),
-      ),
-    );
-  }
-
-  Widget _buildInfoChip(String text) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 5),
-      decoration: BoxDecoration(
-        color: const Color(0xFFF0F4F6),
-        borderRadius: BorderRadius.circular(20),
-      ),
-      child: Text(
-        text,
-        style: const TextStyle(fontSize: 10.5, color: Color(0xFF486581)),
-      ),
-    );
-  }
-
-  Widget _buildEmptyState({required String title, required String message}) {
-    return Container(
-      width: double.infinity,
-      padding: const EdgeInsets.all(30),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(18),
-        border: Border.all(color: _borderColor),
-      ),
-      child: Column(
-        children: [
-          const Icon(
-            Icons.people_outline_rounded,
-            size: 40,
-            color: Colors.black38,
-          ),
-
-          const SizedBox(height: 10),
-
-          Text(
-            title,
-            style: const TextStyle(
-              fontWeight: FontWeight.w700,
-              color: _darkTextColor,
-            ),
-          ),
-
-          const SizedBox(height: 4),
-
-          Text(
-            message,
-            textAlign: TextAlign.center,
-            style: const TextStyle(fontSize: 12.5, color: Colors.black54),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildErrorState() {
-    return Container(
-      padding: const EdgeInsets.all(22),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(18),
-        border: Border.all(color: _borderColor),
-      ),
-      child: Column(
-        children: [
-          const Icon(
-            Icons.error_outline_rounded,
-            size: 38,
-            color: Colors.black45,
-          ),
-
-          const SizedBox(height: 10),
-
-          const Text(
-            'Unable to load user accounts.',
-            textAlign: TextAlign.center,
-            style: TextStyle(
-              fontWeight: FontWeight.w700,
-              color: _darkTextColor,
-            ),
-          ),
-
-          const SizedBox(height: 12),
-
-          OutlinedButton(onPressed: _refresh, child: const Text('Try Again')),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildRoleOption({
-    required String role,
-    required String selectedRole,
-  }) {
-    final bool selected = selectedRole == role;
-
-    return Container(
-      margin: const EdgeInsets.only(bottom: 8),
-      decoration: BoxDecoration(
-        color: selected ? const Color(0xFFE8F6F7) : Colors.white,
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: selected ? _primaryColor : _borderColor),
-      ),
-      child: RadioListTile<String>(
-        value: role,
-        activeColor: _primaryColor,
-        title: Row(
+        const SizedBox(height: 12),
+        Wrap(
+          spacing: 8,
+          runSpacing: 4,
           children: [
-            Icon(
-              _roleIcon(role),
-              size: 19,
-              color: selected ? _primaryColor : const Color(0xFF486581),
-            ),
-
-            const SizedBox(width: 8),
-
-            Expanded(
-              child: Text(
-                _formatRole(role),
-                style: TextStyle(
-                  fontSize: 13.5,
-                  fontWeight: FontWeight.w700,
-                  color: selected ? _primaryColor : _darkTextColor,
-                ),
+            for (final filter in [
+              ('all', 'All'),
+              ('traveller', 'Travellers'),
+              ('contentManager', 'Content Managers'),
+              ('analyst', 'Analysts'),
+              ('admin', 'Administrators'),
+            ])
+              ChoiceChip(
+                label: Text(filter.$2),
+                selected: _roleFilter == filter.$1,
+                onSelected: (_) => setState(() {
+                  _roleFilter = filter.$1;
+                }),
               ),
-            ),
           ],
         ),
-        subtitle: Padding(
-          padding: const EdgeInsets.only(top: 3),
-          child: Text(
-            _roleDescription(role),
-            style: const TextStyle(
-              fontSize: 10.5,
-              height: 1.3,
-              color: Colors.black54,
-            ),
+        RoleSectionTitle(
+          title: _users == null
+              ? 'Accounts'
+              : 'Accounts · ${visible.length} of ${_users!.length}',
+        ),
+        if (_loading)
+          const RoleStatusCard(
+            title: 'Loading accounts',
+            message: 'Retrieving the latest account roles.',
+            loading: true,
           ),
+        if (_failed)
+          RoleStatusCard(
+            title: 'Unable to refresh accounts',
+            message: _users == null
+                ? 'Check your connection and try again.'
+                : 'Showing the last loaded accounts. Refresh before changing a role.',
+            icon: Icons.cloud_off_outlined,
+            onRetry: _loading ? null : _refresh,
+          ),
+        if (_users != null && visible.isEmpty && !_loading)
+          RoleStatusCard(
+            title: _users!.isEmpty ? 'No accounts yet' : 'No matching accounts',
+            message: _users!.isEmpty
+                ? 'Registered accounts will appear here.'
+                : 'Try another name, email or role filter.',
+            icon: Icons.person_search_outlined,
+          ),
+        for (final user in visible) _accountCard(user),
+      ],
+    );
+    return widget.embedded
+        ? body
+        : Scaffold(
+            appBar: AppBar(title: const Text('Users')),
+            body: SafeArea(child: body),
+          );
+  }
+
+  Widget _accountCard(SystemUser user) {
+    final protected =
+        user.role == 'admin' ||
+        user.id == FirebaseAuth.instance.currentUser?.uid;
+    final saving = _savingUserId == user.id;
+    return Card(
+      key: ValueKey('account-${user.id}'),
+      margin: const EdgeInsets.only(bottom: 12),
+      child: Padding(
+        padding: const EdgeInsets.all(18),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Text(
+              user.fullName.isEmpty ? 'Unnamed account' : user.fullName,
+              style: const TextStyle(
+                fontSize: 17,
+                fontWeight: FontWeight.w700,
+                color: AppColors.navy,
+              ),
+            ),
+            const SizedBox(height: 6),
+            Text(user.email),
+            const SizedBox(height: 12),
+            Align(
+              alignment: Alignment.centerLeft,
+              child: RoleBadge(label: _roleLabel(user.role)),
+            ),
+            const SizedBox(height: 12),
+            Text(
+              'Joined ${formatRoleDate(user.createdAt)}',
+              style: const TextStyle(fontSize: 12),
+            ),
+            const SizedBox(height: 6),
+            Text(
+              'Updated ${formatRoleDate(user.updatedAt)}',
+              style: const TextStyle(fontSize: 12),
+            ),
+            const SizedBox(height: 14),
+            if (protected)
+              const Text(
+                'Administrator access is managed separately.',
+                style: TextStyle(fontSize: 12),
+              )
+            else
+              OutlinedButton.icon(
+                onPressed: _savingUserId != null || _loading || _failed
+                    ? null
+                    : () => _changeRole(user),
+                icon: saving
+                    ? const SizedBox.square(
+                        dimension: 18,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      )
+                    : const Icon(Icons.manage_accounts_outlined),
+                label: Text(saving ? 'Updating role...' : 'Change role'),
+              ),
+          ],
         ),
       ),
     );

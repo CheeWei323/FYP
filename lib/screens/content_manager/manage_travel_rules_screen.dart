@@ -4,10 +4,14 @@ import 'package:url_launcher/url_launcher.dart';
 import '../../models/country.dart';
 import '../../models/travel_rule.dart';
 import '../../services/content_manager_service.dart';
+import '../../theme/app_theme.dart';
+import '../../widgets/role_ui_widgets.dart';
 import 'travel_rule_form_screen.dart';
 
 class ManageTravelRulesScreen extends StatefulWidget {
-  const ManageTravelRulesScreen({super.key});
+  const ManageTravelRulesScreen({super.key, this.embedded = false});
+
+  final bool embedded;
 
   @override
   State<ManageTravelRulesScreen> createState() =>
@@ -15,1191 +19,596 @@ class ManageTravelRulesScreen extends StatefulWidget {
 }
 
 class _ManageTravelRulesScreenState extends State<ManageTravelRulesScreen> {
-  final ContentManagerService _contentManagerService = ContentManagerService();
+  // ---------------------------------------------------------------------------
+  // DESTINATION AND REGULATION STATE
+  // ---------------------------------------------------------------------------
 
-  static const Color _primaryColor = Color(0xFF087F8C);
-
-  static const Color _darkTextColor = Color(0xFF102A43);
-
-  static const Color _backgroundColor = Color(0xFFF7F9FB);
-
-  static const Color _borderColor = Color(0xFFE1E7EC);
-
-  List<Country> _countries = [];
-  List<TravelRule> _rules = [];
-
+  final _service = ContentManagerService();
+  final _searchController = TextEditingController();
+  List<Country>? _countries;
   Country? _selectedCountry;
-
-  bool _isLoadingCountries = true;
-  bool _isLoadingRules = false;
-
-  // Tracks which rule is currently being enabled or disabled.
-  String? _updatingRuleId;
-
-  String? _countryError;
-  String? _ruleError;
-
-  final TextEditingController _searchController = TextEditingController();
-
-  String _searchText = '';
+  List<TravelRule>? _rules;
+  String _search = '';
+  String _statusFilter = 'all';
+  String? _savingRuleId;
+  bool _loadingCountries = false;
+  bool _loadingRules = false;
+  bool _countriesFailed = false;
+  bool _rulesFailed = false;
+  int _countryRequest = 0;
+  int _ruleRequest = 0;
 
   @override
   void initState() {
     super.initState();
-
     _loadCountries();
   }
 
   @override
   void dispose() {
     _searchController.dispose();
-
     super.dispose();
   }
 
-  // ---------------------------------------------------------------------------
-  // DATA
-  // ---------------------------------------------------------------------------
-
+  // Preserve the selected destination when reloading the supported country list.
   Future<void> _loadCountries() async {
+    final request = ++_countryRequest;
     setState(() {
-      _isLoadingCountries = true;
-      _countryError = null;
+      _loadingCountries = true;
     });
-
     try {
-      final List<Country> countries = await _contentManagerService
-          .getAllCountries();
-
-      if (!mounted) return;
-
+      final countries = await _service.getAllCountries();
+      if (!mounted || request != _countryRequest) return;
+      Country? selected;
+      for (final country in countries) {
+        if (country.id == _selectedCountry?.id) selected = country;
+      }
+      selected ??= countries.isEmpty ? null : countries.first;
+      final changedCountry = selected?.id != _selectedCountry?.id;
       setState(() {
         _countries = countries;
-        _isLoadingCountries = false;
-
-        if (countries.isNotEmpty) {
-          _selectedCountry = countries.first;
+        _selectedCountry = selected;
+        _countriesFailed = false;
+        if (changedCountry || selected == null) {
+          _ruleRequest++;
+          _rules = null;
+          _rulesFailed = false;
+          _loadingRules = false;
         }
       });
-
-      if (_selectedCountry != null) {
-        await _loadRules(_selectedCountry!.id);
-      }
-    } catch (e) {
-      debugPrint('CONTENT MANAGER COUNTRY ERROR: $e');
-
-      if (!mounted) return;
-
+      if (selected != null) await _loadRules(selected.id);
+    } catch (_) {
+      if (!mounted || request != _countryRequest) return;
       setState(() {
-        _isLoadingCountries = false;
-        _countryError = 'Unable to load destination countries.';
+        _countriesFailed = true;
       });
+    } finally {
+      if (mounted && request == _countryRequest) {
+        setState(() {
+          _loadingCountries = false;
+        });
+      }
     }
   }
 
+  // Ignore responses for an older request, including when selecting A, B, then A.
   Future<void> _loadRules(String countryId) async {
+    final request = ++_ruleRequest;
     setState(() {
-      _isLoadingRules = true;
-      _ruleError = null;
+      _loadingRules = true;
     });
-
     try {
-      final List<TravelRule> rules = await _contentManagerService
-          .getRulesForCountry(countryId);
-
-      if (!mounted) return;
-
+      final rules = await _service.getRulesForCountry(countryId);
+      if (!mounted ||
+          request != _ruleRequest ||
+          _selectedCountry?.id != countryId) {
+        return;
+      }
       setState(() {
         _rules = rules;
-        _isLoadingRules = false;
+        _rulesFailed = false;
       });
-    } catch (e) {
-      debugPrint('CONTENT MANAGER RULE ERROR: $e');
-
-      if (!mounted) return;
-
+    } catch (_) {
+      if (!mounted ||
+          request != _ruleRequest ||
+          _selectedCountry?.id != countryId) {
+        return;
+      }
       setState(() {
-        _isLoadingRules = false;
-        _ruleError = 'Unable to load travel regulations.';
+        _rulesFailed = true;
       });
+    } finally {
+      if (mounted &&
+          request == _ruleRequest &&
+          _selectedCountry?.id == countryId) {
+        setState(() {
+          _loadingRules = false;
+        });
+      }
     }
   }
 
   Future<void> _refresh() async {
-    if (_selectedCountry == null) {
-      await _loadCountries();
+    if (_savingRuleId != null) return;
+    await _loadCountries();
+  }
+
+  // Clear old destination results immediately, while keeping the local filters.
+  void _selectCountry(String? id) {
+    if (id == null ||
+        id == _selectedCountry?.id ||
+        _savingRuleId != null ||
+        _loadingCountries) {
       return;
     }
-
-    await _loadRules(_selectedCountry!.id);
+    final country = _countries!.firstWhere((country) => country.id == id);
+    setState(() {
+      _selectedCountry = country;
+      _rules = null;
+      _rulesFailed = false;
+    });
+    _loadRules(id);
   }
 
   // ---------------------------------------------------------------------------
-  // HELPERS
+  // DISPLAY LABELS AND LOCAL FILTERS
   // ---------------------------------------------------------------------------
 
+  String _label(String value) => value
+      .replaceAll('_', ' ')
+      .replaceAllMapped(
+        RegExp(r'([a-z])([A-Z])'),
+        (match) => '${match[1]} ${match[2]}',
+      )
+      .split(' ')
+      .where((word) => word.isNotEmpty)
+      .map((word) => word[0].toUpperCase() + word.substring(1))
+      .join(' ');
+
+  String _reviewLabel(String status) => switch (status) {
+    'approved' => 'Approved',
+    'pendingReview' => 'Pending review',
+    'disabled' => 'Disabled',
+    _ => _label(status),
+  };
+
+  String _durationLabel(TravelRule rule) => rule.maxDurationDays == null
+      ? '${rule.minDurationDays}+ days'
+      : rule.minDurationDays == rule.maxDurationDays
+      ? '${rule.minDurationDays} days'
+      : '${rule.minDurationDays}–${rule.maxDurationDays} days';
+
   List<TravelRule> get _visibleRules {
-    final String search = _searchText.trim().toLowerCase();
-
-    if (search.isEmpty) {
-      return _rules;
-    }
-
-    return _rules.where((rule) {
-      return rule.title.toLowerCase().contains(search) ||
-          rule.checklistLabel.toLowerCase().contains(search) ||
-          rule.category.toLowerCase().contains(search) ||
-          rule.sourceName.toLowerCase().contains(search) ||
-          rule.purposes.any(
-            (purpose) => purpose.toLowerCase().contains(search),
-          );
+    final query = _search.trim().toLowerCase();
+    return (_rules ?? []).where((rule) {
+      final matchesStatus =
+          _statusFilter == 'all' || rule.reviewStatus == _statusFilter;
+      final matchesSearch =
+          query.isEmpty ||
+          '${rule.title} ${rule.checklistLabel} ${rule.category} ${rule.sourceName} ${rule.purposes.join(' ')}'
+              .toLowerCase()
+              .contains(query);
+      return matchesStatus && matchesSearch;
     }).toList();
   }
 
-  int get _approvedRuleCount {
-    return _rules.where((rule) => rule.reviewStatus == 'approved').length;
-  }
+  bool get _busy => _loadingCountries || _loadingRules || _savingRuleId != null;
+  bool get _canEdit =>
+      !_busy && !_countriesFailed && !_rulesFailed && _selectedCountry != null;
 
-  int get _pendingReviewRuleCount {
-    return _rules.where((rule) => rule.reviewStatus == 'pendingReview').length;
-  }
+  // ---------------------------------------------------------------------------
+  // OFFICIAL SOURCES AND ADD / EDIT NAVIGATION
+  // ---------------------------------------------------------------------------
 
-  int get _disabledRuleCount {
-    return _rules.where((rule) => rule.reviewStatus == 'disabled').length;
-  }
-
-  String _formatText(String value) {
-    if (value.isEmpty) {
-      return value;
-    }
-
-    final String spaced = value
-        .replaceAll('_', ' ')
-        .replaceAllMapped(
-          RegExp(r'([a-z])([A-Z])'),
-          (match) =>
-              '${match.group(1)} '
-              '${match.group(2)}',
-        );
-
-    return spaced
-        .split(' ')
-        .where((word) => word.isNotEmpty)
-        .map(
-          (word) =>
-              '${word[0].toUpperCase()}'
-              '${word.substring(1)}',
-        )
-        .join(' ');
-  }
-
-  String _purposeLabel(String purpose) {
-    if (purpose == 'all') {
-      return 'All purposes';
-    }
-
-    return _formatText(purpose);
-  }
-
-  String _durationLabel(TravelRule rule) {
-    if (rule.maxDurationDays == null) {
-      return '${rule.minDurationDays}+ days';
-    }
-
-    if (rule.minDurationDays == rule.maxDurationDays) {
-      return '${rule.minDurationDays} days';
-    }
-
-    return '${rule.minDurationDays}–'
-        '${rule.maxDurationDays} days';
-  }
-
-  String _formatDate(DateTime? date) {
-    if (date == null) {
-      return 'Not recorded';
-    }
-
-    const List<String> months = [
-      'Jan',
-      'Feb',
-      'Mar',
-      'Apr',
-      'May',
-      'Jun',
-      'Jul',
-      'Aug',
-      'Sep',
-      'Oct',
-      'Nov',
-      'Dec',
-    ];
-
-    return '${date.day} '
-        '${months[date.month - 1]} '
-        '${date.year}';
-  }
-
-  Future<void> _openOfficialSource(TravelRule rule) async {
-    final Uri? uri = Uri.tryParse(rule.officialUrl);
-
-    if (uri == null || !(uri.scheme == 'http' || uri.scheme == 'https')) {
-      if (!mounted) return;
-
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('This rule does not contain a valid official source.'),
-        ),
-      );
-
+  Future<void> _openSource(TravelRule rule) async {
+    final uri = Uri.tryParse(rule.officialUrl);
+    if (uri == null ||
+        !['http', 'https'].contains(uri.scheme) ||
+        uri.host.isEmpty) {
+      _showMessage('This regulation does not contain a valid official source.');
       return;
     }
-
     try {
-      final bool opened = await launchUrl(
-        uri,
-        mode: LaunchMode.externalApplication,
-      );
-
-      if (!opened && mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Unable to open the official source.')),
-        );
-      }
-    } catch (e) {
-      debugPrint('OFFICIAL SOURCE ERROR: $e');
-
+      if (await launchUrl(uri, mode: LaunchMode.externalApplication)) return;
+    } catch (_) {
       if (!mounted) return;
-
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Unable to open the official source.')),
-      );
     }
+    if (mounted) _showMessage('Unable to open the official source.');
   }
-  // ---------------------------------------------------------------------------
-  // RULE FORM NAVIGATION
-  // ---------------------------------------------------------------------------
 
-  // Opens the Add/Edit Travel Rule screen.
-  // When a rule is successfully created or updated,
-  // the rules for the selected country are reloaded.
-  Future<void> _openRuleForm({TravelRule? rule}) async {
-    final Country? country = _selectedCountry;
-
-    if (country == null) {
-      return;
-    }
-
-    final bool? changed = await Navigator.push<bool>(
-      context,
+  Future<void> _openForm({TravelRule? rule}) async {
+    final country = _selectedCountry;
+    if (!_canEdit || country == null) return;
+    final changed = await Navigator.of(context).push<bool>(
       MaterialPageRoute(
-        builder: (context) =>
+        builder: (_) =>
             TravelRuleFormScreen(country: country, existingRule: rule),
       ),
     );
-
-    if (changed != true || !mounted) {
-      return;
-    }
-
+    if (!mounted || changed != true) return;
     await _loadRules(country.id);
   }
 
   // ---------------------------------------------------------------------------
-  // RULE STATUS MANAGEMENT
+  // CONFIRMED PUBLICATION CHANGES
   // ---------------------------------------------------------------------------
 
-  // Enables or disables an existing travel rule.
-  // Disabled rules remain stored in Firestore but are excluded
-  // from new traveller checklist generation.
-  Future<void> _changeRuleStatus(TravelRule rule) async {
-    if (_updatingRuleId != null) {
-      return;
-    }
-
-    final bool enable = !rule.active;
-
-    final bool? confirmed = await showDialog<bool>(
+  Future<void> _changeStatus(TravelRule rule) async {
+    if (!_canEdit) return;
+    final enable = !rule.active;
+    final confirmed = await showDialog<bool>(
       context: context,
-      builder: (BuildContext dialogContext) {
-        return AlertDialog(
-          icon: Icon(
-            enable
-                ? Icons.check_circle_outline_rounded
-                : Icons.pause_circle_outline_rounded,
-            color: _primaryColor,
-            size: 32,
-          ),
-          title: Text(
-            enable ? 'Enable Travel Rule?' : 'Disable Travel Rule?',
-            textAlign: TextAlign.center,
-          ),
-          content: Text(
-            enable
-                ? 'Enabling this rule will make it available to '
-                      'the rule-based DSS when generating new traveller '
-                      'requirements.\n\n'
-                      'Make sure the information and official source '
-                      'have been reviewed.'
-                : 'Disabling this rule will prevent it from being '
-                      'used when generating new traveller requirements.\n\n'
-                      'The rule will remain stored and can be enabled again later.',
-          ),
-          actions: [
-            TextButton(
-              onPressed: () {
-                Navigator.pop(dialogContext, false);
-              },
-              child: const Text('Cancel'),
-            ),
-            FilledButton(
-              onPressed: () {
-                Navigator.pop(dialogContext, true);
-              },
-              child: Text(enable ? 'Enable Rule' : 'Disable Rule'),
-            ),
-          ],
-        );
-      },
-    );
-
-    if (confirmed != true || !mounted) {
-      return;
-    }
-
-    setState(() {
-      _updatingRuleId = rule.id;
-    });
-
-    try {
-      await _contentManagerService.setTravelRuleActive(
-        rule: rule,
-        active: enable,
-      );
-
-      if (!mounted) return;
-
-      await _loadRules(_selectedCountry!.id);
-    } catch (e) {
-      debugPrint('UPDATE RULE STATUS ERROR: $e');
-
-      if (!mounted) return;
-
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(
-            enable
-                ? 'Unable to enable the travel rule.'
-                : 'Unable to disable the travel rule.',
+      builder: (dialogContext) => AlertDialog(
+        title: Text(enable ? 'Enable regulation?' : 'Disable regulation?'),
+        content: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                rule.title,
+                style: const TextStyle(
+                  fontWeight: FontWeight.w700,
+                  color: AppColors.navy,
+                ),
+              ),
+              const SizedBox(height: 14),
+              Text(
+                enable
+                    ? 'Confirm that the regulation and official source have been reviewed. Enabling approves it for future traveller requirements.'
+                    : 'This regulation will remain saved but will be excluded from future generated requirements.',
+              ),
+            ],
           ),
         ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext, false),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(dialogContext, true),
+            child: Text(enable ? 'Enable rule' : 'Disable rule'),
+          ),
+        ],
+      ),
+    );
+    if (!mounted || confirmed != true || !_canEdit) return;
+    setState(() {
+      _savingRuleId = rule.id;
+    });
+    try {
+      // The existing service applies the publication status and its activity log.
+      await _service.setTravelRuleActive(rule: rule, active: enable);
+      if (!mounted) return;
+      _showMessage(
+        enable ? 'Regulation enabled and approved.' : 'Regulation disabled.',
       );
+      await _loadRules(rule.countryId);
+    } catch (_) {
+      if (!mounted) return;
+      _showMessage('Unable to update this regulation. Please try again.');
     } finally {
       if (mounted) {
         setState(() {
-          _updatingRuleId = null;
+          _savingRuleId = null;
         });
       }
     }
   }
 
-  // ---------------------------------------------------------------------------
-  // UI
-  // ---------------------------------------------------------------------------
+  void _showMessage(String message) {
+    ScaffoldMessenger.of(context)
+      ..hideCurrentSnackBar()
+      ..showSnackBar(SnackBar(content: Text(message)));
+  }
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: _backgroundColor,
-
-      floatingActionButton: _selectedCountry == null
-          ? null
-          : FloatingActionButton.extended(
-              onPressed: () => _openRuleForm(),
-              backgroundColor: _primaryColor,
-              foregroundColor: Colors.white,
-              icon: const Icon(Icons.add_rounded),
-              label: const Text('Add Rule'),
-            ),
-
-      appBar: AppBar(
-        backgroundColor: Colors.white,
-        surfaceTintColor: Colors.white,
-        elevation: 0,
-        title: const Text(
-          'Travel Regulations',
-          style: TextStyle(color: _darkTextColor, fontWeight: FontWeight.w700),
-        ),
-      ),
-
-      body: SafeArea(child: _buildBody()),
-    );
-  }
-
-  Widget _buildBody() {
-    if (_isLoadingCountries) {
-      return const Center(child: CircularProgressIndicator());
-    }
-
-    if (_countryError != null) {
-      return _buildCountryError();
-    }
-
-    if (_countries.isEmpty) {
-      return const Center(child: Text('No destinations are available.'));
-    }
-
-    return RefreshIndicator(
+    final visible = _visibleRules;
+    final countries = _countries;
+    final body = RolePageBody(
+      storageId: 'content-manager-regulations',
       onRefresh: _refresh,
-      child: ListView(
-        physics: const AlwaysScrollableScrollPhysics(),
-        padding: const EdgeInsets.fromLTRB(18, 18, 18, 36),
-        children: [
-          _buildIntroCard(),
-
-          const SizedBox(height: 24),
-
-          const Text(
-            'Destination',
-            style: TextStyle(
-              fontSize: 18,
-              fontWeight: FontWeight.w800,
-              color: _darkTextColor,
+      children: [
+        const RoleIntroCard(
+          eyebrow: 'Travel regulations',
+          title: 'Clear guidance starts with reliable information.',
+          description:
+              'Select a destination to maintain requirements, review their sources and manage publication.',
+          icon: Icons.policy_outlined,
+        ),
+        const SizedBox(height: 18),
+        if (_loadingCountries)
+          const RoleStatusCard(
+            title: 'Loading destinations',
+            message: 'Retrieving supported destinations.',
+            loading: true,
+          ),
+        if (_countriesFailed)
+          RoleStatusCard(
+            title: 'Unable to refresh destinations',
+            message: countries == null
+                ? 'Check your connection and try again.'
+                : 'Showing the last loaded destinations. Refresh before editing regulations.',
+            icon: Icons.cloud_off_outlined,
+            onRetry: _busy ? null : _refresh,
+          ),
+        if (countries != null && countries.isEmpty && !_loadingCountries)
+          const RoleStatusCard(
+            title: 'No destinations available',
+            message: 'Supported destinations will appear here when configured.',
+            icon: Icons.public_outlined,
+          ),
+        if (countries != null && countries.isNotEmpty) ...[
+          DropdownButtonFormField<String>(
+            key: ValueKey('regulation-country-${_selectedCountry?.id}'),
+            initialValue: _selectedCountry?.id,
+            isExpanded: true,
+            itemHeight: null,
+            decoration: const InputDecoration(
+              labelText: 'Destination',
+              prefixIcon: Icon(Icons.public_outlined),
+            ),
+            items: countries
+                .map(
+                  (country) => DropdownMenuItem<String>(
+                    value: country.id,
+                    child: Text(
+                      country.enabled
+                          ? country.name
+                          : '${country.name} · Disabled for new trips',
+                    ),
+                  ),
+                )
+                .toList(),
+            onChanged: _savingRuleId != null || _loadingCountries
+                ? null
+                : _selectCountry,
+          ),
+          if (_selectedCountry?.enabled == false) ...[
+            const SizedBox(height: 10),
+            const Text(
+              'You can maintain regulations for this destination while it is disabled for new trips.',
+              style: TextStyle(fontSize: 12),
+            ),
+          ],
+          RoleSectionTitle(
+            title: 'Regulations',
+            action: FilledButton.icon(
+              onPressed: _canEdit ? () => _openForm() : null,
+              icon: const Icon(Icons.add_rounded),
+              label: const Text('Add rule'),
             ),
           ),
-
-          const SizedBox(height: 12),
-
-          _buildCountrySelector(),
-
-          const SizedBox(height: 20),
-
-          if (!_isLoadingRules && _ruleError == null) _buildRuleSummary(),
-
-          const SizedBox(height: 22),
-
-          _buildSearchField(),
-
-          const SizedBox(height: 22),
-
-          _buildRuleSection(),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildIntroCard() {
-    return Container(
-      width: double.infinity,
-      padding: const EdgeInsets.all(20),
-      decoration: BoxDecoration(
-        gradient: const LinearGradient(
-          colors: [Color(0xFFE7F7F8), Color(0xFFF1F8FB)],
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-        ),
-        borderRadius: BorderRadius.circular(20),
-        border: Border.all(color: const Color(0xFFCBE8EB)),
-      ),
-      child: const Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Icon(Icons.policy_outlined, color: _primaryColor, size: 30),
-
-          SizedBox(width: 14),
-
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
+          if (_rules != null) ...[
+            Wrap(
+              spacing: 8,
+              runSpacing: 8,
               children: [
-                Text(
-                  'Manage Travel Regulations',
-                  style: TextStyle(
-                    fontSize: 20,
-                    fontWeight: FontWeight.w800,
-                    color: _darkTextColor,
-                  ),
+                RoleBadge(label: '${_rules!.length} total'),
+                RoleBadge(
+                  label:
+                      '${_rules!.where((rule) => rule.reviewStatus == 'approved').length} approved',
                 ),
-
-                SizedBox(height: 6),
-
-                Text(
-                  'Review the regulatory rules used to generate '
-                  'personalised traveller requirements.',
-                  style: TextStyle(
-                    fontSize: 13,
-                    height: 1.45,
-                    color: Colors.black54,
-                  ),
+                RoleBadge(
+                  label:
+                      '${_rules!.where((rule) => rule.reviewStatus == 'pendingReview').length} pending review',
+                ),
+                RoleBadge(
+                  label:
+                      '${_rules!.where((rule) => rule.reviewStatus == 'disabled').length} disabled',
                 ),
               ],
             ),
+            const SizedBox(height: 16),
+          ],
+          TextField(
+            controller: _searchController,
+            onChanged: (value) => setState(() {
+              _search = value;
+            }),
+            decoration: InputDecoration(
+              labelText: 'Search regulations',
+              hintText: 'Title, category, source or purpose',
+              prefixIcon: const Icon(Icons.search_rounded),
+              suffixIcon: _search.isEmpty
+                  ? null
+                  : IconButton(
+                      tooltip: 'Clear search',
+                      onPressed: () {
+                        _searchController.clear();
+                        setState(() {
+                          _search = '';
+                        });
+                      },
+                      icon: const Icon(Icons.close_rounded),
+                    ),
+            ),
           ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildCountrySelector() {
-    return DropdownButtonFormField<Country>(
-      initialValue: _selectedCountry,
-      isExpanded: true,
-      decoration: InputDecoration(
-        prefixIcon: const Icon(Icons.location_on_outlined),
-        filled: true,
-        fillColor: Colors.white,
-        contentPadding: const EdgeInsets.symmetric(
-          horizontal: 16,
-          vertical: 17,
-        ),
-        border: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(14),
-          borderSide: const BorderSide(color: _borderColor),
-        ),
-        enabledBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(14),
-          borderSide: const BorderSide(color: _borderColor),
-        ),
-      ),
-      items: _countries.map((country) {
-        return DropdownMenuItem<Country>(
-          value: country,
-          child: Row(
+          const SizedBox(height: 12),
+          Wrap(
+            spacing: 8,
+            runSpacing: 4,
             children: [
-              Expanded(
-                child: Text(country.name, overflow: TextOverflow.ellipsis),
-              ),
-
-              const SizedBox(width: 8),
-
-              Text(
-                country.code,
-                style: const TextStyle(fontSize: 12, color: Colors.black45),
-              ),
-
-              if (!country.enabled) ...[
-                const SizedBox(width: 8),
-                const Text(
-                  'Disabled',
-                  style: TextStyle(
-                    fontSize: 11,
-                    color: Color(0xFF9B5713),
-                    fontWeight: FontWeight.w600,
-                  ),
+              for (final status in [
+                ('all', 'All'),
+                ('approved', 'Approved'),
+                ('pendingReview', 'Pending review'),
+                ('disabled', 'Disabled'),
+              ])
+                ChoiceChip(
+                  label: Text(status.$2),
+                  selected: _statusFilter == status.$1,
+                  onSelected: (_) => setState(() {
+                    _statusFilter = status.$1;
+                  }),
                 ),
-              ],
             ],
           ),
-        );
-      }).toList(),
-      onChanged: (country) {
-        if (country == null) {
-          return;
-        }
-
-        setState(() {
-          _selectedCountry = country;
-
-          _searchText = '';
-          _searchController.clear();
-        });
-
-        _loadRules(country.id);
-      },
-    );
-  }
-
-  Widget _buildRuleSummary() {
-    return Column(
-      children: [
-        Row(
-          children: [
-            Expanded(
-              child: _buildSummaryItem(
-                label: 'Total Rules',
-                value: '${_rules.length}',
-                icon: Icons.list_alt_outlined,
-              ),
+          const SizedBox(height: 16),
+          if (_loadingRules)
+            const RoleStatusCard(
+              title: 'Loading regulations',
+              message: 'Retrieving requirements for the selected destination.',
+              loading: true,
             ),
-            const SizedBox(width: 10),
-            Expanded(
-              child: _buildSummaryItem(
-                label: 'Approved',
-                value: '$_approvedRuleCount',
-                icon: Icons.check_circle_outline_rounded,
-              ),
+          if (_rulesFailed)
+            RoleStatusCard(
+              title: 'Unable to refresh regulations',
+              message: _rules == null
+                  ? 'Check your connection and try again.'
+                  : 'Showing the last loaded regulations. Refresh before making changes.',
+              icon: Icons.cloud_off_outlined,
+              onRetry: _busy ? null : () => _loadRules(_selectedCountry!.id),
             ),
-          ],
-        ),
-
-        const SizedBox(height: 10),
-
-        Row(
-          children: [
-            Expanded(
-              child: _buildSummaryItem(
-                label: 'Pending Review',
-                value: '$_pendingReviewRuleCount',
-                icon: Icons.schedule_outlined,
-              ),
+          if (_rules != null && visible.isEmpty && !_loadingRules) ...[
+            RoleStatusCard(
+              title: _rules!.isEmpty
+                  ? 'No regulations for this destination'
+                  : 'No matching regulations',
+              message: _rules!.isEmpty
+                  ? 'Add a regulation with its official source to begin.'
+                  : 'Try another search or review-status filter.',
+              icon: Icons.policy_outlined,
             ),
-            const SizedBox(width: 10),
-            Expanded(
-              child: _buildSummaryItem(
-                label: 'Disabled',
-                value: '$_disabledRuleCount',
-                icon: Icons.pause_circle_outline_rounded,
-              ),
-            ),
-          ],
-        ),
-      ],
-    );
-  }
-
-  Widget _buildSummaryItem({
-    required String label,
-    required String value,
-    required IconData icon,
-  }) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 14),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(15),
-        border: Border.all(color: _borderColor),
-      ),
-      child: Column(
-        children: [
-          Icon(icon, color: _primaryColor, size: 21),
-
-          const SizedBox(height: 6),
-
-          Text(
-            value,
-            style: const TextStyle(
-              fontSize: 18,
-              fontWeight: FontWeight.w800,
-              color: _darkTextColor,
-            ),
-          ),
-
-          const SizedBox(height: 2),
-
-          Text(
-            label,
-            textAlign: TextAlign.center,
-            style: const TextStyle(fontSize: 10.5, color: Colors.black54),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildSearchField() {
-    return TextField(
-      controller: _searchController,
-      onChanged: (value) {
-        setState(() {
-          _searchText = value;
-        });
-      },
-      decoration: InputDecoration(
-        hintText: 'Search rules',
-        prefixIcon: const Icon(Icons.search_rounded),
-        suffixIcon: _searchText.isEmpty
-            ? null
-            : IconButton(
+            if (_rules!.isNotEmpty)
+              TextButton(
                 onPressed: () {
                   _searchController.clear();
-
                   setState(() {
-                    _searchText = '';
+                    _search = '';
+                    _statusFilter = 'all';
                   });
                 },
-                icon: const Icon(Icons.close_rounded),
+                child: const Text('Clear filters'),
               ),
-        filled: true,
-        fillColor: Colors.white,
-        border: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(14),
-          borderSide: const BorderSide(color: _borderColor),
-        ),
-        enabledBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(14),
-          borderSide: const BorderSide(color: _borderColor),
-        ),
-      ),
-    );
-  }
-
-  Widget _buildRuleSection() {
-    if (_isLoadingRules) {
-      return const Padding(
-        padding: EdgeInsets.symmetric(vertical: 60),
-        child: Center(child: CircularProgressIndicator()),
-      );
-    }
-
-    if (_ruleError != null) {
-      return Container(
-        width: double.infinity,
-        padding: const EdgeInsets.all(18),
-        decoration: BoxDecoration(
-          color: Colors.white,
-          borderRadius: BorderRadius.circular(16),
-          border: Border.all(color: _borderColor),
-        ),
-        child: Column(
-          children: [
-            const Icon(Icons.error_outline_rounded, color: Color(0xFFC62828)),
-
-            const SizedBox(height: 10),
-
-            Text(_ruleError!, textAlign: TextAlign.center),
-
-            const SizedBox(height: 8),
-
-            TextButton(
-              onPressed: _selectedCountry == null
-                  ? null
-                  : () => _loadRules(_selectedCountry!.id),
-              child: const Text('Retry'),
-            ),
           ],
-        ),
-      );
-    }
-
-    final List<TravelRule> visibleRules = _visibleRules;
-
-    if (_rules.isEmpty) {
-      return _buildEmptyState(
-        title: 'No travel rules',
-        message: 'No regulatory rules are stored for this destination.',
-      );
-    }
-
-    if (visibleRules.isEmpty) {
-      return _buildEmptyState(
-        title: 'No matching rules',
-        message: 'Try a different search term.',
-      );
-    }
-
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Row(
-          children: [
-            const Expanded(
-              child: Text(
-                'Regulatory Rules',
-                style: TextStyle(
-                  fontSize: 18,
-                  fontWeight: FontWeight.w800,
-                  color: _darkTextColor,
-                ),
-              ),
-            ),
-
-            Text(
-              '${visibleRules.length} shown',
-              style: const TextStyle(fontSize: 12, color: Colors.black54),
-            ),
-          ],
-        ),
-
-        const SizedBox(height: 12),
-
-        for (final TravelRule rule in visibleRules) _buildRuleCard(rule),
+          for (final rule in visible) _ruleCard(rule),
+        ],
       ],
     );
+    return widget.embedded
+        ? body
+        : Scaffold(
+            appBar: AppBar(title: const Text('Regulations')),
+            body: SafeArea(child: body),
+          );
   }
 
-  Widget _buildEmptyState({required String title, required String message}) {
-    return Container(
-      width: double.infinity,
-      padding: const EdgeInsets.all(30),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(18),
-        border: Border.all(color: _borderColor),
-      ),
-      child: Column(
-        children: [
-          const Icon(Icons.policy_outlined, size: 42, color: Colors.black38),
-
-          const SizedBox(height: 12),
-
-          Text(
-            title,
-            style: const TextStyle(
-              fontSize: 17,
-              fontWeight: FontWeight.w700,
-              color: _darkTextColor,
-            ),
-          ),
-
-          const SizedBox(height: 5),
-
-          Text(
-            message,
-            textAlign: TextAlign.center,
-            style: const TextStyle(color: Colors.black54),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildRuleCard(TravelRule rule) {
-    return Container(
-      width: double.infinity,
-      margin: const EdgeInsets.only(bottom: 12),
-      padding: const EdgeInsets.all(17),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(18),
-        border: Border.all(color: _borderColor),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Container(
-                width: 43,
-                height: 43,
-                decoration: BoxDecoration(
-                  color: const Color(0xFFE8F6F7),
-                  borderRadius: BorderRadius.circular(12),
-                ),
-                child: const Icon(
-                  Icons.fact_check_outlined,
-                  color: _primaryColor,
-                  size: 22,
-                ),
+  Widget _ruleCard(TravelRule rule) {
+    final saving = _savingRuleId == rule.id;
+    return Card(
+      key: ValueKey('regulation-${rule.id}'),
+      margin: const EdgeInsets.only(bottom: 14),
+      child: Padding(
+        padding: const EdgeInsets.all(18),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Text(
+              rule.title,
+              style: const TextStyle(
+                fontSize: 17,
+                fontWeight: FontWeight.w700,
+                color: AppColors.navy,
               ),
-
-              const SizedBox(width: 12),
-
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      rule.title,
-                      style: const TextStyle(
-                        fontSize: 15.5,
-                        fontWeight: FontWeight.w800,
-                        color: _darkTextColor,
-                      ),
-                    ),
-
-                    const SizedBox(height: 5),
-
-                    Text(
-                      rule.checklistLabel,
-                      style: const TextStyle(
-                        fontSize: 12.5,
-                        color: Colors.black54,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-
-              const SizedBox(width: 8),
-
-              _buildStatusBadge(reviewStatus: rule.reviewStatus),
-            ],
-          ),
-
-          const SizedBox(height: 14),
-
-          Wrap(
-            spacing: 7,
-            runSpacing: 7,
-            children: [
-              _buildInfoChip(_formatText(rule.category)),
-
-              _buildInfoChip(_durationLabel(rule)),
-
-              _buildMandatoryChip(rule.mandatory),
-
-              _buildInfoChip('Priority ${rule.priority}'),
-            ],
-          ),
-
-          const SizedBox(height: 12),
-
-          Wrap(
-            spacing: 7,
-            runSpacing: 7,
-            children: rule.purposes
-                .map((purpose) => _buildPurposeChip(_purposeLabel(purpose)))
-                .toList(),
-          ),
-
-          const SizedBox(height: 14),
-
-          Text(
-            rule.description,
-            style: const TextStyle(
-              fontSize: 12.5,
-              height: 1.5,
-              color: Color(0xFF486581),
             ),
-          ),
-
-          const SizedBox(height: 15),
-
-          Container(
-            width: double.infinity,
-            padding: const EdgeInsets.all(13),
-            decoration: BoxDecoration(
-              color: const Color(0xFFF7F9FB),
-              borderRadius: BorderRadius.circular(12),
-            ),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
+            const SizedBox(height: 12),
+            Wrap(
+              spacing: 8,
+              runSpacing: 8,
               children: [
-                const Text(
-                  'Official Reference',
-                  style: TextStyle(
-                    fontSize: 11,
-                    fontWeight: FontWeight.w700,
-                    color: Colors.black54,
-                  ),
+                RoleBadge(label: _reviewLabel(rule.reviewStatus)),
+                RoleBadge(
+                  label: rule.active ? 'Active' : 'Inactive',
+                  color: rule.active
+                      ? AppColors.success
+                      : AppColors.secondaryText,
                 ),
-
-                const SizedBox(height: 4),
-
-                Text(
-                  rule.sourceName.trim().isEmpty
-                      ? 'No source name recorded'
-                      : rule.sourceName,
-                  style: const TextStyle(
-                    fontSize: 12.5,
-                    fontWeight: FontWeight.w600,
-                    color: _darkTextColor,
-                  ),
-                ),
-
-                const SizedBox(height: 8),
-
-                Row(
-                  children: [
-                    Expanded(
-                      child: Text(
-                        'Last validated: '
-                        '${_formatDate(rule.lastValidatedAt)}',
-                        style: const TextStyle(
-                          fontSize: 11.5,
-                          color: Colors.black54,
-                        ),
-                      ),
-                    ),
-
-                    TextButton.icon(
-                      onPressed: rule.officialUrl.trim().isEmpty
-                          ? null
-                          : () => _openOfficialSource(rule),
-                      icon: const Icon(Icons.open_in_new_rounded, size: 16),
-                      label: const Text('Open Source'),
-                    ),
-                  ],
+                RoleBadge(
+                  label: rule.mandatory ? 'Mandatory' : 'Informational',
                 ),
               ],
             ),
-          ),
-          const SizedBox(height: 14),
-
-          // Allows the Content Manager to edit the rule
-          // or change whether it is active for travellers.
-          Row(
-            children: [
-              Expanded(
-                child: OutlinedButton.icon(
-                  onPressed: _updatingRuleId != null
-                      ? null
-                      : () => _openRuleForm(rule: rule),
-                  icon: const Icon(Icons.edit_outlined, size: 18),
+            const SizedBox(height: 14),
+            Text(
+              'Checklist: ${rule.checklistLabel}',
+              style: const TextStyle(
+                fontWeight: FontWeight.w600,
+                color: AppColors.navy,
+              ),
+            ),
+            const SizedBox(height: 8),
+            Text(rule.description),
+            const SizedBox(height: 14),
+            Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              children: [
+                RoleBadge(label: _label(rule.category)),
+                RoleBadge(label: _durationLabel(rule)),
+                for (final purpose in rule.purposes)
+                  RoleBadge(
+                    label: purpose == 'all' ? 'All purposes' : _label(purpose),
+                  ),
+              ],
+            ),
+            const Padding(
+              padding: EdgeInsets.symmetric(vertical: 14),
+              child: Divider(height: 1),
+            ),
+            Text(
+              'Source: ${rule.sourceName}',
+              style: const TextStyle(fontSize: 12),
+            ),
+            const SizedBox(height: 6),
+            Text(
+              'Last validated: ${formatRoleDate(rule.lastValidatedAt)}',
+              style: const TextStyle(fontSize: 12),
+            ),
+            const SizedBox(height: 6),
+            Text(
+              'Priority: ${rule.priority}',
+              style: const TextStyle(fontSize: 12),
+            ),
+            const SizedBox(height: 14),
+            Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              children: [
+                OutlinedButton.icon(
+                  onPressed: _canEdit ? () => _openForm(rule: rule) : null,
+                  icon: const Icon(Icons.edit_outlined),
                   label: const Text('Edit'),
                 ),
-              ),
-
-              const SizedBox(width: 10),
-
-              Expanded(
-                child: rule.active
-                    ? OutlinedButton.icon(
-                        onPressed: _updatingRuleId != null
-                            ? null
-                            : () => _changeRuleStatus(rule),
-                        icon: _updatingRuleId == rule.id
-                            ? const SizedBox(
-                                width: 17,
-                                height: 17,
-                                child: CircularProgressIndicator(
-                                  strokeWidth: 2,
-                                ),
-                              )
-                            : const Icon(
-                                Icons.pause_circle_outline_rounded,
-                                size: 18,
-                              ),
-                        label: const Text('Disable'),
-                      )
-                    : FilledButton.icon(
-                        onPressed: _updatingRuleId != null
-                            ? null
-                            : () => _changeRuleStatus(rule),
-                        style: FilledButton.styleFrom(
-                          backgroundColor: _primaryColor,
-                          foregroundColor: Colors.white,
+                OutlinedButton.icon(
+                  onPressed: () => _openSource(rule),
+                  icon: const Icon(Icons.open_in_new_rounded),
+                  label: const Text('Official source'),
+                ),
+                OutlinedButton.icon(
+                  onPressed: _canEdit ? () => _changeStatus(rule) : null,
+                  icon: saving
+                      ? const SizedBox.square(
+                          dimension: 18,
+                          child: CircularProgressIndicator(strokeWidth: 2),
+                        )
+                      : Icon(
+                          rule.active
+                              ? Icons.pause_circle_outline_rounded
+                              : Icons.check_circle_outline_rounded,
                         ),
-                        icon: _updatingRuleId == rule.id
-                            ? const SizedBox(
-                                width: 17,
-                                height: 17,
-                                child: CircularProgressIndicator(
-                                  strokeWidth: 2,
-                                  color: Colors.white,
-                                ),
-                              )
-                            : const Icon(
-                                Icons.check_circle_outline_rounded,
-                                size: 18,
-                              ),
-                        label: const Text('Enable'),
-                      ),
-              ),
-            ],
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildStatusBadge({required String reviewStatus}) {
-    late final String label;
-    late final Color backgroundColor;
-    late final Color textColor;
-
-    switch (reviewStatus) {
-      case 'pendingReview':
-        label = 'PENDING REVIEW';
-        backgroundColor = const Color(0xFFFFF4E5);
-        textColor = const Color(0xFF9B5713);
-        break;
-
-      case 'disabled':
-        label = 'DISABLED';
-        backgroundColor = const Color(0xFFF1F3F5);
-        textColor = const Color(0xFF627D98);
-        break;
-
-      case 'approved':
-      default:
-        label = 'APPROVED';
-        backgroundColor = const Color(0xFFEAF7F1);
-        textColor = const Color(0xFF177245);
-        break;
-    }
-
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 5),
-      decoration: BoxDecoration(
-        color: backgroundColor,
-        borderRadius: BorderRadius.circular(20),
-      ),
-      child: Text(
-        label,
-        style: TextStyle(
-          fontSize: 10,
-          fontWeight: FontWeight.w800,
-          color: textColor,
-        ),
-      ),
-    );
-  }
-
-  Widget _buildMandatoryChip(bool mandatory) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 5),
-      decoration: BoxDecoration(
-        color: mandatory ? const Color(0xFFFFE8E6) : const Color(0xFFE9F2FF),
-        borderRadius: BorderRadius.circular(20),
-      ),
-      child: Text(
-        mandatory ? 'REQUIRED' : 'INFORMATION',
-        style: TextStyle(
-          fontSize: 10,
-          fontWeight: FontWeight.w700,
-          color: mandatory ? const Color(0xFFB42318) : const Color(0xFF1D5F9A),
-        ),
-      ),
-    );
-  }
-
-  Widget _buildInfoChip(String text) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 5),
-      decoration: BoxDecoration(
-        color: const Color(0xFFF0F4F6),
-        borderRadius: BorderRadius.circular(20),
-      ),
-      child: Text(
-        text,
-        style: const TextStyle(
-          fontSize: 10.5,
-          fontWeight: FontWeight.w600,
-          color: Color(0xFF486581),
-        ),
-      ),
-    );
-  }
-
-  Widget _buildPurposeChip(String text) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 5),
-      decoration: BoxDecoration(
-        color: const Color(0xFFE8F6F7),
-        borderRadius: BorderRadius.circular(20),
-      ),
-      child: Text(
-        text,
-        style: const TextStyle(
-          fontSize: 10.5,
-          fontWeight: FontWeight.w600,
-          color: _primaryColor,
-        ),
-      ),
-    );
-  }
-
-  Widget _buildCountryError() {
-    return Center(
-      child: Padding(
-        padding: const EdgeInsets.all(24),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            const Icon(
-              Icons.error_outline_rounded,
-              color: Color(0xFFC62828),
-              size: 44,
+                  label: Text(
+                    saving
+                        ? 'Updating...'
+                        : rule.active
+                        ? 'Disable'
+                        : 'Enable',
+                  ),
+                ),
+              ],
             ),
-
-            const SizedBox(height: 14),
-
-            Text(_countryError!, textAlign: TextAlign.center),
-
-            const SizedBox(height: 12),
-
-            FilledButton(onPressed: _loadCountries, child: const Text('Retry')),
           ],
         ),
       ),

@@ -3,35 +3,27 @@ import 'package:url_launcher/url_launcher.dart';
 
 import '../models/checklist_item.dart';
 import '../services/trip_service.dart';
+import '../theme/app_theme.dart';
 
 class ChecklistScreen extends StatefulWidget {
   final String tripId;
 
-  const ChecklistScreen({
-    super.key,
-    required this.tripId,
-  });
+  const ChecklistScreen({super.key, required this.tripId});
 
   @override
-  State<ChecklistScreen> createState() =>
-      _ChecklistScreenState();
+  State<ChecklistScreen> createState() => _ChecklistScreenState();
 }
 
-class _ChecklistScreenState
-    extends State<ChecklistScreen> {
+class _ChecklistScreenState extends State<ChecklistScreen> {
   final TripService _tripService = TripService();
 
-  static const Color _primaryColor =
-  Color(0xFF087F8C);
+  static const Color _primaryColor = AppColors.primary;
 
-  static const Color _darkTextColor =
-  Color(0xFF102A43);
+  static const Color _darkTextColor = AppColors.navy;
 
-  static const Color _backgroundColor =
-  Color(0xFFF7F9FB);
+  static const Color _backgroundColor = AppColors.background;
 
-  static const Color _borderColor =
-  Color(0xFFE1E7EC);
+  static const Color _borderColor = AppColors.border;
 
   List<ChecklistItem> _checklistItems = [];
 
@@ -48,9 +40,7 @@ class _ChecklistScreenState
   }
 
   // Loads the personalised checklist generated for this trip.
-  Future<void> _loadChecklistItems({
-    bool showLoading = true,
-  }) async {
+  Future<void> _loadChecklistItems({bool showLoading = true}) async {
     if (showLoading && mounted) {
       setState(() {
         _isLoading = true;
@@ -59,8 +49,7 @@ class _ChecklistScreenState
     }
 
     try {
-      final List<ChecklistItem> items =
-      await _tripService.getChecklistItems(
+      final List<ChecklistItem> items = await _tripService.getChecklistItems(
         widget.tripId,
       );
 
@@ -72,25 +61,19 @@ class _ChecklistScreenState
         _errorMessage = null;
       });
     } catch (e) {
-      debugPrint(
-        'CHECKLIST LOAD ERROR: $e',
-      );
+      debugPrint('CHECKLIST LOAD ERROR: $e');
 
       if (!mounted) return;
 
       setState(() {
         _isLoading = false;
-        _errorMessage =
-        'Unable to load the travel requirements.';
+        _errorMessage = 'Unable to load the travel requirements.';
       });
     }
   }
 
   // Updates only the completion status of the selected checklist item.
-  Future<void> _updateCompletion(
-      ChecklistItem item,
-      bool completed,
-      ) async {
+  Future<void> _updateCompletion(ChecklistItem item, bool completed) async {
     if (_updatingItems.contains(item.id)) {
       return;
     }
@@ -100,50 +83,38 @@ class _ChecklistScreenState
     });
 
     try {
-      await _tripService
-          .updateChecklistItemCompletion(
+      await _tripService.updateChecklistItemCompletion(
         tripId: widget.tripId,
         itemId: item.id,
         completed: completed,
       );
 
-      await _loadChecklistItems(
-        showLoading: false,
-      );
+      await _loadChecklistItems(showLoading: false);
     } catch (e) {
-      debugPrint(
-        'CHECKLIST UPDATE ERROR: $e',
-      );
+      debugPrint('CHECKLIST UPDATE ERROR: $e');
 
       if (!mounted) return;
 
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text(
-            'Unable to update the requirement.',
-          ),
-        ),
+      _showChecklistError(
+        title: 'Unable to Update Requirement',
+        message:
+            'The checklist completion status could not be '
+            'saved. Please check your connection and try again.',
       );
     } finally {
       if (mounted) {
         setState(() {
-          _updatingItems.remove(
-            item.id,
-          );
+          _updatingItems.remove(item.id);
         });
       }
     }
   }
 
   // Opens an official regulatory source in the external browser.
-  Future<void> _openOfficialSource(
-      String url,
-      ) async {
+  Future<void> _openOfficialSource(String url) async {
     final Uri? uri = Uri.tryParse(url);
 
-    if (uri == null ||
-        (uri.scheme != 'https' &&
-            uri.scheme != 'http')) {
+    if (uri == null || (uri.scheme != 'https' && uri.scheme != 'http')) {
       _showSourceError();
       return;
     }
@@ -158,9 +129,7 @@ class _ChecklistScreenState
         _showSourceError();
       }
     } catch (e) {
-      debugPrint(
-        'OFFICIAL SOURCE ERROR: $e',
-      );
+      debugPrint('OFFICIAL SOURCE ERROR: $e');
 
       if (mounted) {
         _showSourceError();
@@ -168,22 +137,49 @@ class _ChecklistScreenState
     }
   }
 
+  void _showChecklistError({required String title, required String message}) {
+    if (!mounted) return;
+
+    showDialog<void>(
+      context: context,
+      builder: (dialogContext) {
+        return AlertDialog(
+          icon: const Icon(
+            Icons.error_outline_rounded,
+            color: AppColors.danger,
+            size: 36,
+          ),
+          title: Text(title, textAlign: TextAlign.center),
+          content: Text(message, textAlign: TextAlign.center),
+          actionsAlignment: MainAxisAlignment.center,
+          actions: [
+            SizedBox(
+              width: double.infinity,
+              child: FilledButton(
+                onPressed: () {
+                  Navigator.pop(dialogContext);
+                },
+                child: const Text('OK'),
+              ),
+            ),
+          ],
+        );
+      },
+    );
+  }
+
   void _showSourceError() {
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(
-        content: Text(
-          'Unable to open the official source.',
-        ),
-      ),
+    _showChecklistError(
+      title: 'Unable to Open Official Source',
+      message:
+          'The official website could not be opened. '
+          'Please check your internet connection '
+          'and try again.',
     );
   }
 
   int get _completedCount {
-    return _checklistItems
-        .where(
-          (item) => item.completed,
-    )
-        .length;
+    return _checklistItems.where((item) => item.completed).length;
   }
 
   int get _totalCount {
@@ -191,12 +187,9 @@ class _ChecklistScreenState
   }
 
   int get _remainingCount {
-    final int remaining =
-        _totalCount - _completedCount;
+    final int remaining = _totalCount - _completedCount;
 
-    return remaining < 0
-        ? 0
-        : remaining;
+    return remaining < 0 ? 0 : remaining;
   }
 
   double get _completionProgress {
@@ -204,13 +197,11 @@ class _ChecklistScreenState
       return 0;
     }
 
-    return _completedCount /
-        _checklistItems.length;
+    return _completedCount / _checklistItems.length;
   }
 
   int get _completionPercentage {
-    return (_completionProgress * 100)
-        .round();
+    return (_completionProgress * 100).round();
   }
 
   String _formatText(String value) {
@@ -222,10 +213,10 @@ class _ChecklistScreenState
         .split('_')
         .map(
           (word) => word.isEmpty
-          ? word
-          : '${word[0].toUpperCase()}'
-          '${word.substring(1)}',
-    )
+              ? word
+              : '${word[0].toUpperCase()}'
+                    '${word.substring(1)}',
+        )
         .join(' ');
   }
 
@@ -240,150 +231,124 @@ class _ChecklistScreenState
         elevation: 0,
         title: const Text(
           'Travel Requirements',
-          style: TextStyle(
-            color: _darkTextColor,
-            fontWeight: FontWeight.w700,
-          ),
+          style: TextStyle(color: _darkTextColor, fontWeight: FontWeight.w700),
         ),
       ),
 
-      body: SafeArea(
-        child: _buildBody(),
+      body: SafeArea(child: _buildBody()),
+    );
+  }
+
+  Widget _buildChecklistState({
+    required IconData icon,
+    required String title,
+    required String message,
+  }) {
+    return RefreshIndicator(
+      onRefresh: () => _loadChecklistItems(showLoading: false),
+      child: CustomScrollView(
+        physics: const AlwaysScrollableScrollPhysics(),
+        slivers: [
+          SliverFillRemaining(
+            hasScrollBody: false,
+            child: Center(
+              child: Padding(
+                padding: const EdgeInsets.all(24),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Container(
+                      width: 78,
+                      height: 78,
+                      decoration: BoxDecoration(
+                        color: AppColors.primaryLight,
+                        borderRadius: BorderRadius.circular(24),
+                      ),
+                      child: Icon(icon, color: AppColors.primary, size: 36),
+                    ),
+
+                    const SizedBox(height: 20),
+
+                    Text(
+                      title,
+                      textAlign: TextAlign.center,
+                      style: const TextStyle(
+                        color: AppColors.navy,
+                        fontSize: 20,
+                        fontWeight: FontWeight.w800,
+                      ),
+                    ),
+
+                    const SizedBox(height: 9),
+
+                    Text(
+                      message,
+                      textAlign: TextAlign.center,
+                      style: const TextStyle(
+                        color: AppColors.secondaryText,
+                        fontSize: 13,
+                        height: 1.5,
+                      ),
+                    ),
+
+                    const SizedBox(height: 22),
+
+                    OutlinedButton.icon(
+                      onPressed: () {
+                        _loadChecklistItems();
+                      },
+                      icon: const Icon(Icons.refresh_rounded),
+                      label: const Text('Try Again'),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        ],
       ),
     );
   }
 
   Widget _buildBody() {
     if (_isLoading) {
-      return const Center(
-        child: CircularProgressIndicator(),
-      );
+      return const Center(child: CircularProgressIndicator());
     }
+
+    // ---------------------------------------------------------------------------
+    // ERROR STATE
+    // ---------------------------------------------------------------------------
 
     if (_errorMessage != null) {
-      return RefreshIndicator(
-        onRefresh: () =>
-            _loadChecklistItems(
-              showLoading: false,
-            ),
-        child: ListView(
-          physics:
-          const AlwaysScrollableScrollPhysics(),
-          padding:
-          const EdgeInsets.symmetric(
-            horizontal: 24,
-          ),
-          children: [
-            const SizedBox(height: 140),
-
-            const Icon(
-              Icons.cloud_off_outlined,
-              size: 58,
-              color: Colors.black38,
-            ),
-
-            const SizedBox(height: 18),
-
-            const Text(
-              'Unable to load requirements',
-              textAlign: TextAlign.center,
-              style: TextStyle(
-                fontSize: 20,
-                fontWeight:
-                FontWeight.w700,
-                color: _darkTextColor,
-              ),
-            ),
-
-            const SizedBox(height: 8),
-
-            Text(
-              _errorMessage!,
-              textAlign: TextAlign.center,
-              style: const TextStyle(
-                color: Colors.black54,
-              ),
-            ),
-
-            const SizedBox(height: 8),
-
-            const Text(
-              'Pull down to try again.',
-              textAlign: TextAlign.center,
-              style: TextStyle(
-                fontSize: 12,
-                color: Colors.black45,
-              ),
-            ),
-          ],
-        ),
+      return _buildChecklistState(
+        icon: Icons.cloud_off_outlined,
+        title: 'Unable to Load Requirements',
+        message:
+            'We could not retrieve your travel requirements. '
+            'Please check your connection and try again.',
       );
     }
 
+    // ---------------------------------------------------------------------------
+    // EMPTY STATE
+    // ---------------------------------------------------------------------------
+
     if (_checklistItems.isEmpty) {
-      return RefreshIndicator(
-        onRefresh: () =>
-            _loadChecklistItems(
-              showLoading: false,
-            ),
-        child: ListView(
-          physics:
-          const AlwaysScrollableScrollPhysics(),
-          padding:
-          const EdgeInsets.symmetric(
-            horizontal: 24,
-          ),
-          children: const [
-            SizedBox(height: 130),
-
-            Icon(
-              Icons.fact_check_outlined,
-              size: 60,
-              color: _primaryColor,
-            ),
-
-            SizedBox(height: 18),
-
-            Text(
-              'No travel requirements',
-              textAlign: TextAlign.center,
-              style: TextStyle(
-                fontSize: 20,
-                fontWeight:
-                FontWeight.w700,
-                color: _darkTextColor,
-              ),
-            ),
-
-            SizedBox(height: 8),
-
-            Text(
-              'No requirements were generated '
-                  'for this trip.',
-              textAlign: TextAlign.center,
-              style: TextStyle(
-                color: Colors.black54,
-              ),
-            ),
-          ],
-        ),
+      return _buildChecklistState(
+        icon: Icons.fact_check_outlined,
+        title: 'No Requirements Available',
+        message:
+            'No checklist requirements are currently available '
+            'for this trip. Review your trip details and verify '
+            'the latest entry requirements with official sources.',
       );
     }
 
     return RefreshIndicator(
-      onRefresh: () =>
-          _loadChecklistItems(
-            showLoading: false,
-          ),
+      onRefresh: () => _loadChecklistItems(showLoading: false),
       child: ListView(
-        physics:
-        const AlwaysScrollableScrollPhysics(),
-        padding: const EdgeInsets.fromLTRB(
-          16,
-          18,
-          16,
-          36,
-        ),
+        physics: const AlwaysScrollableScrollPhysics(),
+        padding: const EdgeInsets.fromLTRB(16, 18, 16, 36),
         children: [
           _buildProgressCard(),
 
@@ -400,130 +365,149 @@ class _ChecklistScreenState
                   'Requirements',
                   style: TextStyle(
                     fontSize: 18,
-                    fontWeight:
-                    FontWeight.w800,
-                    color:
-                    _darkTextColor,
+                    fontWeight: FontWeight.w800,
+                    color: _darkTextColor,
                   ),
                 ),
               ),
 
               Text(
                 '$_totalCount total',
-                style: const TextStyle(
-                  fontSize: 12,
-                  color: Colors.black54,
-                ),
+                style: const TextStyle(fontSize: 12, color: Colors.black54),
               ),
             ],
           ),
 
           const SizedBox(height: 12),
 
-          ..._checklistItems.map(
-                (item) {
-              return Padding(
-                padding:
-                const EdgeInsets.only(
-                  bottom: 14,
-                ),
-                child:
-                _buildRequirementCard(
-                  item,
-                ),
-              );
-            },
-          ),
+          ..._checklistItems.map((item) {
+            return Padding(
+              padding: const EdgeInsets.only(bottom: 14),
+              child: _buildRequirementCard(item),
+            );
+          }),
         ],
       ),
     );
   }
 
   Widget _buildProgressCard() {
+    final int completed = _completedCount;
+    final int total = _totalCount;
+    final int remaining = _remainingCount;
+
+    // Preserve the existing checklist progress calculation.
+    final double progress = _completionProgress;
+    final int percentage = _completionPercentage;
+
+    final bool reduceMotion = MediaQuery.disableAnimationsOf(context);
+
     return Container(
       width: double.infinity,
-      padding:
-      const EdgeInsets.all(20),
+      padding: const EdgeInsets.all(19),
       decoration: BoxDecoration(
-        gradient:
-        const LinearGradient(
-          colors: [
-            Color(0xFFE7F7F8),
-            Color(0xFFF1F8FB),
-          ],
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-        ),
-        borderRadius:
-        BorderRadius.circular(20),
-        border: Border.all(
-          color:
-          const Color(0xFFCBE8EB),
-        ),
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(color: AppColors.border),
+        boxShadow: const [
+          BoxShadow(
+            color: Color(0x08000000),
+            blurRadius: 12,
+            offset: Offset(0, 4),
+          ),
+        ],
       ),
       child: Column(
-        crossAxisAlignment:
-        CrossAxisAlignment.start,
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
+          // -----------------------------------------------------
+          // CARD HEADER
+          // -----------------------------------------------------
           Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Container(
-                width: 48,
-                height: 48,
+                width: 45,
+                height: 45,
                 decoration: BoxDecoration(
-                  color: Colors.white,
-                  borderRadius:
-                  BorderRadius.circular(
-                    14,
-                  ),
+                  color: AppColors.primaryLight,
+                  borderRadius: BorderRadius.circular(14),
                 ),
                 child: const Icon(
                   Icons.fact_check_outlined,
-                  color: _primaryColor,
+                  color: AppColors.primary,
                   size: 25,
                 ),
               ),
 
-              const SizedBox(width: 14),
+              const SizedBox(width: 13),
 
               const Expanded(
                 child: Column(
-                  crossAxisAlignment:
-                  CrossAxisAlignment.start,
+                  crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
                       'Preparation Progress',
                       style: TextStyle(
+                        color: AppColors.navy,
                         fontSize: 17,
-                        fontWeight:
-                        FontWeight.w800,
-                        color:
-                        _darkTextColor,
+                        fontWeight: FontWeight.w800,
                       ),
                     ),
 
-                    SizedBox(height: 3),
+                    SizedBox(height: 5),
 
                     Text(
-                      'Complete the applicable '
-                          'requirements before departure.',
+                      'Track your applicable travel requirements '
+                      'before departure.',
                       style: TextStyle(
+                        color: AppColors.secondaryText,
                         fontSize: 12.5,
-                        color:
-                        Colors.black54,
+                        height: 1.45,
                       ),
                     ),
                   ],
                 ),
               ),
+            ],
+          ),
 
+          const SizedBox(height: 22),
+
+          // -----------------------------------------------------
+          // COMPLETION SUMMARY
+          // -----------------------------------------------------
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.end,
+            children: [
               Text(
-                '$_completionPercentage%',
+                '$percentage%',
                 style: const TextStyle(
-                  fontSize: 21,
-                  fontWeight:
-                  FontWeight.w800,
-                  color: _primaryColor,
+                  color: AppColors.primary,
+                  fontSize: 35,
+                  fontWeight: FontWeight.w800,
+                  height: 1,
+                ),
+              ),
+
+              const SizedBox(width: 12),
+
+              Expanded(
+                child: Padding(
+                  padding: const EdgeInsets.only(bottom: 3),
+                  child: Text(
+                    remaining == 0
+                        ? 'All requirements completed'
+                        : '$remaining requirement'
+                              '${remaining == 1 ? '' : 's'} remaining',
+                    style: TextStyle(
+                      color: remaining == 0
+                          ? AppColors.success
+                          : AppColors.secondaryText,
+                      fontSize: 12.5,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
                 ),
               ),
             ],
@@ -531,63 +515,61 @@ class _ChecklistScreenState
 
           const SizedBox(height: 18),
 
-          ClipRRect(
-            borderRadius:
-            BorderRadius.circular(20),
-            child:
-            LinearProgressIndicator(
-              value:
-              _completionProgress,
-              minHeight: 9,
-              backgroundColor:
-              const Color(
-                0xFFDDEBED,
-              ),
-              valueColor:
-              const AlwaysStoppedAnimation<
-                  Color>(
-                _primaryColor,
-              ),
-            ),
+          // -----------------------------------------------------
+          // ANIMATED PROGRESS BAR
+          // -----------------------------------------------------
+          TweenAnimationBuilder<double>(
+            tween: Tween<double>(begin: 0, end: progress),
+            duration: reduceMotion
+                ? Duration.zero
+                : const Duration(milliseconds: 450),
+            curve: Curves.easeOutCubic,
+            builder: (context, animatedProgress, child) {
+              return ClipRRect(
+                borderRadius: BorderRadius.circular(20),
+                child: LinearProgressIndicator(
+                  value: animatedProgress,
+                  minHeight: 10,
+                  backgroundColor: const Color(0xFFE5EEF0),
+                  color: AppColors.primary,
+                ),
+              );
+            },
           ),
 
-          const SizedBox(height: 10),
+          const SizedBox(height: 12),
 
+          // -----------------------------------------------------
+          // COMPLETED AND TOTAL COUNTS
+          // -----------------------------------------------------
           Row(
             children: [
+              const Icon(
+                Icons.check_circle_outline_rounded,
+                color: AppColors.primary,
+                size: 17,
+              ),
+
+              const SizedBox(width: 7),
+
               Expanded(
                 child: Text(
-                  '$_completedCount of '
-                      '$_totalCount completed',
+                  '$completed completed',
                   style: const TextStyle(
-                    fontSize: 12.5,
-                    color: Colors.black54,
+                    color: AppColors.secondaryText,
+                    fontSize: 12,
+                    fontWeight: FontWeight.w600,
                   ),
                 ),
               ),
 
-              if (_remainingCount > 0)
-                Text(
-                  '$_remainingCount remaining',
-                  style: const TextStyle(
-                    fontSize: 12,
-                    fontWeight:
-                    FontWeight.w600,
-                    color:
-                    Color(0xFF9B5713),
-                  ),
-                )
-              else
-                const Text(
-                  'All completed',
-                  style: TextStyle(
-                    fontSize: 12,
-                    fontWeight:
-                    FontWeight.w700,
-                    color:
-                    Color(0xFF177245),
-                  ),
+              Text(
+                '$total total',
+                style: const TextStyle(
+                  color: AppColors.secondaryText,
+                  fontSize: 12,
                 ),
+              ),
             ],
           ),
         ],
@@ -597,61 +579,69 @@ class _ChecklistScreenState
 
   Widget _buildInformationNote() {
     return Container(
-      padding: const EdgeInsets.all(15),
+      width: double.infinity,
+      padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
-        color: const Color(0xFFF1F6FA),
+        color: AppColors.primaryLight,
         borderRadius: BorderRadius.circular(16),
-        border: Border.all(
-          color: const Color(0xFFD8E6EE),
-        ),
+        border: Border.all(color: AppColors.border),
       ),
-      child: const Row(
+      child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Icon(
-            Icons.verified_outlined,
-            size: 21,
-            color: Color(0xFF0A5B83),
+          Container(
+            width: 38,
+            height: 38,
+            decoration: BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(11),
+            ),
+            child: const Icon(
+              Icons.verified_outlined,
+              color: AppColors.primary,
+              size: 22,
+            ),
           ),
 
-          SizedBox(width: 11),
+          const SizedBox(width: 12),
 
-          Expanded(
+          const Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
-                  'Official Information',
+                  'About Your Requirements',
                   style: TextStyle(
-                    fontSize: 13,
-                    fontWeight: FontWeight.w700,
-                    color: Color(0xFF334E68),
+                    color: AppColors.navy,
+                    fontSize: 14,
+                    fontWeight: FontWeight.w800,
                   ),
                 ),
 
-                SizedBox(height: 5),
+                SizedBox(height: 8),
 
                 Text(
-                  'Requirements are generated from validated '
-                      'travel rules and official references.',
+                  'Your checklist is generated from the travel '
+                  'rules applicable to your selected destination, '
+                  'travel purpose and duration of stay.',
                   style: TextStyle(
+                    color: AppColors.secondaryText,
                     fontSize: 12.5,
-                    height: 1.45,
-                    color: Color(0xFF334E68),
+                    height: 1.5,
                   ),
                 ),
 
-                SizedBox(height: 6),
+                SizedBox(height: 10),
 
                 Text(
-                  'Travel requirements may change. Always verify '
-                      'the latest information with the official source '
-                      'before departure.',
+                  'Travel policies can change. Always verify '
+                  'the latest requirements using the official '
+                  'sources before departure.',
                   style: TextStyle(
-                    fontSize: 12.5,
-                    height: 1.45,
+                    color: AppColors.navy,
+                    fontSize: 12,
                     fontWeight: FontWeight.w600,
-                    color: Color(0xFF334E68),
+                    height: 1.5,
                   ),
                 ),
               ],
@@ -662,316 +652,239 @@ class _ChecklistScreenState
     );
   }
 
-  Widget _buildRequirementCard(
-      ChecklistItem item,
-      ) {
-    final bool isUpdating =
-    _updatingItems.contains(
-      item.id,
-    );
+  Widget _buildRequirementCard(ChecklistItem item) {
+    final bool isUpdating = _updatingItems.contains(item.id);
+    final bool isCompleted = item.completed;
 
-    return Container(
+    final bool reduceMotion = MediaQuery.disableAnimationsOf(context);
+
+    return AnimatedContainer(
+      duration: reduceMotion
+          ? Duration.zero
+          : const Duration(milliseconds: 220),
+      curve: Curves.easeOutCubic,
       decoration: BoxDecoration(
         color: Colors.white,
-        borderRadius:
-        BorderRadius.circular(18),
+        borderRadius: BorderRadius.circular(18),
         border: Border.all(
-          color: item.completed
-              ? const Color(
-            0xFFB9E2D0,
-          )
-              : _borderColor,
+          color: isCompleted ? const Color(0xFFB9E2D0) : _borderColor,
+          width: isCompleted ? 1.3 : 1,
         ),
         boxShadow: const [
           BoxShadow(
             color: Color(0x08000000),
-            blurRadius: 8,
+            blurRadius: 10,
             offset: Offset(0, 3),
           ),
         ],
       ),
       child: Padding(
-        padding:
-        const EdgeInsets.all(17),
+        padding: const EdgeInsets.all(17),
         child: Column(
-          crossAxisAlignment:
-          CrossAxisAlignment.start,
+          crossAxisAlignment: CrossAxisAlignment.start,
           children: [
+            // ---------------------------------------------------
+            // CHECKBOX, REQUIREMENT TITLE AND BADGES
+            // ---------------------------------------------------
             Row(
-              crossAxisAlignment:
-              CrossAxisAlignment.start,
+              crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 SizedBox(
-                  width: 30,
-                  height: 30,
+                  width: 44,
+                  height: 44,
                   child: Checkbox(
-                    value: item.completed,
+                    value: isCompleted,
                     onChanged: isUpdating
                         ? null
                         : (bool? value) {
-                      if (value ==
-                          null) {
-                        return;
-                      }
-
-                      _updateCompletion(
-                        item,
-                        value,
-                      );
-                    },
-                    activeColor:
-                    _primaryColor,
-                    shape:
-                    RoundedRectangleBorder(
-                      borderRadius:
-                      BorderRadius.circular(
-                        5,
-                      ),
+                            if (value == null) return;
+                            _updateCompletion(item, value);
+                          },
+                    activeColor: AppColors.primary,
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(6),
                     ),
                   ),
                 ),
 
-                const SizedBox(width: 11),
+                const SizedBox(width: 10),
 
                 Expanded(
-                  child: Text(
-                    item.checklistLabel,
-                    style: TextStyle(
-                      fontSize: 16,
-                      fontWeight:
-                      FontWeight.w700,
-                      color:
-                      _darkTextColor,
-                      decoration:
-                      item.completed
-                          ? TextDecoration
-                          .none
-                          : null,
-                    ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        item.checklistLabel,
+                        style: const TextStyle(
+                          color: AppColors.navy,
+                          fontSize: 16,
+                          fontWeight: FontWeight.w800,
+                          height: 1.35,
+                        ),
+                      ),
+
+                      const SizedBox(height: 11),
+
+                      // Badges wrap instead of overflowing
+                      // on narrow physical phones.
+                      Wrap(
+                        spacing: 7,
+                        runSpacing: 7,
+                        children: [
+                          _buildStatusBadge(item.mandatory),
+
+                          if (item.category.trim().isNotEmpty)
+                            _buildCategoryBadge(item.category),
+                        ],
+                      ),
+                    ],
                   ),
-                ),
-
-                const SizedBox(width: 8),
-
-                _buildStatusBadge(
-                  item.mandatory,
                 ),
               ],
             ),
 
-            const SizedBox(height: 14),
+            const SizedBox(height: 17),
 
-            Padding(
-              padding:
-              const EdgeInsets.only(
-                left: 41,
-              ),
-              child: Column(
-                crossAxisAlignment:
-                CrossAxisAlignment.start,
-                children: [
-                  _buildCategoryBadge(
-                    item.category,
-                  ),
+            const Divider(height: 1, color: AppColors.border),
 
-                  const SizedBox(height: 12),
+            const SizedBox(height: 15),
 
-                  Text(
-                    item.description,
-                    style: const TextStyle(
-                      fontSize: 13,
-                      height: 1.5,
-                      color:
-                      Color(0xFF486581),
-                    ),
-                  ),
-
-                  if (item.sourceName
-                      .isNotEmpty) ...[
-                    const SizedBox(
-                      height: 14,
-                    ),
-
-                    Row(
-                      crossAxisAlignment:
-                      CrossAxisAlignment
-                          .start,
-                      children: [
-                        const Icon(
-                          Icons
-                              .account_balance_outlined,
-                          size: 17,
-                          color:
-                          Colors.black45,
-                        ),
-
-                        const SizedBox(
-                          width: 7,
-                        ),
-
-                        Expanded(
-                          child: Column(
-                            crossAxisAlignment:
-                            CrossAxisAlignment
-                                .start,
-                            children: [
-                              const Text(
-                                'Official Source',
-                                style:
-                                TextStyle(
-                                  fontSize:
-                                  11,
-                                  color:
-                                  Colors
-                                      .black45,
-                                ),
-                              ),
-
-                              const SizedBox(
-                                height: 2,
-                              ),
-
-                              Text(
-                                item.sourceName,
-                                style:
-                                const TextStyle(
-                                  fontSize:
-                                  12.5,
-                                  fontWeight:
-                                  FontWeight
-                                      .w600,
-                                  color:
-                                  _darkTextColor,
-                                ),
-                              ),
-                            ],
-                          ),
-                        ),
-                      ],
-                    ),
-                  ],
-
-                  if (item.officialUrl
-                      .isNotEmpty) ...[
-                    const SizedBox(
-                      height: 15,
-                    ),
-
-                    SizedBox(
-                      width:
-                      double.infinity,
-                      height: 43,
-                      child:
-                      OutlinedButton.icon(
-                        style:
-                        OutlinedButton
-                            .styleFrom(
-                          foregroundColor:
-                          _primaryColor,
-                          side:
-                          const BorderSide(
-                            color: Color(
-                              0xFF9BD2D7,
-                            ),
-                          ),
-                          shape:
-                          RoundedRectangleBorder(
-                            borderRadius:
-                            BorderRadius
-                                .circular(
-                              12,
-                            ),
-                          ),
-                        ),
-                        onPressed: () {
-                          _openOfficialSource(
-                            item.officialUrl,
-                          );
-                        },
-                        icon: const Icon(
-                          Icons
-                              .open_in_new_rounded,
-                          size: 17,
-                        ),
-                        label: const Text(
-                          'Open Official Source',
-                          style: TextStyle(
-                            fontWeight:
-                            FontWeight
-                                .w600,
-                          ),
-                        ),
-                      ),
-                    ),
-                  ],
-
-                  if (isUpdating) ...[
-                    const SizedBox(
-                      height: 13,
-                    ),
-
-                    const ClipRRect(
-                      borderRadius:
-                      BorderRadius.all(
-                        Radius.circular(
-                          20,
-                        ),
-                      ),
-                      child:
-                      LinearProgressIndicator(
-                        minHeight: 3,
-                      ),
-                    ),
-                  ],
-                ],
+            // ---------------------------------------------------
+            // REQUIREMENT DESCRIPTION
+            // ---------------------------------------------------
+            Text(
+              item.description,
+              style: const TextStyle(
+                color: AppColors.secondaryText,
+                fontSize: 13,
+                height: 1.55,
               ),
             ),
+
+            // ---------------------------------------------------
+            // OFFICIAL SOURCE INFORMATION
+            // ---------------------------------------------------
+            if (item.sourceName.trim().isNotEmpty) ...[
+              const SizedBox(height: 17),
+
+              Container(
+                width: double.infinity,
+                padding: const EdgeInsets.all(13),
+                decoration: BoxDecoration(
+                  color: AppColors.background,
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(color: AppColors.border),
+                ),
+                child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Container(
+                      width: 34,
+                      height: 34,
+                      decoration: BoxDecoration(
+                        color: AppColors.primaryLight,
+                        borderRadius: BorderRadius.circular(10),
+                      ),
+                      child: const Icon(
+                        Icons.account_balance_outlined,
+                        color: AppColors.primary,
+                        size: 19,
+                      ),
+                    ),
+
+                    const SizedBox(width: 11),
+
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          const Text(
+                            'OFFICIAL SOURCE',
+                            style: TextStyle(
+                              color: AppColors.secondaryText,
+                              fontSize: 10,
+                              fontWeight: FontWeight.w700,
+                              letterSpacing: 0.6,
+                            ),
+                          ),
+
+                          const SizedBox(height: 4),
+
+                          Text(
+                            item.sourceName,
+                            style: const TextStyle(
+                              color: AppColors.navy,
+                              fontSize: 12.5,
+                              fontWeight: FontWeight.w700,
+                              height: 1.4,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+
+            // ---------------------------------------------------
+            // OFFICIAL SOURCE BUTTON
+            // ---------------------------------------------------
+            if (item.officialUrl.trim().isNotEmpty) ...[
+              const SizedBox(height: 15),
+
+              SizedBox(
+                width: double.infinity,
+                child: OutlinedButton.icon(
+                  onPressed: () {
+                    _openOfficialSource(item.officialUrl);
+                  },
+                  icon: const Icon(Icons.open_in_new_rounded, size: 18),
+                  label: const Text('Open Official Source'),
+                ),
+              ),
+            ],
+
+            // ---------------------------------------------------
+            // UPDATE INDICATOR
+            // ---------------------------------------------------
+            if (isUpdating) ...[
+              const SizedBox(height: 14),
+
+              const ClipRRect(
+                borderRadius: BorderRadius.all(Radius.circular(20)),
+                child: LinearProgressIndicator(
+                  minHeight: 3,
+                  color: AppColors.primary,
+                ),
+              ),
+            ],
           ],
         ),
       ),
     );
   }
 
-  Widget _buildStatusBadge(
-      bool mandatory,
-      ) {
-    final Color backgroundColor =
-    mandatory
-        ? const Color(
-      0xFFFFE8E6,
-    )
-        : const Color(
-      0xFFE9F2FF,
-    );
+  Widget _buildStatusBadge(bool mandatory) {
+    final Color backgroundColor = mandatory
+        ? const Color(0xFFFFE8E6)
+        : const Color(0xFFE9F2FF);
 
-    final Color textColor =
-    mandatory
-        ? const Color(
-      0xFFB42318,
-    )
-        : const Color(
-      0xFF1D5F9A,
-    );
+    final Color textColor = mandatory
+        ? const Color(0xFFB42318)
+        : const Color(0xFF1D5F9A);
 
     return Container(
-      padding:
-      const EdgeInsets.symmetric(
-        horizontal: 8,
-        vertical: 5,
-      ),
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 5),
       decoration: BoxDecoration(
         color: backgroundColor,
-        borderRadius:
-        BorderRadius.circular(20),
+        borderRadius: BorderRadius.circular(20),
       ),
       child: Text(
-        mandatory
-            ? 'REQUIRED'
-            : 'INFORMATION',
+        mandatory ? 'REQUIRED' : 'INFORMATION',
         style: TextStyle(
           fontSize: 9.5,
-          fontWeight:
-          FontWeight.w800,
+          fontWeight: FontWeight.w800,
           color: textColor,
           letterSpacing: 0.3,
         ),
@@ -979,27 +892,18 @@ class _ChecklistScreenState
     );
   }
 
-  Widget _buildCategoryBadge(
-      String category,
-      ) {
+  Widget _buildCategoryBadge(String category) {
     return Container(
-      padding:
-      const EdgeInsets.symmetric(
-        horizontal: 9,
-        vertical: 5,
-      ),
+      padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 5),
       decoration: BoxDecoration(
-        color:
-        const Color(0xFFE8F6F7),
-        borderRadius:
-        BorderRadius.circular(20),
+        color: AppColors.primaryLight,
+        borderRadius: BorderRadius.circular(20),
       ),
       child: Text(
         _formatText(category),
         style: const TextStyle(
           fontSize: 10.5,
-          fontWeight:
-          FontWeight.w600,
+          fontWeight: FontWeight.w600,
           color: _primaryColor,
         ),
       ),

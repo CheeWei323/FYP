@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 
+import '../../theme/app_theme.dart';
+
 class AnalyticsFilterCard extends StatelessWidget {
   final List<Map<String, String>> countries;
   final String? selectedDestinationId;
@@ -9,6 +11,7 @@ class AnalyticsFilterCard extends StatelessWidget {
   final VoidCallback onClear;
   final bool showDestination;
   final bool showPurpose;
+  final bool enabled;
 
   const AnalyticsFilterCard({
     super.key,
@@ -20,204 +23,126 @@ class AnalyticsFilterCard extends StatelessWidget {
     required this.onClear,
     this.showDestination = true,
     this.showPurpose = true,
+    this.enabled = true,
   });
 
-  static const String _allValue = '__all__';
+  // ---------------------------------------------------------------------------
+  // FILTER VALUES
+  // ---------------------------------------------------------------------------
 
-  static const Color _primaryColor = Color(0xFF087F8C);
+  static const _allValue = '__all__';
+  static const _purposes = {
+    'tourism': 'Tourism',
+    'business': 'Business',
+    'study': 'Study',
+  };
 
-  static const Color _darkTextColor = Color(0xFF102A43);
-
-  static const Color _borderColor = Color(0xFFE1E7EC);
-
-  bool get _hasActiveFilters {
-    final bool destinationActive =
-        showDestination && selectedDestinationId != null;
-
-    final bool purposeActive = showPurpose && selectedPurpose != null;
-
-    return destinationActive || purposeActive;
-  }
+  // Preserve null as the service's unfiltered value.
+  bool get _hasActiveFilters =>
+      (showDestination && selectedDestinationId != null) ||
+      (showPurpose && selectedPurpose != null);
 
   @override
   Widget build(BuildContext context) {
-    final Set<String> countryIds = countries
-        .map((country) => country['id'] ?? '')
-        .toSet();
-
-    final String destinationValue =
-        selectedDestinationId != null &&
-            countryIds.contains(selectedDestinationId)
+    final destinationValue =
+        countries.any((country) => country['id'] == selectedDestinationId)
         ? selectedDestinationId!
         : _allValue;
-
-    final String purposeValue =
-        selectedPurpose == 'tourism' ||
-            selectedPurpose == 'business' ||
-            selectedPurpose == 'study'
+    final purposeValue = _purposes.containsKey(selectedPurpose)
         ? selectedPurpose!
         : _allValue;
 
     return Container(
-      width: double.infinity,
-      padding: const EdgeInsets.all(16),
+      padding: const EdgeInsets.all(18),
       decoration: BoxDecoration(
         color: Colors.white,
-        borderRadius: BorderRadius.circular(18),
-        border: Border.all(color: _borderColor),
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(color: AppColors.border),
       ),
       child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          Row(
+          const Row(
             children: [
-              const Icon(Icons.tune_rounded, color: _primaryColor, size: 21),
-
-              const SizedBox(width: 8),
-
-              const Expanded(
+              Icon(Icons.tune_rounded, color: AppColors.primary, size: 22),
+              SizedBox(width: 10),
+              Expanded(
                 child: Text(
-                  'Analytics Filters',
+                  'Analytics filters',
                   style: TextStyle(
-                    fontSize: 14,
-                    fontWeight: FontWeight.w800,
-                    color: _darkTextColor,
+                    fontWeight: FontWeight.w700,
+                    fontSize: 16,
+                    color: AppColors.navy,
                   ),
                 ),
               ),
-
-              if (_hasActiveFilters)
-                TextButton(onPressed: onClear, child: const Text('Clear')),
             ],
           ),
-
           if (showDestination) ...[
-            const SizedBox(height: 14),
-
-            const Text(
-              'Destination',
-              style: TextStyle(
-                fontSize: 10.5,
-                fontWeight: FontWeight.w700,
-                color: Colors.black54,
-              ),
-            ),
-
-            const SizedBox(height: 6),
-
-            _buildDropdownContainer(
-              child: DropdownButton<String>(
-                value: destinationValue,
-                isExpanded: true,
-                underline: const SizedBox.shrink(),
-                icon: const Icon(Icons.keyboard_arrow_down_rounded),
-                items: [
-                  const DropdownMenuItem<String>(
-                    value: _allValue,
-                    child: Text('All Destinations'),
-                  ),
-                  ...countries.map((country) {
-                    return DropdownMenuItem<String>(
-                      value: country['id'],
-                      child: Text(country['name'] ?? country['id'] ?? ''),
-                    );
-                  }),
-                ],
-                onChanged: (value) {
-                  onDestinationChanged(value == _allValue ? null : value);
-                },
-              ),
-            ),
-          ],
-
-          if (showPurpose) ...[
-            const SizedBox(height: 14),
-
-            const Text(
-              'Travel Purpose',
-              style: TextStyle(
-                fontSize: 10.5,
-                fontWeight: FontWeight.w700,
-                color: Colors.black54,
-              ),
-            ),
-
-            const SizedBox(height: 6),
-
-            _buildDropdownContainer(
-              child: DropdownButton<String>(
-                value: purposeValue,
-                isExpanded: true,
-                underline: const SizedBox.shrink(),
-                icon: const Icon(Icons.keyboard_arrow_down_rounded),
-                items: const [
-                  DropdownMenuItem<String>(
-                    value: _allValue,
-                    child: Text('All Purposes'),
-                  ),
-                  DropdownMenuItem<String>(
-                    value: 'tourism',
-                    child: Text('Tourism'),
-                  ),
-                  DropdownMenuItem<String>(
-                    value: 'business',
-                    child: Text('Business'),
-                  ),
-                  DropdownMenuItem<String>(
-                    value: 'study',
-                    child: Text('Study'),
-                  ),
-                ],
-                onChanged: (value) {
-                  onPurposeChanged(value == _allValue ? null : value);
-                },
-              ),
-            ),
-          ],
-
-          if (_hasActiveFilters) ...[
-            const SizedBox(height: 12),
-
-            const Row(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Icon(
-                  Icons.info_outline_rounded,
-                  size: 14,
-                  color: Colors.black45,
+            const SizedBox(height: 18),
+            DropdownButtonFormField<String>(
+              key: ValueKey('destination-$destinationValue'),
+              initialValue: destinationValue,
+              isExpanded: true,
+              itemHeight: null,
+              decoration: const InputDecoration(labelText: 'Destination'),
+              items: [
+                const DropdownMenuItem(
+                  value: _allValue,
+                  child: Text('All destinations'),
                 ),
-
-                SizedBox(width: 6),
-
-                Expanded(
-                  child: Text(
-                    'Analytics are recalculated using '
-                    'only trips matching the selected filters.',
-                    style: TextStyle(
-                      fontSize: 10,
-                      height: 1.35,
-                      color: Colors.black45,
-                    ),
+                for (final country in countries)
+                  DropdownMenuItem(
+                    value: country['id'],
+                    child: Text(country['name'] ?? country['id'] ?? 'Unknown'),
                   ),
-                ),
               ],
+              onChanged: enabled
+                  ? (value) =>
+                        onDestinationChanged(value == _allValue ? null : value)
+                  : null,
+            ),
+          ],
+          if (showPurpose) ...[
+            const SizedBox(height: 18),
+            DropdownButtonFormField<String>(
+              key: ValueKey('purpose-$purposeValue'),
+              initialValue: purposeValue,
+              isExpanded: true,
+              itemHeight: null,
+              decoration: const InputDecoration(labelText: 'Travel purpose'),
+              items: [
+                const DropdownMenuItem(
+                  value: _allValue,
+                  child: Text('All purposes'),
+                ),
+                for (final entry in _purposes.entries)
+                  DropdownMenuItem(value: entry.key, child: Text(entry.value)),
+              ],
+              onChanged: enabled
+                  ? (value) =>
+                        onPurposeChanged(value == _allValue ? null : value)
+                  : null,
+            ),
+          ],
+          if (_hasActiveFilters) ...[
+            const SizedBox(height: 14),
+            const Text(
+              'Only trips matching these filters are included.',
+              style: TextStyle(fontSize: 12, color: AppColors.secondaryText),
+            ),
+            const SizedBox(height: 6),
+            Align(
+              alignment: Alignment.centerLeft,
+              child: TextButton.icon(
+                onPressed: enabled ? onClear : null,
+                icon: const Icon(Icons.filter_alt_off_outlined, size: 18),
+                label: const Text('Clear filters'),
+              ),
             ),
           ],
         ],
       ),
-    );
-  }
-
-  Widget _buildDropdownContainer({required Widget child}) {
-    return Container(
-      width: double.infinity,
-      padding: const EdgeInsets.symmetric(horizontal: 13),
-      decoration: BoxDecoration(
-        color: const Color(0xFFF7F9FB),
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: _borderColor),
-      ),
-      child: child,
     );
   }
 }

@@ -1,11 +1,15 @@
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 
+import '../../models/reminder.dart';
 import '../../models/trip.dart';
+import '../../navigation/app_route_observer.dart';
+import '../../services/reminder_service.dart';
 import '../../services/trip_service.dart';
 import '../../services/user_service.dart';
+import '../../theme/app_theme.dart';
+import '../../widgets/destination_photo.dart';
 import '../add_trip_screen.dart';
-import '../checklist_screen.dart';
 import '../my_trips_screen.dart';
 import '../traveller_alerts_screen.dart';
 import '../traveller_settings_screen.dart';
@@ -18,46 +22,289 @@ class TravellerDashboard extends StatefulWidget {
   State<TravellerDashboard> createState() => _TravellerDashboardState();
 }
 
-class _TravellerDashboardState extends State<TravellerDashboard> {
-  final UserService _userService = UserService();
-  final TripService _tripService = TripService();
+class _TravellerDashboardState extends State<TravellerDashboard>
+    with WidgetsBindingObserver, RouteAware {
+  final _userService = UserService();
+  final _tripService = TripService();
+  final _reminderService = ReminderService();
 
   int _selectedIndex = 0;
+  int _tripsRevision = 0;
+  int _loadId = 0;
+  bool _loading = true;
+  bool _refreshing = false;
+  bool _openingPage = false;
+  bool _remindersUnavailable = false;
+  String? _error;
+  String _name = 'Traveller';
+  List<Trip> _trips = [];
+  List<Reminder> _reminders = [];
+  int _completed = 0;
+  int _total = 0;
+  int? _notificationCount;
+  PageRoute<dynamic>? _subscribedRoute;
+  static const _preparationWindowDays = 30;
 
-  bool _isLoadingHome = true;
-  String? _homeError;
+  DateTime _day(DateTime date) => DateTime(date.year, date.month, date.day);
 
-  String _travellerName = 'Traveller';
+  List<Trip> get _upcomingTrips {
+    final today = _day(DateTime.now());
+    return _trips
+        .where((trip) => !_day(trip.departureDate).isBefore(today))
+        .toList();
+  }
 
-  Trip? _upcomingTrip;
+  Trip? get _nextTrip => _upcomingTrips.firstOrNull;
 
-  int _completedRequirements = 0;
-  int _totalRequirements = 0;
+  double get _progress =>
+      _total == 0 ? 0 : (_completed / _total).clamp(0.0, 1.0);
+
+  String get _firstName => _name.trim().split(RegExp(r'\s+')).first;
 
   @override
   void initState() {
     super.initState();
-    _loadHomeData();
+    WidgetsBinding.instance.addObserver(this);
+    _loadData();
   }
 
-  String _formatText(String value) {
-    if (value.isEmpty) {
-      return value;
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+
+    final route = ModalRoute.of(context);
+
+    if (route is PageRoute<dynamic> && route != _subscribedRoute) {
+      appRouteObserver.unsubscribe(this);
+      _subscribedRoute = route;
+      appRouteObserver.subscribe(this, route);
     }
-
-    return value
-        .split('_')
-        .map(
-          (word) => word.isEmpty
-              ? word
-              : '${word[0].toUpperCase()}'
-                    '${word.substring(1)}',
-        )
-        .join(' ');
   }
 
-  String _formatDate(DateTime date) {
-    const List<String> months = [
+  @override
+  void didPopNext() {
+    if (!_openingPage) _loadData(showLoading: false);
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed &&
+        !_openingPage &&
+        (_subscribedRoute?.isCurrent ?? false)) {
+      _loadData(showLoading: false);
+    }
+  }
+
+  @override
+  void dispose() {
+    appRouteObserver.unsubscribe(this);
+    WidgetsBinding.instance.removeObserver(this);
+    super.dispose();
+  }
+
+  int _daysUntil(DateTime date) {
+    final now = DateTime.now();
+
+    return DateTime.utc(
+      date.year,
+      date.month,
+      date.day,
+    ).difference(DateTime.utc(now.year, now.month, now.day)).inDays;
+  }
+
+  Future<Map<String, int>?> _fetchProgress(String tripId) async {
+    try {
+      return await _tripService.getChecklistProgress(tripId);
+    } catch (error) {
+      debugPrint('DASHBOARD PROGRESS ERROR: $error');
+      return null;
+    }
+  }
+
+  // A reminder failure should not prevent travellers from opening their trips.
+  Future<List<Reminder>?> _fetchReminders(String uid) async {
+    try {
+      return await _reminderService.getUserReminders(uid);
+    } catch (error) {
+      debugPrint('DASHBOARD REMINDERS ERROR: $error');
+      return null;
+    }
+  }
+
+  Future<void> _loadData({bool showLoading = true}) async {
+    if (!mounted) return;
+    final request = ++_loadId;
+
+    setState(() {
+      _loading = showLoading;
+      _refreshing = !showLoading;
+      _error = null;
+    });
+
+    try {
+      final user = FirebaseAuth.instance.currentUser;
+      if (user == null) throw StateError('No authenticated traveller.');
+
+      final results = await Future.wait<Object?>([
+        _userService.getUserProfile(user.uid),
+        _tripService.getUserTrips(user.uid),
+        _fetchReminders(user.uid),
+      ]);
+
+      final profile = results[0] as Map<String, dynamic>?;
+      final trips = results[1] as List<Trip>;
+      final reminders = results[2] as List<Reminder>?;
+
+      trips.sort((a, b) => a.departureDate.compareTo(b.departureDate));
+
+      final activeTrips = trips
+          .where((trip) => _daysUntil(trip.departureDate) >= 0)
+          .toList();
+
+      final next = activeTrips.firstOrNull;
+
+      final preparationTrips = activeTrips
+          .where(
+            (trip) => _daysUntil(trip.departureDate) <= _preparationWindowDays,
+          )
+          .toList();
+
+      final progressTrips = <String, Trip>{
+        for (final trip in preparationTrips) trip.id: trip,
+      };
+
+      if (next != null) {
+        progressTrips[next.id] = next;
+      }
+
+      // Reuse checklist reads for Home progress and the notification count.
+      final progressResults = await Future.wait(
+        progressTrips.values.map(
+          (trip) async => MapEntry(trip.id, await _fetchProgress(trip.id)),
+        ),
+      );
+
+      final progressByTrip = Map<String, Map<String, int>?>.fromEntries(
+        progressResults,
+      );
+
+      final progress = next == null
+          ? <String, int>{'completed': 0, 'total': 0}
+          : progressByTrip[next.id];
+
+      if (progress == null) {
+        throw StateError('Upcoming trip progress unavailable.');
+      }
+
+      final activeIds = activeTrips.map((trip) => trip.id).toSet();
+
+      final pendingReminders =
+          (reminders ?? <Reminder>[])
+              .where(
+                (reminder) =>
+                    !reminder.completed && activeIds.contains(reminder.tripId),
+              )
+              .toList()
+            ..sort((a, b) => a.reminderAt.compareTo(b.reminderAt));
+
+      final countAvailable =
+          reminders != null &&
+          preparationTrips.every((trip) => progressByTrip[trip.id] != null);
+
+      int preparationCount = 0;
+
+      for (final trip in preparationTrips) {
+        final counts = progressByTrip[trip.id];
+
+        if (counts != null &&
+            (counts['total'] ?? 0) > 0 &&
+            (counts['completed'] ?? 0) < (counts['total'] ?? 0)) {
+          preparationCount++;
+        }
+      }
+
+      final profileName = (profile?['fullName'] as String?)?.trim() ?? '';
+      final displayName = user.displayName?.trim() ?? '';
+
+      if (!mounted || request != _loadId) return;
+
+      setState(() {
+        _name = profileName.isNotEmpty
+            ? profileName
+            : displayName.isNotEmpty
+            ? displayName
+            : 'Traveller';
+
+        _trips = trips;
+        _reminders = pendingReminders;
+        _remindersUnavailable = reminders == null;
+        _completed = progress['completed'] ?? 0;
+        _total = progress['total'] ?? 0;
+        _notificationCount = countAvailable
+            ? pendingReminders.length + preparationCount
+            : null;
+        _loading = false;
+        _refreshing = false;
+      });
+    } catch (error) {
+      debugPrint('TRAVELLER DASHBOARD ERROR: $error');
+
+      if (!mounted || request != _loadId) return;
+
+      setState(() {
+        _error = 'Your travel information could not be loaded.';
+        _notificationCount = null;
+        _loading = false;
+        _refreshing = false;
+      });
+    }
+  }
+
+  Future<void> _openPage(Widget page) async {
+    if (_openingPage) return;
+    _openingPage = true;
+
+    try {
+      await Navigator.of(
+        context,
+      ).push(MaterialPageRoute<void>(builder: (_) => page));
+
+      if (mounted) {
+        setState(() => _tripsRevision++);
+        await _loadData(showLoading: false);
+      }
+    } finally {
+      _openingPage = false;
+    }
+  }
+
+  // ---------------------------------------------------------------------------
+  // TAB NAVIGATION
+  // ---------------------------------------------------------------------------
+  // Switch sections and refresh travel data for Home and the notification badge.
+  void _changeTab(int index) {
+    if (index == _selectedIndex) return;
+
+    setState(() => _selectedIndex = index);
+    _loadData(showLoading: index == 0);
+  }
+
+  Future<void> _openNotifications() => _openPage(
+    Scaffold(
+      appBar: AppBar(title: const Text('Notifications')),
+      body: const TravellerAlertsScreen(),
+    ),
+  );
+
+  String _label(String value) => value
+      .replaceAll(RegExp(r'[_-]+'), ' ')
+      .split(RegExp(r'\s+'))
+      .where((word) => word.isNotEmpty)
+      .map((word) => '${word[0].toUpperCase()}${word.substring(1)}')
+      .join(' ');
+
+  String _date(DateTime date) {
+    const months = [
       'Jan',
       'Feb',
       'Mar',
@@ -72,199 +319,67 @@ class _TravellerDashboardState extends State<TravellerDashboard> {
       'Dec',
     ];
 
-    return '${date.day} '
-        '${months[date.month - 1]} '
-        '${date.year}';
+    return '${date.day} ${months[date.month - 1]} ${date.year}';
   }
 
-  String get _firstName {
-    final String cleaned = _travellerName.trim();
+  String _departure(Trip trip) {
+    final days = _daysUntil(trip.departureDate);
 
-    if (cleaned.isEmpty) {
-      return 'Traveller';
-    }
+    if (days == 0) return 'Departing today';
+    if (days == 1) return 'Departing tomorrow';
 
-    return cleaned.split(RegExp(r'\s+')).first;
-  }
-
-  double get _progressValue {
-    if (_totalRequirements == 0) {
-      return 0;
-    }
-
-    return _completedRequirements / _totalRequirements;
-  }
-
-  int get _progressPercent {
-    return (_progressValue * 100).round();
-  }
-
-  int get _remainingRequirements {
-    final int remaining = _totalRequirements - _completedRequirements;
-
-    return remaining < 0 ? 0 : remaining;
-  }
-
-  Future<void> _loadHomeData() async {
-    setState(() {
-      _isLoadingHome = true;
-      _homeError = null;
-    });
-
-    try {
-      final User? currentUser = FirebaseAuth.instance.currentUser;
-
-      if (currentUser == null) {
-        throw Exception('No authenticated user was found.');
-      }
-
-      final Map<String, dynamic>? profile = await _userService.getUserProfile(
-        currentUser.uid,
-      );
-
-      final List<Trip> trips = await _tripService.getUserTrips(currentUser.uid);
-
-      final DateTime now = DateTime.now();
-
-      final DateTime today = DateTime(now.year, now.month, now.day);
-
-      final List<Trip> upcomingTrips = trips.where((trip) {
-        final DateTime departure = DateTime(
-          trip.departureDate.year,
-          trip.departureDate.month,
-          trip.departureDate.day,
-        );
-
-        return !departure.isBefore(today);
-      }).toList();
-
-      upcomingTrips.sort((a, b) => a.departureDate.compareTo(b.departureDate));
-
-      final Trip? upcomingTrip = upcomingTrips.isEmpty
-          ? null
-          : upcomingTrips.first;
-
-      int completed = 0;
-      int total = 0;
-
-      if (upcomingTrip != null) {
-        final Map<String, int> progress = await _tripService
-            .getChecklistProgress(upcomingTrip.id);
-
-        completed = progress['completed'] ?? 0;
-
-        total = progress['total'] ?? 0;
-      }
-
-      if (!mounted) return;
-
-      setState(() {
-        _travellerName =
-            (profile?['fullName'] as String?)?.trim() ??
-            currentUser.displayName?.trim() ??
-            'Traveller';
-
-        _upcomingTrip = upcomingTrip;
-        _completedRequirements = completed;
-        _totalRequirements = total;
-
-        _isLoadingHome = false;
-      });
-    } catch (e) {
-      debugPrint('TRAVELLER HOME ERROR: $e');
-
-      if (!mounted) return;
-
-      setState(() {
-        _isLoadingHome = false;
-        _homeError = 'Unable to load your dashboard.';
-      });
-    }
-  }
-
-  Future<void> _openAddTrip() async {
-    await Navigator.push(
-      context,
-      MaterialPageRoute(builder: (context) => const AddTripScreen()),
-    );
-
-    if (!mounted) return;
-
-    await _loadHomeData();
-  }
-
-  Future<void> _openUpcomingChecklist() async {
-    final Trip? trip = _upcomingTrip;
-
-    if (trip == null) {
-      return;
-    }
-
-    await Navigator.push(
-      context,
-      MaterialPageRoute(builder: (context) => ChecklistScreen(tripId: trip.id)),
-    );
-
-    if (!mounted) return;
-
-    await _loadHomeData();
-  }
-
-  void _changeTab(int index) {
-    setState(() {
-      _selectedIndex = index;
-    });
-
-    if (index == 0) {
-      _loadHomeData();
-    }
-  }
-
-  String get _pageTitle {
-    switch (_selectedIndex) {
-      case 1:
-        return 'My Trips';
-      case 2:
-        return 'Alerts';
-      case 3:
-        return 'Settings';
-      default:
-        return 'TravelGuard MY';
-    }
+    return 'Departing in $days days';
   }
 
   @override
   Widget build(BuildContext context) {
-    final List<Widget> pages = [
-      _buildHome(),
-      const MyTripsScreen(embedded: true),
-      const TravellerAlertsScreen(),
-      const TravellerSettingsScreen(),
-    ];
+    final titles = ['TravelGuard MY', 'Trips', 'Profile'];
+    final Widget page;
+
+    switch (_selectedIndex) {
+      case 1:
+        page = MyTripsScreen(key: ValueKey(_tripsRevision), embedded: true);
+      case 2:
+        page = const TravellerSettingsScreen();
+      default:
+        page = _buildDataPage();
+    }
 
     return Scaffold(
-      backgroundColor: const Color(0xFFF7F9FB),
-
       appBar: AppBar(
         automaticallyImplyLeading: false,
-        backgroundColor: Colors.white,
-        elevation: 0,
-        surfaceTintColor: Colors.white,
-        title: Text(
-          _pageTitle,
-          style: const TextStyle(
-            fontWeight: FontWeight.w700,
-            color: Color(0xFF083B5C),
+        backgroundColor: AppColors.background,
+        title: Text(titles[_selectedIndex]),
+        actions: [
+          if (_selectedIndex == 1)
+            IconButton(
+              tooltip: 'Create trip',
+              onPressed: () => _openPage(const AddTripScreen()),
+              icon: const Icon(Icons.add_rounded),
+            ),
+          IconButton(
+            tooltip: _notificationCount == null
+                ? 'Notifications'
+                : 'Notifications, $_notificationCount pending',
+            onPressed: _openNotifications,
+            icon: ExcludeSemantics(
+              child: Badge.count(
+                count: _notificationCount ?? 0,
+                maxCount: 99,
+                isLabelVisible: (_notificationCount ?? 0) > 0,
+                backgroundColor: AppColors.danger,
+                textColor: Colors.white,
+                child: const Icon(Icons.notifications_none_rounded),
+              ),
+            ),
           ),
-        ),
+          const SizedBox(width: 8),
+        ],
       ),
-
-      body: IndexedStack(index: _selectedIndex, children: pages),
-
+      body: SafeArea(top: false, child: page),
       bottomNavigationBar: NavigationBar(
         selectedIndex: _selectedIndex,
         onDestinationSelected: _changeTab,
-        height: 70,
         destinations: const [
           NavigationDestination(
             icon: Icon(Icons.home_outlined),
@@ -274,462 +389,331 @@ class _TravellerDashboardState extends State<TravellerDashboard> {
           NavigationDestination(
             icon: Icon(Icons.luggage_outlined),
             selectedIcon: Icon(Icons.luggage_rounded),
-            label: 'My Trips',
+            label: 'Trips',
           ),
           NavigationDestination(
-            icon: Icon(Icons.notifications_none_rounded),
-            selectedIcon: Icon(Icons.notifications_rounded),
-            label: 'Alerts',
-          ),
-          NavigationDestination(
-            icon: Icon(Icons.settings_outlined),
-            selectedIcon: Icon(Icons.settings_rounded),
-            label: 'Settings',
+            icon: Icon(Icons.person_outline_rounded),
+            selectedIcon: Icon(Icons.person_rounded),
+            label: 'Profile',
           ),
         ],
       ),
     );
   }
 
-  Widget _buildHome() {
-    if (_isLoadingHome) {
-      return const Center(child: CircularProgressIndicator());
-    }
+  Widget _buildDataPage() {
+    if (_loading) return const Center(child: CircularProgressIndicator());
 
-    if (_homeError != null) {
-      return RefreshIndicator(
-        onRefresh: _loadHomeData,
-        child: ListView(
-          physics: const AlwaysScrollableScrollPhysics(),
-          padding: const EdgeInsets.all(24),
-          children: [
-            const SizedBox(height: 160),
-
-            const Icon(
-              Icons.cloud_off_outlined,
-              size: 56,
-              color: Colors.black45,
+    final content = _error != null
+        ? <Widget>[
+            _message(
+              icon: Icons.cloud_off_outlined,
+              title: 'Unable to load your travel space',
+              description: _error!,
+              button: 'Try again',
+              onPressed: () => _loadData(),
             ),
-
-            const SizedBox(height: 18),
-
-            Text(
-              _homeError!,
-              textAlign: TextAlign.center,
-              style: const TextStyle(fontSize: 16),
-            ),
-
-            const SizedBox(height: 8),
-
-            const Text(
-              'Pull down to try again.',
-              textAlign: TextAlign.center,
-              style: TextStyle(color: Colors.black54),
-            ),
-          ],
-        ),
-      );
-    }
+          ]
+        : _homeContent();
 
     return RefreshIndicator(
-      onRefresh: _loadHomeData,
+      onRefresh: () => _loadData(showLoading: false),
       child: ListView(
+        key: const PageStorageKey('home'),
         physics: const AlwaysScrollableScrollPhysics(),
-        padding: const EdgeInsets.fromLTRB(18, 20, 18, 110),
+        padding: const EdgeInsets.fromLTRB(20, 16, 20, 28),
         children: [
-          Text(
-            'Hello, $_firstName!',
-            style: const TextStyle(
-              fontSize: 26,
-              fontWeight: FontWeight.w800,
-              color: Color(0xFF102A43),
-            ),
-          ),
-
-          const SizedBox(height: 5),
-
-          const Text(
-            'Ready for your next trip?',
-            style: TextStyle(fontSize: 14, color: Colors.black54),
-          ),
-
-          const SizedBox(height: 24),
-
-          if (_upcomingTrip != null && _remainingRequirements > 0)
-            _buildActionRequiredCard(),
-
-          if (_upcomingTrip != null && _remainingRequirements > 0)
-            const SizedBox(height: 24),
-
-          _buildUpcomingTripSection(),
-
-          const SizedBox(height: 26),
-
-          const Text(
-            'Quick Actions',
-            style: TextStyle(
-              fontSize: 18,
-              fontWeight: FontWeight.w700,
-              color: Color(0xFF102A43),
-            ),
-          ),
-
-          const SizedBox(height: 12),
-
-          Row(
-            children: [
-              Expanded(
-                child: _QuickActionCard(
-                  icon: Icons.add_location_alt_outlined,
-                  title: 'Create New Trip',
-                  onTap: _openAddTrip,
-                ),
-              ),
-
-              const SizedBox(width: 12),
-
-              Expanded(
-                child: _QuickActionCard(
-                  icon: Icons.luggage_outlined,
-                  title: 'View My Trips',
-                  onTap: () {
-                    _changeTab(1);
-                  },
-                ),
-              ),
-            ],
-          ),
+          if (_refreshing) ...[
+            const LinearProgressIndicator(minHeight: 3),
+            const SizedBox(height: 16),
+          ],
+          ...content,
         ],
       ),
     );
   }
 
-  Widget _buildActionRequiredCard() {
-    return Container(
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: const Color(0xFFFFEBE9),
-        borderRadius: BorderRadius.circular(18),
-        border: Border.all(color: const Color(0xFFFFC6C1)),
+  List<Widget> _homeContent() {
+    final trip = _nextTrip;
+    final remaining = (_total - _completed).clamp(0, _total);
+
+    return [
+      Text(
+        'Hello, $_firstName.',
+        style: Theme.of(context).textTheme.headlineSmall,
       ),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Container(
-            width: 42,
-            height: 42,
-            decoration: const BoxDecoration(
-              color: Colors.white,
-              shape: BoxShape.circle,
-            ),
-            child: const Icon(
-              Icons.warning_amber_rounded,
-              color: Color(0xFFC62828),
-            ),
-          ),
-
-          const SizedBox(width: 13),
-
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                const Text(
-                  'Action Required',
-                  style: TextStyle(
-                    fontSize: 16,
-                    fontWeight: FontWeight.w700,
-                    color: Color(0xFF9B1C1C),
-                  ),
-                ),
-
-                const SizedBox(height: 5),
-
-                Text(
-                  'You have '
-                  '$_remainingRequirements '
-                  'travel requirement'
-                  '${_remainingRequirements == 1 ? '' : 's'} '
-                  'remaining for your upcoming trip.',
-                  style: const TextStyle(height: 1.4, color: Color(0xFF6F1D1B)),
-                ),
-
-                const SizedBox(height: 12),
-
-                FilledButton(
-                  style: FilledButton.styleFrom(
-                    backgroundColor: const Color(0xFFC62828),
-                    foregroundColor: Colors.white,
-                  ),
-                  onPressed: _openUpcomingChecklist,
-                  child: const Text('View Checklist'),
-                ),
-              ],
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildUpcomingTripSection() {
-    final Trip? trip = _upcomingTrip;
-
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        const Text(
-          'Upcoming Trip',
-          style: TextStyle(
-            fontSize: 18,
-            fontWeight: FontWeight.w700,
-            color: Color(0xFF102A43),
-          ),
+      const SizedBox(height: 6),
+      const Text('Your next journey starts with a little preparation.'),
+      const SizedBox(height: 24),
+      _heading('Your next trip', action: () => _changeTab(1)),
+      const SizedBox(height: 12),
+      if (trip == null)
+        _message(
+          icon: Icons.flight_takeoff_rounded,
+          title: 'Where are you heading next?',
+          description:
+              'Create a trip to organise your requirements, packing, route plan and reminders.',
+          button: 'Create a trip',
+          onPressed: () => _openPage(const AddTripScreen()),
+        )
+      else
+        _tripCard(trip),
+      if (trip != null && remaining > 0) ...[
+        const SizedBox(height: 14),
+        _ActionTile(
+          icon: Icons.assignment_outlined,
+          title: 'Review travel requirements',
+          subtitle:
+              '$remaining requirement${remaining == 1 ? '' : 's'} still to check for ${_label(trip.destinationCountryId)}.',
+          onTap: () => _openPage(TripDetailsScreen(trip: trip)),
+          warm: true,
         ),
+      ],
+      const SizedBox(height: 26),
+      _heading('Reminders', action: _openNotifications),
+      const SizedBox(height: 12),
+      if (_remindersUnavailable)
+        _ActionTile(
+          icon: Icons.cloud_off_outlined,
+          title: 'Reminders are unavailable',
+          subtitle: 'Open Notifications to try loading them again.',
+          onTap: _openNotifications,
+        )
+      else if (_reminders.isEmpty)
+        _ActionTile(
+          icon: Icons.notifications_none_rounded,
+          title: 'No pending reminders',
+          subtitle: trip == null
+              ? 'Create a trip to add a personal reminder.'
+              : 'Add a reminder from your trip details.',
+          onTap: () => trip == null
+              ? _openPage(const AddTripScreen())
+              : _openPage(TripDetailsScreen(trip: trip)),
+        )
+      else
+        for (final reminder in _reminders.take(3)) ...[
+          _reminderTile(reminder),
+          const SizedBox(height: 10),
+        ],
+      const SizedBox(height: 26),
+      _heading('Make your next move'),
+      const SizedBox(height: 12),
+      _ActionTile(
+        icon: Icons.add_location_alt_outlined,
+        title: 'Create a trip',
+        subtitle: 'Choose your destination, purpose and travel dates.',
+        onTap: () => _openPage(const AddTripScreen()),
+      ),
+      const SizedBox(height: 12),
+      _ActionTile(
+        icon: Icons.fact_check_outlined,
+        title: 'Manage trip preparation',
+        subtitle:
+            'Choose a trip to open its requirements, packing, route plan and reminders.',
+        onTap: () => _changeTab(1),
+      ),
+    ];
+  }
 
-        const SizedBox(height: 12),
+  Widget _tripCard(Trip trip) {
+    final imageHeight = (MediaQuery.textScalerOf(context).scale(30) * 2 + 70)
+        .clamp(170.0, 300.0);
 
-        if (trip == null)
-          Container(
-            width: double.infinity,
-            padding: const EdgeInsets.all(22),
-            decoration: BoxDecoration(
-              color: Colors.white,
-              borderRadius: BorderRadius.circular(20),
-              border: Border.all(color: const Color(0xFFE1E7EC)),
-            ),
-            child: Column(
-              children: [
-                const Icon(
-                  Icons.flight_takeoff_rounded,
-                  size: 44,
-                  color: Color(0xFF087F8C),
-                ),
-
-                const SizedBox(height: 14),
-
-                const Text(
-                  'No upcoming trip',
-                  style: TextStyle(fontSize: 18, fontWeight: FontWeight.w700),
-                ),
-
-                const SizedBox(height: 7),
-
-                const Text(
-                  'Create a trip to receive '
-                  'personalised travel requirements.',
-                  textAlign: TextAlign.center,
-                  style: TextStyle(color: Colors.black54, height: 1.4),
-                ),
-
-                const SizedBox(height: 16),
-
-                FilledButton.icon(
-                  onPressed: _openAddTrip,
-                  icon: const Icon(Icons.add_rounded),
-                  label: const Text('Create New Trip'),
-                ),
-              ],
-            ),
-          )
-        else
-          Container(
-            width: double.infinity,
-            padding: const EdgeInsets.all(18),
-            decoration: BoxDecoration(
-              color: Colors.white,
-              borderRadius: BorderRadius.circular(20),
-              border: Border.all(color: const Color(0xFFE1E7EC)),
-              boxShadow: const [
-                BoxShadow(
-                  color: Color(0x0D000000),
-                  blurRadius: 10,
-                  offset: Offset(0, 4),
-                ),
-              ],
-            ),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Row(
-                  children: [
-                    Container(
-                      width: 46,
-                      height: 46,
-                      decoration: BoxDecoration(
-                        color: const Color(0xFFE8F6F7),
-                        borderRadius: BorderRadius.circular(14),
-                      ),
-                      child: const Icon(
-                        Icons.flight_rounded,
-                        color: Color(0xFF087F8C),
-                      ),
-                    ),
-
-                    const SizedBox(width: 13),
-
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            _formatText(trip.destinationCountryId),
-                            style: const TextStyle(
-                              fontSize: 20,
-                              fontWeight: FontWeight.w800,
-                            ),
-                          ),
-
-                          const SizedBox(height: 3),
-
-                          Text(
-                            '${_formatText(trip.purpose)}'
-                            ' • '
-                            '${trip.durationDays} days',
-                            style: const TextStyle(color: Colors.black54),
-                          ),
-                        ],
-                      ),
-                    ),
-                  ],
-                ),
-
-                const SizedBox(height: 18),
-
-                Row(
-                  children: [
-                    const Icon(
-                      Icons.calendar_today_outlined,
-                      size: 17,
-                      color: Colors.black54,
-                    ),
-
-                    const SizedBox(width: 8),
-
-                    Text(
-                      'Departure: '
-                      '${_formatDate(trip.departureDate)}',
-                    ),
-                  ],
-                ),
-
-                const SizedBox(height: 20),
-
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  children: [
-                    const Text(
-                      'Checklist Progress',
-                      style: TextStyle(fontWeight: FontWeight.w600),
-                    ),
-                    Text(
-                      '$_progressPercent%',
-                      style: const TextStyle(
-                        fontWeight: FontWeight.w700,
-                        color: Color(0xFF087F8C),
-                      ),
-                    ),
-                  ],
-                ),
-
-                const SizedBox(height: 9),
-
-                ClipRRect(
-                  borderRadius: BorderRadius.circular(20),
-                  child: LinearProgressIndicator(
-                    value: _progressValue,
-                    minHeight: 8,
-                    backgroundColor: const Color(0xFFE5EEF0),
-                    valueColor: const AlwaysStoppedAnimation<Color>(
-                      Color(0xFF087F8C),
-                    ),
+    return Card(
+      margin: EdgeInsets.zero,
+      clipBehavior: Clip.antiAlias,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          DestinationPhoto(
+            countryId: trip.destinationCountryId,
+            height: imageHeight,
+            child: Padding(
+              padding: const EdgeInsets.all(20),
+              child: Align(
+                alignment: Alignment.bottomLeft,
+                child: Text(
+                  _label(trip.destinationCountryId),
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontSize: 30,
+                    fontWeight: FontWeight.w800,
+                    height: 1.15,
                   ),
                 ),
-
-                const SizedBox(height: 8),
-
+              ),
+            ),
+          ),
+          Padding(
+            padding: const EdgeInsets.all(20),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
                 Text(
-                  '$_completedRequirements of '
-                  '$_totalRequirements '
-                  'requirements completed',
-                  style: const TextStyle(fontSize: 12, color: Colors.black54),
-                ),
-
-                const SizedBox(height: 18),
-
-                SizedBox(
-                  width: double.infinity,
-                  child: FilledButton(
-                    onPressed: () async {
-                      await Navigator.push(
-                        context,
-                        MaterialPageRoute(
-                          builder: (context) => TripDetailsScreen(trip: trip),
-                        ),
-                      );
-
-                      if (!mounted) return;
-
-                      await _loadHomeData();
-                    },
-                    child: const Text('View Trip'),
+                  _departure(trip),
+                  style: const TextStyle(
+                    color: AppColors.primary,
+                    fontWeight: FontWeight.w700,
                   ),
+                ),
+                const SizedBox(height: 6),
+                Text(
+                  '${_date(trip.departureDate)} · ${_label(trip.purpose)} · ${trip.durationDays} day${trip.durationDays == 1 ? '' : 's'}',
+                ),
+                const SizedBox(height: 20),
+                Text(
+                  'Requirements completed',
+                  style: Theme.of(context).textTheme.titleMedium,
+                ),
+                const SizedBox(height: 10),
+                if (_total > 0) ...[
+                  ClipRRect(
+                    borderRadius: BorderRadius.circular(8),
+                    child: LinearProgressIndicator(
+                      value: _progress,
+                      minHeight: 8,
+                      backgroundColor: AppColors.primaryLight,
+                      semanticsLabel: 'Requirements completed',
+                    ),
+                  ),
+                  const SizedBox(height: 10),
+                  Text(
+                    '$_completed of $_total checked · ${(_progress * 100).round()}%',
+                  ),
+                ] else
+                  const Text(
+                    'No requirements available. Open the trip to review its details.',
+                  ),
+                const SizedBox(height: 18),
+                FilledButton(
+                  onPressed: () => _openPage(TripDetailsScreen(trip: trip)),
+                  child: const Text('View trip', textAlign: TextAlign.center),
                 ),
               ],
             ),
           ),
-      ],
+        ],
+      ),
     );
   }
+
+  Widget _reminderTile(Reminder reminder) {
+    final trip = _trips.firstWhere((trip) => trip.id == reminder.tripId);
+    final overdue = reminder.reminderAt.isBefore(DateTime.now());
+    final time = TimeOfDay.fromDateTime(reminder.reminderAt).format(context);
+
+    return _ActionTile(
+      icon: overdue ? Icons.schedule_rounded : Icons.notifications_none_rounded,
+      title: reminder.title,
+      subtitle:
+          '${overdue ? 'Overdue · ' : ''}${_date(reminder.reminderAt)} · $time\n${_label(trip.destinationCountryId)}',
+      onTap: () => _openPage(TripDetailsScreen(trip: trip)),
+      warm: overdue,
+    );
+  }
+
+  Widget _heading(String title, {VoidCallback? action}) => Row(
+    children: [
+      Expanded(
+        child: Text(title, style: Theme.of(context).textTheme.titleLarge),
+      ),
+      if (action != null)
+        TextButton(onPressed: action, child: const Text('View all')),
+    ],
+  );
+
+  Widget _message({
+    required IconData icon,
+    required String title,
+    required String description,
+    required String button,
+    required VoidCallback onPressed,
+  }) => Card(
+    margin: EdgeInsets.zero,
+    child: Padding(
+      padding: const EdgeInsets.all(24),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Icon(icon, size: 42, color: AppColors.primary),
+          const SizedBox(height: 16),
+          Text(
+            title,
+            textAlign: TextAlign.center,
+            style: Theme.of(context).textTheme.titleLarge,
+          ),
+          const SizedBox(height: 8),
+          Text(description, textAlign: TextAlign.center),
+          const SizedBox(height: 20),
+          FilledButton(
+            onPressed: onPressed,
+            child: Text(button, textAlign: TextAlign.center),
+          ),
+        ],
+      ),
+    ),
+  );
 }
 
-class _QuickActionCard extends StatelessWidget {
-  final IconData icon;
-  final String title;
-  final VoidCallback onTap;
-
-  const _QuickActionCard({
+class _ActionTile extends StatelessWidget {
+  const _ActionTile({
     required this.icon,
     required this.title,
+    required this.subtitle,
     required this.onTap,
+    this.warm = false,
   });
 
+  final IconData icon;
+  final String title;
+  final String subtitle;
+  final VoidCallback onTap;
+  final bool warm;
+
   @override
-  Widget build(BuildContext context) {
-    return InkWell(
+  Widget build(BuildContext context) => Material(
+    color: warm ? const Color(0xFFFFF0E2) : Colors.white,
+    shape: RoundedRectangleBorder(
       borderRadius: BorderRadius.circular(18),
+      side: const BorderSide(color: AppColors.border),
+    ),
+    clipBehavior: Clip.antiAlias,
+    child: InkWell(
       onTap: onTap,
-      child: Ink(
-        height: 112,
-        padding: const EdgeInsets.all(14),
-        decoration: BoxDecoration(
-          color: Colors.white,
-          borderRadius: BorderRadius.circular(18),
-          border: Border.all(color: const Color(0xFFE1E7EC)),
-        ),
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Container(
-              width: 42,
-              height: 42,
+              padding: const EdgeInsets.all(10),
               decoration: BoxDecoration(
-                color: const Color(0xFFE8F6F7),
-                borderRadius: BorderRadius.circular(13),
+                color: warm ? AppColors.accent : AppColors.primaryLight,
+                borderRadius: BorderRadius.circular(12),
               ),
-              child: Icon(icon, color: const Color(0xFF087F8C)),
+              child: Icon(icon, size: 22, color: AppColors.primary),
             ),
-
-            const SizedBox(height: 10),
-
-            Text(
-              title,
-              textAlign: TextAlign.center,
-              style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(title, style: Theme.of(context).textTheme.titleMedium),
+                  const SizedBox(height: 5),
+                  Text(subtitle),
+                ],
+              ),
+            ),
+            const SizedBox(width: 4),
+            const Icon(
+              Icons.chevron_right_rounded,
+              color: AppColors.secondaryText,
             ),
           ],
         ),
       ),
-    );
-  }
+    ),
+  );
 }

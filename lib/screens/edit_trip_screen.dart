@@ -1,36 +1,30 @@
 import 'package:flutter/material.dart';
+import '../theme/app_theme.dart';
+import '../widgets/traveller_ui_widgets.dart';
 import 'package:flutter/services.dart';
-import 'package:url_launcher/url_launcher.dart';
 
 import '../models/country.dart';
 import '../models/trip.dart';
 import '../services/country_service.dart';
 import '../services/trip_service.dart';
+import '../services/trip_guidance_policy.dart';
+import '../widgets/trip_guidance_dialog.dart';
 
 class EditTripScreen extends StatefulWidget {
   final Trip trip;
 
-  const EditTripScreen({
-    super.key,
-    required this.trip,
-  });
+  const EditTripScreen({super.key, required this.trip});
 
   @override
-  State<EditTripScreen> createState() =>
-      _EditTripScreenState();
+  State<EditTripScreen> createState() => _EditTripScreenState();
 }
 
-class _EditTripScreenState
-    extends State<EditTripScreen> {
-  final CountryService _countryService =
-  CountryService();
+class _EditTripScreenState extends State<EditTripScreen> {
+  final CountryService _countryService = CountryService();
 
-  final TripService _tripService =
-  TripService();
+  final TripService _tripService = TripService();
 
-  final TextEditingController
-  _durationController =
-  TextEditingController();
+  final TextEditingController _durationController = TextEditingController();
 
   List<Country> _countries = [];
 
@@ -43,53 +37,33 @@ class _EditTripScreenState
 
   String? _countryError;
 
-  static const Color _primaryColor =
-  Color(0xFF087F8C);
+  static const Color _primaryColor = AppColors.primary;
 
-  static const Color _darkTextColor =
-  Color(0xFF102A43);
+  static const Color _darkTextColor = AppColors.navy;
 
-  static const Color _backgroundColor =
-  Color(0xFFF7F9FB);
+  static const Color _backgroundColor = AppColors.background;
 
-  static const Color _borderColor =
-  Color(0xFFE1E7EC);
+  static const Color _borderColor = AppColors.border;
 
-  final List<Map<String, dynamic>>
-  _purposes = [
-    {
-      'value': 'tourism',
-      'label': 'Tourism',
-      'icon':
-      Icons.camera_alt_outlined,
-    },
+  final List<Map<String, dynamic>> _purposes = [
+    {'value': 'tourism', 'label': 'Tourism', 'icon': Icons.camera_alt_outlined},
     {
       'value': 'business',
       'label': 'Business',
-      'icon':
-      Icons.business_center_outlined,
+      'icon': Icons.business_center_outlined,
     },
-    {
-      'value': 'study',
-      'label': 'Study',
-      'icon':
-      Icons.school_outlined,
-    },
+    {'value': 'study', 'label': 'Study', 'icon': Icons.school_outlined},
   ];
 
   @override
   void initState() {
     super.initState();
 
-    _selectedPurpose =
-        widget.trip.purpose;
+    _selectedPurpose = widget.trip.purpose;
 
-    _departureDate =
-        widget.trip.departureDate;
+    _departureDate = widget.trip.departureDate;
 
-    _durationController.text =
-        widget.trip.durationDays
-            .toString();
+    _durationController.text = widget.trip.durationDays.toString();
 
     _loadCountries();
   }
@@ -105,32 +79,20 @@ class _EditTripScreenState
   // COUNTRY
   // ---------------------------------------------------------------------------
 
-  Future<void> _loadCountries()
-  async {
+  Future<void> _loadCountries() async {
     setState(() {
       _isLoadingCountries = true;
       _countryError = null;
     });
 
     try {
-      final List<Country> countries =
-      await _countryService
+      final List<Country> countries = await _countryService
           .getEnabledCountries();
-
-      countries.sort(
-            (a, b) =>
-            a.name.compareTo(
-              b.name,
-            ),
-      );
 
       Country? selectedCountry;
 
-      for (final Country country
-      in countries) {
-        if (country.id ==
-            widget.trip
-                .destinationCountryId) {
+      for (final Country country in countries) {
+        if (country.id == widget.trip.destinationCountryId) {
           selectedCountry = country;
           break;
         }
@@ -140,28 +102,21 @@ class _EditTripScreenState
 
       setState(() {
         _countries = countries;
-        _selectedCountry =
-            selectedCountry;
-        _isLoadingCountries =
-        false;
+        _selectedCountry = selectedCountry;
+        _isLoadingCountries = false;
 
         if (selectedCountry == null) {
-          _countryError =
-          'The current destination is not available.';
+          _countryError = 'The current destination is not available.';
         }
       });
     } catch (e) {
-      debugPrint(
-        'EDIT TRIP COUNTRY ERROR: $e',
-      );
+      debugPrint('EDIT TRIP COUNTRY ERROR: $e');
 
       if (!mounted) return;
 
       setState(() {
-        _isLoadingCountries =
-        false;
-        _countryError =
-        'Unable to load destination countries.';
+        _isLoadingCountries = false;
+        _countryError = 'Unable to load destination countries.';
       });
     }
   }
@@ -170,24 +125,14 @@ class _EditTripScreenState
   // DATE
   // ---------------------------------------------------------------------------
 
-  Future<void>
-  _selectDepartureDate()
-  async {
-    final DateTime now =
-    DateTime.now();
+  Future<void> _selectDepartureDate() async {
+    final DateTime now = DateTime.now();
 
-    final DateTime today =
-    DateTime(
-      now.year,
-      now.month,
-      now.day,
-    );
+    final DateTime today = DateTime(now.year, now.month, now.day);
 
-    final DateTime current =
-        _departureDate ?? today;
+    final DateTime current = _departureDate ?? today;
 
-    final DateTime currentDate =
-    DateTime(
+    final DateTime currentDate = DateTime(
       current.year,
       current.month,
       current.day,
@@ -195,411 +140,24 @@ class _EditTripScreenState
 
     // If this is already a past trip,
     // allow the existing historical date.
-    final DateTime firstDate =
-    currentDate.isBefore(today)
+    final DateTime firstDate = currentDate.isBefore(today)
         ? currentDate
         : today;
 
-    final DateTime? selectedDate =
-    await showDatePicker(
+    final DateTime? selectedDate = await showDatePicker(
       context: context,
       initialDate: currentDate,
       firstDate: firstDate,
-      lastDate: DateTime(
-        now.year + 5,
-        12,
-        31,
-      ),
+      lastDate: DateTime(now.year + 5, 12, 31),
     );
 
-    if (selectedDate == null ||
-        !mounted) {
+    if (selectedDate == null || !mounted) {
       return;
     }
 
     setState(() {
-      _departureDate =
-          selectedDate;
+      _departureDate = selectedDate;
     });
-  }
-
-  // ---------------------------------------------------------------------------
-  // SAFEGUARDS
-  // ---------------------------------------------------------------------------
-
-  bool _requiresJapanLongStayGuidance(
-      int durationDays,
-      ) {
-    return _selectedCountry?.id == 'japan' &&
-        (_selectedPurpose == 'tourism' ||
-            _selectedPurpose == 'business') &&
-        durationDays > 90;
-  }
-
-  bool
-  _requiresAustraliaBusinessVisaGuidance(
-      int durationDays,
-      ) {
-    return _selectedCountry?.id ==
-        'australia' &&
-        _selectedPurpose ==
-            'business' &&
-        durationDays > 90;
-  }
-
-  bool _requiresUkLongStayGuidance(
-      int durationDays,
-      ) {
-    return _selectedCountry?.id ==
-        'united_kingdom' &&
-        durationDays > 180;
-  }
-
-  bool
-  _requiresSouthKoreaLongStayGuidance(
-      int durationDays,
-      ) {
-    return _selectedCountry?.id ==
-        'south_korea' &&
-        (_selectedPurpose ==
-            'tourism' ||
-            _selectedPurpose ==
-                'business') &&
-        durationDays > 90;
-  }
-
-  Future<void> _openUrl(
-      String url,
-      String errorMessage,
-      ) async {
-    try {
-      final bool opened =
-      await launchUrl(
-        Uri.parse(url),
-        mode:
-        LaunchMode.externalApplication,
-      );
-
-      if (!opened && mounted) {
-        ScaffoldMessenger.of(context)
-            .showSnackBar(
-          SnackBar(
-            content:
-            Text(errorMessage),
-          ),
-        );
-      }
-    } catch (e) {
-      if (!mounted) return;
-
-      ScaffoldMessenger.of(context)
-          .showSnackBar(
-        SnackBar(
-          content:
-          Text(errorMessage),
-        ),
-      );
-    }
-  }
-
-  Future<void>
-  _showJapanLongStayGuidance()
-  async {
-    String message;
-
-    if (_selectedPurpose ==
-        'business') {
-      message =
-      'Malaysian travellers may visit Japan for '
-          'short-term business purposes for up to 90 days '
-          'without a visa when no paid activities are '
-          'undertaken.\n\n'
-          'A business stay longer than 90 days requires '
-          'additional information about the intended '
-          'activities. TravelGuard MY cannot determine the '
-          'appropriate long-term status or visa from purpose '
-          'and duration alone.\n\n'
-          'Please refer to the official Embassy of Japan '
-          'in Malaysia visa guidance.';
-    } else {
-      message =
-      'Malaysian travellers may visit Japan for tourism '
-          'for up to 90 days under the short-term visa '
-          'exemption.\n\n'
-          'A tourism stay longer than 90 days may require '
-          'a different long-stay arrangement with additional '
-          'eligibility requirements. TravelGuard MY cannot '
-          'determine eligibility from purpose and duration '
-          'alone.\n\n'
-          'Please refer to the official Embassy of Japan '
-          'in Malaysia visa guidance.';
-    }
-
-    await showDialog<void>(
-      context: context,
-      builder: (dialogContext) {
-        return AlertDialog(
-          icon: const Icon(
-            Icons.info_outline_rounded,
-            color: _primaryColor,
-            size: 32,
-          ),
-          title: const Text(
-            'Additional Visa Information Required',
-            textAlign:
-            TextAlign.center,
-          ),
-          content: Text(message),
-          actions: [
-            TextButton(
-              onPressed: () {
-                Navigator.pop(
-                  dialogContext,
-                );
-              },
-              child:
-              const Text('Close'),
-            ),
-            FilledButton.icon(
-              onPressed: () async {
-                Navigator.pop(
-                  dialogContext,
-                );
-
-                await _openUrl(
-                  'https://www.my.emb-japan.go.jp/itpr_en/visit.html',
-                  'Unable to open the Japan visa guidance.',
-                );
-              },
-              icon: const Icon(
-                Icons.open_in_new_rounded,
-                size: 18,
-              ),
-              label: const Text(
-                'Open Visa Guidance',
-              ),
-            ),
-          ],
-        );
-      },
-    );
-  }
-
-
-  Future<void>
-  _showAustraliaGuidance()
-  async {
-    await showDialog<void>(
-      context: context,
-      builder: (dialogContext) {
-        return AlertDialog(
-          icon: const Icon(
-            Icons.info_outline_rounded,
-            color: _primaryColor,
-            size: 32,
-          ),
-          title: const Text(
-            'Additional Visa Information Required',
-            textAlign:
-            TextAlign.center,
-          ),
-          content: const Text(
-            'Business visits to Australia longer than '
-                '90 days may require a different visa depending '
-                'on the activities you intend to undertake.\n\n'
-                'TravelGuard MY cannot determine the appropriate '
-                'visa from travel purpose and duration alone. '
-                'Please check the official Australian Department '
-                'of Home Affairs Visa Finder.',
-          ),
-          actions: [
-            TextButton(
-              onPressed: () {
-                Navigator.pop(
-                  dialogContext,
-                );
-              },
-              child:
-              const Text('Close'),
-            ),
-            FilledButton.icon(
-              onPressed: () async {
-                Navigator.pop(
-                  dialogContext,
-                );
-
-                await _openUrl(
-                  'https://immi.homeaffairs.gov.au/visas/getting-a-visa/visa-finder',
-                  'Unable to open the Australian Visa Finder.',
-                );
-              },
-              icon: const Icon(
-                Icons.open_in_new_rounded,
-                size: 18,
-              ),
-              label: const Text(
-                'Open Visa Finder',
-              ),
-            ),
-          ],
-        );
-      },
-    );
-  }
-
-  Future<void>
-  _showUkGuidance()
-  async {
-    String message;
-
-    switch (_selectedPurpose) {
-      case 'study':
-        message =
-        'Study in the United Kingdom for longer than '
-            '180 days requires additional information about '
-            'the type of course.\n\n'
-            'TravelGuard MY cannot determine the correct '
-            'visa from purpose and duration alone. Please '
-            'use the official UK visa checker.';
-        break;
-
-      case 'business':
-        message =
-        'Business visits to the United Kingdom longer '
-            'than 180 days cannot be reliably determined '
-            'from travel purpose and duration alone.\n\n'
-            'Please use the official UK visa checker to '
-            'determine the appropriate immigration route.';
-        break;
-
-      case 'tourism':
-      default:
-        message =
-        'A normal UK visitor stay is generally limited '
-            'to up to 6 months.\n\n'
-            'TravelGuard MY cannot generate a complete '
-            'tourism checklist for a stay longer than '
-            '180 days. Please use the official UK visa '
-            'checker for further guidance.';
-        break;
-    }
-
-    await showDialog<void>(
-      context: context,
-      builder: (dialogContext) {
-        return AlertDialog(
-          icon: const Icon(
-            Icons.info_outline_rounded,
-            color: _primaryColor,
-            size: 32,
-          ),
-          title: const Text(
-            'Additional Visa Information Required',
-            textAlign:
-            TextAlign.center,
-          ),
-          content: Text(message),
-          actions: [
-            TextButton(
-              onPressed: () {
-                Navigator.pop(
-                  dialogContext,
-                );
-              },
-              child:
-              const Text('Close'),
-            ),
-            FilledButton.icon(
-              onPressed: () async {
-                Navigator.pop(
-                  dialogContext,
-                );
-
-                await _openUrl(
-                  'https://www.gov.uk/check-uk-visa',
-                  'Unable to open the UK visa checker.',
-                );
-              },
-              icon: const Icon(
-                Icons.open_in_new_rounded,
-                size: 18,
-              ),
-              label: const Text(
-                'Open UK Visa Checker',
-              ),
-            ),
-          ],
-        );
-      },
-    );
-  }
-
-  Future<void>
-  _showSouthKoreaGuidance()
-  async {
-    final String visitType =
-    _selectedPurpose ==
-        'business'
-        ? 'business'
-        : 'tourism';
-
-    await showDialog<void>(
-      context: context,
-      builder: (dialogContext) {
-        return AlertDialog(
-          icon: const Icon(
-            Icons.info_outline_rounded,
-            color: _primaryColor,
-            size: 32,
-          ),
-          title: const Text(
-            'Additional Visa Information Required',
-            textAlign:
-            TextAlign.center,
-          ),
-          content: Text(
-            'K-ETA is intended for eligible short-term '
-                'visits to South Korea of up to 90 days.\n\n'
-                'A $visitType stay longer than 90 days may '
-                'require a different visa. TravelGuard MY '
-                'cannot determine the appropriate long-term '
-                'visa from purpose and duration alone.\n\n'
-                'Please refer to the official Embassy of the '
-                'Republic of Korea in Malaysia visa guidance.',
-          ),
-          actions: [
-            TextButton(
-              onPressed: () {
-                Navigator.pop(
-                  dialogContext,
-                );
-              },
-              child:
-              const Text('Close'),
-            ),
-            FilledButton.icon(
-              onPressed: () async {
-                Navigator.pop(
-                  dialogContext,
-                );
-
-                await _openUrl(
-                  'https://overseas.mofa.go.kr/my-en/brd/m_1914/view.do?seq=761536&page=1',
-                  'Unable to open the South Korea visa guidance.',
-                );
-              },
-              icon: const Icon(
-                Icons.open_in_new_rounded,
-                size: 18,
-              ),
-              label: const Text(
-                'Open Visa Guidance',
-              ),
-            ),
-          ],
-        );
-      },
-    );
   }
 
   // ---------------------------------------------------------------------------
@@ -619,13 +177,9 @@ class _EditTripScreenState
       return 'Please select a departure date.';
     }
 
-    final int? duration =
-    int.tryParse(
-      _durationController.text.trim(),
-    );
+    final int? duration = int.tryParse(_durationController.text.trim());
 
-    if (duration == null ||
-        duration <= 0) {
+    if (duration == null || duration <= 0) {
       return 'Please enter a valid trip duration.';
     }
 
@@ -636,23 +190,14 @@ class _EditTripScreenState
     return null;
   }
 
-  bool _sameDate(
-      DateTime first,
-      DateTime second,
-      ) {
-    return first.year ==
-        second.year &&
-        first.month ==
-            second.month &&
-        first.day ==
-            second.day;
+  bool _sameDate(DateTime first, DateTime second) {
+    return first.year == second.year &&
+        first.month == second.month &&
+        first.day == second.day;
   }
 
   bool get _requirementsChanged {
-    final int? duration =
-    int.tryParse(
-      _durationController.text.trim(),
-    );
+    final int? duration = int.tryParse(_durationController.text.trim());
 
     if (_selectedCountry == null ||
         _selectedPurpose == null ||
@@ -660,13 +205,9 @@ class _EditTripScreenState
       return false;
     }
 
-    return _selectedCountry!.id !=
-        widget.trip
-            .destinationCountryId ||
-        _selectedPurpose !=
-            widget.trip.purpose ||
-        duration !=
-            widget.trip.durationDays;
+    return _selectedCountry!.id != widget.trip.destinationCountryId ||
+        _selectedPurpose != widget.trip.purpose ||
+        duration != widget.trip.durationDays;
   }
 
   bool get _departureChanged {
@@ -674,92 +215,55 @@ class _EditTripScreenState
       return false;
     }
 
-    return !_sameDate(
-      _departureDate!,
-      widget.trip.departureDate,
-    );
+    return !_sameDate(_departureDate!, widget.trip.departureDate);
   }
 
   // ---------------------------------------------------------------------------
   // SAVE
   // ---------------------------------------------------------------------------
 
-  Future<void> _saveChanges()
-  async {
+  Future<void> _saveChanges() async {
     if (_isSaving) return;
 
-    FocusScope.of(context)
-        .unfocus();
+    FocusScope.of(context).unfocus();
 
-    final String? validation =
-    _validateTrip();
+    final String? validation = _validateTrip();
 
     if (validation != null) {
       ScaffoldMessenger.of(context)
         ..hideCurrentSnackBar()
-        ..showSnackBar(
-          SnackBar(
-            content:
-            Text(validation),
-          ),
-        );
+        ..showSnackBar(SnackBar(content: Text(validation)));
 
       return;
     }
 
-    final int duration =
-    int.parse(
-      _durationController.text.trim(),
+    final int duration = int.parse(_durationController.text.trim());
+
+    // Stop unsupported contexts before any trip or checklist changes are written.
+    final TripGuidance? guidance = TripGuidancePolicy.guidanceFor(
+      countryId: _selectedCountry!.id,
+      purpose: _selectedPurpose!,
+      durationDays: duration,
     );
 
-    if (_requiresJapanLongStayGuidance(
-      duration,
-    )) {
-      await _showJapanLongStayGuidance();
+    if (guidance != null) {
+      await showTripGuidanceDialog(context, guidance);
       return;
     }
 
-    if (_requiresAustraliaBusinessVisaGuidance(
-      duration,
-    )) {
-      await _showAustraliaGuidance();
-      return;
-    }
-
-    if (_requiresUkLongStayGuidance(
-      duration,
-    )) {
-      await _showUkGuidance();
-      return;
-    }
-
-    if (_requiresSouthKoreaLongStayGuidance(
-      duration,
-    )) {
-      await _showSouthKoreaGuidance();
-      return;
-    }
-
-    if (!_requirementsChanged &&
-        !_departureChanged) {
+    if (!_requirementsChanged && !_departureChanged) {
       ScaffoldMessenger.of(context)
         ..hideCurrentSnackBar()
         ..showSnackBar(
-          const SnackBar(
-            content: Text(
-              'No trip details were changed.',
-            ),
-          ),
+          const SnackBar(content: Text('No trip details were changed.')),
         );
 
       return;
     }
 
-    final bool confirmed =
-    await _showUpdateConfirmation();
+    final bool confirmed = await _showUpdateConfirmation();
 
-    if (!confirmed ||
-        !mounted) {
+    if (!confirmed || !mounted) {
       return;
     }
 
@@ -768,46 +272,30 @@ class _EditTripScreenState
     });
 
     try {
-      await _tripService
-          .updateTripWithChecklist(
+      await _tripService.updateTripWithChecklist(
         existingTrip: widget.trip,
-        countryId:
-        _selectedCountry!.id,
-        purpose:
-        _selectedPurpose!,
+        countryId: _selectedCountry!.id,
+        purpose: _selectedPurpose!,
         durationDays: duration,
-        departureDate:
-        _departureDate!,
+        departureDate: _departureDate!,
       );
 
       if (!mounted) return;
 
-      final Trip updatedTrip =
-      Trip(
+      final Trip updatedTrip = Trip(
         id: widget.trip.id,
-        userId:
-        widget.trip.userId,
-        destinationCountryId:
-        _selectedCountry!.id,
-        purpose:
-        _selectedPurpose!,
+        userId: widget.trip.userId,
+        destinationCountryId: _selectedCountry!.id,
+        purpose: _selectedPurpose!,
         durationDays: duration,
-        departureDate:
-        _departureDate!,
-        createdAt:
-        widget.trip.createdAt,
-        updatedAt:
-        DateTime.now(),
+        departureDate: _departureDate!,
+        createdAt: widget.trip.createdAt,
+        updatedAt: DateTime.now(),
       );
 
-      Navigator.pop(
-        context,
-        updatedTrip,
-      );
+      Navigator.pop(context, updatedTrip);
     } catch (e) {
-      debugPrint(
-        'UPDATE TRIP ERROR: $e',
-      );
+      debugPrint('UPDATE TRIP ERROR: $e');
 
       if (!mounted) return;
 
@@ -815,25 +303,20 @@ class _EditTripScreenState
         _isSaving = false;
       });
 
-      ScaffoldMessenger.of(context)
-          .showSnackBar(
+      ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
-          content: Text(
-            'Unable to update the trip. Please try again.',
-          ),
+          content: Text('Unable to update the trip. Please try again.'),
         ),
       );
     }
   }
 
-  Future<bool>
-  _showUpdateConfirmation()
-  async {
+  Future<bool> _showUpdateConfirmation() async {
     String message;
 
     if (_requirementsChanged) {
       message =
-      'Changing the destination, purpose or duration '
+          'Changing the destination, purpose or duration '
           'will regenerate your travel requirements and '
           'reset the current checklist completion progress.\n\n'
           'Existing contextual packing recommendations '
@@ -842,7 +325,7 @@ class _EditTripScreenState
           'Manually added packing items will be kept.';
     } else {
       message =
-      'Changing the departure date may affect contextual '
+          'Changing the departure date may affect contextual '
           'packing recommendations.\n\n'
           'Existing generated packing recommendations will '
           'be removed so that you can generate updated '
@@ -851,8 +334,7 @@ class _EditTripScreenState
           'Manually added packing items will also be kept.';
     }
 
-    final bool? result =
-    await showDialog<bool>(
+    final bool? result = await showDialog<bool>(
       context: context,
       builder: (dialogContext) {
         return AlertDialog(
@@ -861,33 +343,20 @@ class _EditTripScreenState
             color: _primaryColor,
             size: 32,
           ),
-          title: const Text(
-            'Update Trip?',
-            textAlign:
-            TextAlign.center,
-          ),
+          title: const Text('Update Trip?', textAlign: TextAlign.center),
           content: Text(message),
           actions: [
             TextButton(
               onPressed: () {
-                Navigator.pop(
-                  dialogContext,
-                  false,
-                );
+                Navigator.pop(dialogContext, false);
               },
-              child:
-              const Text('Cancel'),
+              child: const Text('Cancel'),
             ),
             FilledButton(
               onPressed: () {
-                Navigator.pop(
-                  dialogContext,
-                  true,
-                );
+                Navigator.pop(dialogContext, true);
               },
-              child: const Text(
-                'Update Trip',
-              ),
+              child: const Text('Update Trip'),
             ),
           ],
         );
@@ -901,9 +370,7 @@ class _EditTripScreenState
   // UI HELPERS
   // ---------------------------------------------------------------------------
 
-  String _formatDate(
-      DateTime date,
-      ) {
+  String _formatDate(DateTime date) {
     const List<String> months = [
       'Jan',
       'Feb',
@@ -935,37 +402,18 @@ class _EditTripScreenState
       suffixIcon: suffixIcon,
       filled: true,
       fillColor: Colors.white,
-      contentPadding:
-      const EdgeInsets.symmetric(
-        horizontal: 16,
-        vertical: 17,
-      ),
+      contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 17),
       border: OutlineInputBorder(
-        borderRadius:
-        BorderRadius.circular(14),
-        borderSide:
-        const BorderSide(
-          color: _borderColor,
-        ),
+        borderRadius: BorderRadius.circular(14),
+        borderSide: const BorderSide(color: _borderColor),
       ),
-      enabledBorder:
-      OutlineInputBorder(
-        borderRadius:
-        BorderRadius.circular(14),
-        borderSide:
-        const BorderSide(
-          color: _borderColor,
-        ),
+      enabledBorder: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(14),
+        borderSide: const BorderSide(color: _borderColor),
       ),
-      focusedBorder:
-      OutlineInputBorder(
-        borderRadius:
-        BorderRadius.circular(14),
-        borderSide:
-        const BorderSide(
-          color: _primaryColor,
-          width: 1.7,
-        ),
+      focusedBorder: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(14),
+        borderSide: const BorderSide(color: _primaryColor, width: 1.7),
       ),
     );
   }
@@ -975,163 +423,95 @@ class _EditTripScreenState
   // ---------------------------------------------------------------------------
 
   @override
-  Widget build(
-      BuildContext context,
-      ) {
+  Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor:
-      _backgroundColor,
+      backgroundColor: _backgroundColor,
       appBar: AppBar(
-        backgroundColor:
-        Colors.white,
-        surfaceTintColor:
-        Colors.white,
+        backgroundColor: Colors.white,
+        surfaceTintColor: Colors.white,
         elevation: 0,
         title: const Text(
           'Edit Trip',
-          style: TextStyle(
-            color:
-            _darkTextColor,
-            fontWeight:
-            FontWeight.w700,
-          ),
+          style: TextStyle(color: _darkTextColor, fontWeight: FontWeight.w700),
         ),
       ),
       body: SafeArea(
-        child:
-        SingleChildScrollView(
-          keyboardDismissBehavior:
-          ScrollViewKeyboardDismissBehavior
-              .onDrag,
-          padding:
-          const EdgeInsets.fromLTRB(
-            18,
-            18,
-            18,
-            36,
-          ),
+        child: SingleChildScrollView(
+          keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
+          padding: const EdgeInsets.fromLTRB(18, 18, 18, 36),
           child: Column(
-            crossAxisAlignment:
-            CrossAxisAlignment.start,
+            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               _buildIntroCard(),
 
-              const SizedBox(
-                height: 26,
-              ),
+              const SizedBox(height: 26),
 
               const Text(
                 'Trip Details',
                 style: TextStyle(
                   fontSize: 18,
-                  fontWeight:
-                  FontWeight.w800,
-                  color:
-                  _darkTextColor,
+                  fontWeight: FontWeight.w800,
+                  color: _darkTextColor,
                 ),
               ),
 
-              const SizedBox(
-                height: 16,
-              ),
+              const SizedBox(height: 16),
 
               _buildDestinationField(),
 
-              const SizedBox(
-                height: 20,
-              ),
+              const SizedBox(height: 20),
 
               _buildDepartureField(),
 
-              const SizedBox(
-                height: 20,
-              ),
+              const SizedBox(height: 20),
 
               _buildDurationField(),
 
-              const SizedBox(
-                height: 28,
-              ),
+              const SizedBox(height: 28),
 
               const Text(
                 'Travel Purpose',
                 style: TextStyle(
                   fontSize: 18,
-                  fontWeight:
-                  FontWeight.w800,
-                  color:
-                  _darkTextColor,
+                  fontWeight: FontWeight.w800,
+                  color: _darkTextColor,
                 ),
               ),
 
-              const SizedBox(
-                height: 16,
-              ),
+              const SizedBox(height: 16),
 
               _buildPurposeSelector(),
 
-              const SizedBox(
-                height: 26,
-              ),
+              const SizedBox(height: 26),
 
               _buildInformationNote(),
 
-              const SizedBox(
-                height: 24,
-              ),
+              const SizedBox(height: 24),
 
               SizedBox(
-                width:
-                double.infinity,
-                height: 54,
-                child:
-                FilledButton.icon(
-                  style:
-                  FilledButton
-                      .styleFrom(
-                    backgroundColor:
-                    _primaryColor,
-                    foregroundColor:
-                    Colors.white,
-                    shape:
-                    RoundedRectangleBorder(
-                      borderRadius:
-                      BorderRadius
-                          .circular(
-                        14,
-                      ),
+                width: double.infinity,
+                child: FilledButton.icon(
+                  style: FilledButton.styleFrom(
+                    backgroundColor: _primaryColor,
+                    foregroundColor: Colors.white,
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(14),
                     ),
                   ),
-                  onPressed:
-                  _isSaving
-                      ? null
-                      : _saveChanges,
+                  onPressed: _isSaving ? null : _saveChanges,
                   icon: _isSaving
                       ? const SizedBox(
-                    width: 19,
-                    height: 19,
-                    child:
-                    CircularProgressIndicator(
-                      strokeWidth:
-                      2,
-                      color:
-                      Colors.white,
-                    ),
-                  )
-                      : const Icon(
-                    Icons
-                        .save_outlined,
-                  ),
+                          width: 19,
+                          height: 19,
+                          child: CircularProgressIndicator(
+                            strokeWidth: 2,
+                            color: Colors.white,
+                          ),
+                        )
+                      : const Icon(Icons.save_outlined),
                   label: Text(
-                    _isSaving
-                        ? 'Updating Trip...'
-                        : 'Save Changes',
-                    style:
-                    const TextStyle(
-                      fontWeight:
-                      FontWeight
-                          .w700,
-                    ),
+                    _isSaving ? 'Updating Trip...' : 'Save Changes',
+                    style: const TextStyle(fontWeight: FontWeight.w700),
                   ),
                 ),
               ),
@@ -1142,150 +522,63 @@ class _EditTripScreenState
     );
   }
 
-  Widget _buildIntroCard() {
-    return Container(
-      width: double.infinity,
-      padding:
-      const EdgeInsets.all(18),
-      decoration: BoxDecoration(
-        gradient:
-        const LinearGradient(
-          colors: [
-            Color(0xFFE7F7F8),
-            Color(0xFFF1F8FB),
-          ],
-        ),
-        borderRadius:
-        BorderRadius.circular(20),
-        border: Border.all(
-          color:
-          const Color(
-            0xFFCBE8EB,
-          ),
-        ),
-      ),
-      child: const Row(
-        children: [
-          Icon(
-            Icons.edit_location_alt_outlined,
-            color: _primaryColor,
-            size: 30,
-          ),
-          SizedBox(width: 14),
-          Expanded(
-            child: Column(
-              crossAxisAlignment:
-              CrossAxisAlignment.start,
-              children: [
-                Text(
-                  'Update Your Trip',
-                  style: TextStyle(
-                    fontSize: 19,
-                    fontWeight:
-                    FontWeight.w800,
-                    color:
-                    _darkTextColor,
-                  ),
-                ),
-                SizedBox(height: 5),
-                Text(
-                  'Adjust your destination, dates, duration or travel purpose.',
-                  style: TextStyle(
-                    fontSize: 13,
-                    height: 1.4,
-                    color:
-                    Colors.black54,
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ],
-      ),
-    );
-  }
+  Widget _buildIntroCard() => const TravellerIntroCard(
+    icon: Icons.flight_takeoff_rounded,
+    title: 'Update your trip',
+    message:
+        'Update your trip details. Changes to destination, purpose or duration can regenerate your checklist.',
+  );
 
   Widget _buildDestinationField() {
     return Column(
-      crossAxisAlignment:
-      CrossAxisAlignment.start,
+      crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         const Text(
           'Destination',
           style: TextStyle(
             fontSize: 14,
-            fontWeight:
-            FontWeight.w700,
-            color:
-            Color(0xFF334E68),
+            fontWeight: FontWeight.w700,
+            color: AppColors.secondaryText,
           ),
         ),
         const SizedBox(height: 9),
 
         if (_isLoadingCountries)
-          const Center(
-            child:
-            CircularProgressIndicator(),
-          )
-        else if (_countryError !=
-            null)
+          const Center(child: CircularProgressIndicator())
+        else if (_countryError != null)
           Row(
             children: [
               Expanded(
                 child: Text(
                   _countryError!,
-                  style: const TextStyle(
-                    color:
-                    Color(
-                      0xFFC62828,
-                    ),
-                  ),
+                  style: const TextStyle(color: Color(0xFFC62828)),
                 ),
               ),
-              TextButton(
-                onPressed:
-                _loadCountries,
-                child:
-                const Text('Retry'),
-              ),
+              TextButton(onPressed: _loadCountries, child: const Text('Retry')),
             ],
           )
         else
-          DropdownButtonFormField<
-              Country>(
-            initialValue:
-            _selectedCountry,
+          DropdownButtonFormField<Country>(
+            itemHeight: null,
+            initialValue: _selectedCountry,
             isExpanded: true,
-            decoration:
-            _fieldDecoration(
-              hintText:
-              'Select destination',
-              prefixIcon:
-              const Icon(
-                Icons
-                    .location_on_outlined,
-              ),
+            decoration: _fieldDecoration(
+              hintText: 'Select destination',
+              prefixIcon: const Icon(Icons.location_on_outlined),
             ),
-            items: _countries
-                .map(
-                  (country) {
-                return DropdownMenuItem<
-                    Country>(
-                  value: country,
-                  child: Text(
-                    country.name,
-                  ),
-                );
-              },
-            ).toList(),
+            items: _countries.map((country) {
+              return DropdownMenuItem<Country>(
+                value: country,
+                child: Text(country.name),
+              );
+            }).toList(),
             onChanged: _isSaving
                 ? null
                 : (country) {
-              setState(() {
-                _selectedCountry =
-                    country;
-              });
-            },
+                    setState(() {
+                      _selectedCountry = country;
+                    });
+                  },
           ),
       ],
     );
@@ -1293,53 +586,33 @@ class _EditTripScreenState
 
   Widget _buildDepartureField() {
     return Column(
-      crossAxisAlignment:
-      CrossAxisAlignment.start,
+      crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         const Text(
           'Departure Date',
           style: TextStyle(
             fontSize: 14,
-            fontWeight:
-            FontWeight.w700,
-            color:
-            Color(0xFF334E68),
+            fontWeight: FontWeight.w700,
+            color: AppColors.secondaryText,
           ),
         ),
         const SizedBox(height: 9),
         InkWell(
-          borderRadius:
-          BorderRadius.circular(14),
-          onTap: _isSaving
-              ? null
-              : _selectDepartureDate,
+          borderRadius: BorderRadius.circular(14),
+          onTap: _isSaving ? null : _selectDepartureDate,
           child: InputDecorator(
-            decoration:
-            _fieldDecoration(
-              hintText:
-              'Select departure date',
-              prefixIcon:
-              const Icon(
-                Icons
-                    .calendar_today_outlined,
-              ),
-              suffixIcon:
-              const Icon(
-                Icons
-                    .chevron_right_rounded,
-              ),
+            decoration: _fieldDecoration(
+              hintText: 'Select departure date',
+              prefixIcon: const Icon(Icons.calendar_today_outlined),
+              suffixIcon: const Icon(Icons.chevron_right_rounded),
             ),
             child: Text(
               _departureDate == null
                   ? 'Select departure date'
-                  : _formatDate(
-                _departureDate!,
-              ),
+                  : _formatDate(_departureDate!),
               style: const TextStyle(
-                fontWeight:
-                FontWeight.w600,
-                color:
-                _darkTextColor,
+                fontWeight: FontWeight.w600,
+                color: _darkTextColor,
               ),
             ),
           ),
@@ -1350,51 +623,28 @@ class _EditTripScreenState
 
   Widget _buildDurationField() {
     return Column(
-      crossAxisAlignment:
-      CrossAxisAlignment.start,
+      crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         const Text(
           'Duration of Stay',
           style: TextStyle(
             fontSize: 14,
-            fontWeight:
-            FontWeight.w700,
-            color:
-            Color(0xFF334E68),
+            fontWeight: FontWeight.w700,
+            color: AppColors.secondaryText,
           ),
         ),
         const SizedBox(height: 9),
         TextField(
-          controller:
-          _durationController,
+          controller: _durationController,
           enabled: !_isSaving,
-          keyboardType:
-          TextInputType.number,
-          inputFormatters: [
-            FilteringTextInputFormatter
-                .digitsOnly,
-          ],
-          decoration:
-          _fieldDecoration(
-            hintText:
-            'Enter number of days',
-            prefixIcon:
-            const Icon(
-              Icons
-                  .nights_stay_outlined,
-            ),
-            suffixIcon:
-            const Padding(
-              padding:
-              EdgeInsets.only(
-                right: 16,
-              ),
-              child: Center(
-                widthFactor: 1,
-                child: Text(
-                  'days',
-                ),
-              ),
+          keyboardType: TextInputType.number,
+          inputFormatters: [FilteringTextInputFormatter.digitsOnly],
+          decoration: _fieldDecoration(
+            hintText: 'Enter number of days',
+            prefixIcon: const Icon(Icons.nights_stay_outlined),
+            suffixIcon: const Padding(
+              padding: EdgeInsets.only(right: 16),
+              child: Center(widthFactor: 1, child: Text('days')),
             ),
           ),
         ),
@@ -1402,171 +652,48 @@ class _EditTripScreenState
     );
   }
 
-  Widget _buildPurposeSelector() {
-    return Row(
-      children: _purposes.map(
-            (purpose) {
-          final String value =
-          purpose['value']
-          as String;
-
-          final String label =
-          purpose['label']
-          as String;
-
-          final IconData icon =
-          purpose['icon']
-          as IconData;
-
-          final bool selected =
-              _selectedPurpose ==
-                  value;
-
-          return Expanded(
-            child: Padding(
-              padding:
-              EdgeInsets.only(
-                right:
-                value != 'study'
-                    ? 10
-                    : 0,
-              ),
-              child: InkWell(
-                borderRadius:
-                BorderRadius
-                    .circular(
-                  16,
-                ),
-                onTap: _isSaving
-                    ? null
-                    : () {
-                  setState(
-                        () {
-                      _selectedPurpose =
-                          value;
-                    },
-                  );
-                },
-                child:
-                AnimatedContainer(
-                  duration:
-                  const Duration(
-                    milliseconds:
-                    160,
-                  ),
-                  height: 96,
-                  decoration:
-                  BoxDecoration(
-                    color: selected
-                        ? const Color(
-                      0xFFE7F7F8,
-                    )
-                        : Colors.white,
-                    borderRadius:
-                    BorderRadius
-                        .circular(
-                      16,
-                    ),
-                    border:
-                    Border.all(
-                      color: selected
-                          ? _primaryColor
-                          : _borderColor,
-                      width:
-                      selected
-                          ? 1.7
-                          : 1,
-                    ),
-                  ),
-                  child: Column(
-                    mainAxisAlignment:
-                    MainAxisAlignment
-                        .center,
-                    children: [
-                      Icon(
-                        icon,
-                        color: selected
-                            ? _primaryColor
-                            : const Color(
-                          0xFF627D98,
-                        ),
-                      ),
-                      const SizedBox(
-                        height: 8,
-                      ),
-                      Text(
-                        label,
-                        style:
-                        TextStyle(
-                          fontSize:
-                          12.5,
-                          fontWeight:
-                          selected
-                              ? FontWeight
-                              .w700
-                              : FontWeight
-                              .w600,
-                          color: selected
-                              ? _primaryColor
-                              : const Color(
-                            0xFF334E68,
-                          ),
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              ),
-            ),
-          );
-        },
-      ).toList(),
-    );
-  }
+  Widget _buildPurposeSelector() => TripPurposeSelector(
+    options: _purposes
+        .map(
+          (purpose) => (
+            value: purpose['value'] as String,
+            label: purpose['label'] as String,
+            icon: purpose['icon'] as IconData,
+          ),
+        )
+        .toList(),
+    value: _selectedPurpose,
+    onChanged: _isSaving
+        ? null
+        : (value) {
+            setState(() => _selectedPurpose = value);
+          },
+  );
 
   Widget _buildInformationNote() {
     return Container(
-      padding:
-      const EdgeInsets.all(16),
+      padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
-        color:
-        const Color(
-          0xFFF1F6FA,
-        ),
-        borderRadius:
-        BorderRadius.circular(16),
-        border: Border.all(
-          color:
-          const Color(
-            0xFFD8E6EE,
-          ),
-        ),
+        color: AppColors.primaryLight,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: AppColors.border),
       ),
       child: const Row(
-        crossAxisAlignment:
-        CrossAxisAlignment.start,
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Icon(
-            Icons.info_outline_rounded,
-            color:
-            Color(0xFF0A5B83),
-            size: 21,
-          ),
+          Icon(Icons.info_outline_rounded, color: AppColors.primary, size: 21),
           SizedBox(width: 11),
           Expanded(
             child: Text(
               'Changing destination, purpose or duration '
-                  'regenerates the travel requirements and '
-                  'resets checklist completion. Changing any '
-                  'trip context removes old generated packing '
-                  'recommendations. Manual packing items are kept.',
+              'regenerates the travel requirements and '
+              'resets checklist completion. Changing any '
+              'trip context removes old generated packing '
+              'recommendations. Manual packing items are kept.',
               style: TextStyle(
                 fontSize: 12.5,
                 height: 1.45,
-                color:
-                Color(
-                  0xFF334E68,
-                ),
+                color: AppColors.secondaryText,
               ),
             ),
           ),
