@@ -28,6 +28,15 @@ void main() {
           durationDays: duration,
         );
 
+        final expectedType = offset == 1 ? 'TripGuidance' : 'null';
+        final actualType = result == null
+            ? 'null'
+            : result.runtimeType.toString();
+        // ignore: avoid_print
+        print(
+          '${scenario.country} ${scenario.purpose}, $duration days: '
+          'expected=$expectedType, actual=$actualType',
+        );
         expect(result, offset == 1 ? isNotNull : isNull);
       });
     }

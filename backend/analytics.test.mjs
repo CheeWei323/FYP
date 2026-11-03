@@ -90,13 +90,22 @@ test("Destination shares include all five countries and zero-count destinations"
 
 test("Malaysia month boundaries and missing months remain correct", () => {
   const result = buildAnalytics("monthly", dataset);
+  const expectedLabels = [
+    "November 2026", "December 2026", "January 2027", "February 2027",
+  ];
+  const expectedCounts = [2, 0, 0, 1];
+  for (const [index, label] of expectedLabels.entries()) {
+    console.log(
+      `AA01 ${label}: expected=${expectedCounts[index]}, actual=${result[index]?.count}`,
+    );
+  }
   assert.deepEqual(
     result.map((row) => row.label),
-    ["November 2026", "December 2026", "January 2027", "February 2027"],
+    expectedLabels,
   );
   assert.deepEqual(
     result.map((row) => row.count),
-    [2, 0, 0, 1],
+    expectedCounts,
   );
 });
 
@@ -126,6 +135,11 @@ test("Corrupted dates cannot allocate an excessive monthly series", () => {
 
 test("Completion is an average of nonempty trip rates, not an item-weighted rate", () => {
   const result = buildAnalytics("completion", dataset);
+  console.log(`AA02 Average (%): expected=50, actual=${result.overallCompletionRate}`);
+  console.log(`AA02 Analysed trips: expected=3, actual=${result.tripsWithChecklist}`);
+  console.log(`AA02 Total items: expected=6, actual=${result.totalChecklistItems}`);
+  console.log(`AA02 Completed items: expected=2, actual=${result.completedChecklistItems}`);
+  console.log(`AA02 Incomplete items: expected=4, actual=${result.incompleteChecklistItems}`);
   assert.equal(result.overallCompletionRate, 50);
   assert.equal(result.tripsWithChecklist, 3);
   assert.equal(result.totalChecklistItems, 6);
@@ -140,15 +154,22 @@ test("Completion is an average of nonempty trip rates, not an item-weighted rate
 
 test("Requirement frequency counts a duplicated requirement only once per trip", () => {
   const result = buildAnalytics("requirements", dataset);
+  const firstRequirement = result.requirementPatterns.find(
+    (row) => row.requirementKey === "r1",
+  );
+  const secondRequirement = result.requirementPatterns.find(
+    (row) => row.requirementKey === "r2",
+  );
+  console.log(`AA03 Analysed trips: expected=3, actual=${result.analysedTrips}`);
+  console.log(`AA03 r1 trip count: expected=3, actual=${firstRequirement?.tripCount}`);
+  console.log(`AA03 r2 trip count: expected=2, actual=${secondRequirement?.tripCount}`);
   assert.equal(result.analysedTrips, 3);
   assert.equal(
-    result.requirementPatterns.find((row) => row.requirementKey === "r1")
-      .tripCount,
+    firstRequirement.tripCount,
     3,
   );
   assert.equal(
-    result.requirementPatterns.find((row) => row.requirementKey === "r2")
-      .tripCount,
+    secondRequirement.tripCount,
     2,
   );
 });

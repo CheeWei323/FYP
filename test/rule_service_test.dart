@@ -83,14 +83,16 @@ void main() {
     test('Duration $days respects inclusive bounds of 5 to 10 days', () {
       final rule = fixture('bounded', ruleData(minimum: 5, maximum: 10));
 
-      expect(
-        service.matchesRule(
-          rule: rule,
-          selectedPurpose: 'tourism',
-          tripDurationDays: days,
-        ),
-        days == 5 || days == 10,
+      final expected = days == 5 || days == 10;
+      final actual = service.matchesRule(
+        rule: rule,
+        selectedPurpose: 'tourism',
+        tripDurationDays: days,
       );
+      // Show returned values alongside the assertions for test evidence.
+      // ignore: avoid_print
+      print('Duration $days days: expected=$expected, actual=$actual');
+      expect(actual, expected);
     });
   }
 
@@ -161,8 +163,12 @@ void main() {
         durationDays: 7,
       );
 
+      final actualIds = result.map((rule) => rule.id).toList();
+      const expectedIds = ['mandatory', 'optional'];
+      // ignore: avoid_print
+      print('Selection: expected=$expectedIds, actual=$actualIds');
       expect(requestedCountry, 'japan');
-      expect(result.map((rule) => rule.id), ['mandatory', 'optional']);
+      expect(actualIds, expectedIds);
       expect(records.first.id, 'optional');
     },
   );
